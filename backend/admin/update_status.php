@@ -1,0 +1,58 @@
+<?php
+// backend/admin/update_status.php
+session_start();
+header('Content-Type: application/json');
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit();
+}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'error' => 'Invalid request']);
+    exit();
+}
+if (!isset($_POST['id']) || !is_numeric($_POST['id']) || !isset($_POST['status'])) {
+    echo json_encode(['success' => false, 'error' => 'Invalid input']);
+    exit();
+}
+$id = intval($_POST['id']);
+$status = $_POST['status'];
+$allowed = ['Pending', 'Verified', 'Rejected'];
+if (!in_array($status, $allowed)) {
+    echo json_encode(['success' => false, 'error' => 'Invalid status']);
+    exit();
+}
+include_once __DIR__ . '/../connection.php';
+// If rejected, log the reason and send email
+if ($status === 'Rejected' && isset($_POST['reason']) && trim($_POST['reason']) !== '') {
+    $reason = trim($_POST['reason']);
+    $rejected_by = $_SESSION['user_id'];
+    // Insert into registration_rejection_logs
+    $logStmt = $conn->prepare('INSERT INTO registration_rejection_logs (user_id, rejected_by, reason) VALUES (?, ?, ?)');
+    $logStmt->bind_param('iis', $id, $rejected_by, $reason);
+    $logStmt->execute();
+    $logStmt->close();
+
+    // Fetch rejected user's email
+    $emailStmt = $conn->prepare('SELECT email, first_name FROM users WHERE id = ?');
+    $emailStmt->bind_param('i', $id);
+    $emailStmt->execute();
+    $emailStmt->bind_result($user_email, $user_first_name);
+    if ($emailStmt->fetch()) {
+        // Send rejection email
+        include_once __DIR__ . '/../../send_mail_smtp.php';
+        $subject = 'DENR Admin Registration Rejected';
+        $body = "Dear $user_first_name,\n\nWe regret to inform you that your admin registration has been rejected.\n\nReason: $reason\n\nIf you have questions, please contact the system administrator.\n\nThank you.";
+        send_smtp_mail($user_email, $subject, $body);
+    }
+    $emailStmt->close();
+}
+$stmt = $conn->prepare('UPDATE users SET status=? WHERE id=? AND role="Admin"');
+$stmt->bind_param('si', $status, $id);
+$success = $stmt->execute();
+$stmt->close();
+$conn->close();
+if ($success) {
+    echo json_encode(['success' => true]);
+} else {
+    echo json_encode(['success' => false, 'error' => 'Update failed']);
+}

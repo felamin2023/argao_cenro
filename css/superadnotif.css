@@ -1,0 +1,151 @@
+/* Base Styles */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #ffffff;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 20%;
+    background-color: #fff;
+    padding: 20px;
+    text-align: center;
+    border-right: 2px solid #ddd;
+    position: fixed;
+    top: 58px;
+    height: calc(100vh - 80px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+    margin-bottom: 20px;
+}
+
+.logo img {
+    width: 350px;
+    border-radius: 50%;
+}
+
+.menu {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    width: 100%;
+    padding-bottom: 20px;
+}
+
+.menu button {
+    width: 80%;
+    background-color: #000;
+    color: #fff;
+    padding: 10px;
+    margin: 10px 0;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.main-content {
+    margin-left: 17%; /* Reduced margin */
+    
+    padding: 20px;
+    background-color: #2D672D;
+    color: #fff;
+    flex-grow: 1;
+    margin-top: 50px;
+    margin-bottom: 10%;
+    overflow-y: auto;
+    width: 80%;
+    
+    
+}
+
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #1E4B1E;
+    color: #fff;
+    align-items: center;
+    padding: 15px 50px;
+    box-sizing: border-box;
+    z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+}
+
+.nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-grow: 1;
+}
+
+.nav-bar a {
+    color: #fff;
+    font-size: 25px;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.notification {
+    margin-left: auto;
+}
+
+.notification img {
+    width: 35px;
+    height: 35px;
+}
+
+.content {
+    margin-left: 12%; /* Adjusted for better alignment */
+    padding: 20px;
+    background-color: #fff;
+    margin-top: 20px;
+    width: 80%; /* Adjusted width */
+    border-radius: 10px;
+    border: 2px solid #000;
+   
+}
+
+.notifications-title {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 20px 0;
+    color: #000;
+    text-align: center;
+}
+
+.notification-container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    min-height: 300px;
+    margin: 0 auto; /* Centered the container */
+    width: 90%; /* Adjusted width */
+    height: 375px;
+}
+
+.all-unread-container {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 20px 30px;
+}
+
+.all-box, .unread-box {
+    color: #000;
+    font-weight: bold;
+    font-size: 18px;
+}
