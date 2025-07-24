@@ -26,12 +26,15 @@ if ($stmt->fetch()) {
 $stmt->close();
 
 $notif_query = "
-    SELECT pur.id, pur.created_at, pur.is_read, pur.department, u.first_name, u.last_name
+    SELECT pur.id, pur.user_id, pur.created_at, pur.is_read, pur.department, pur.status, 
+           pur.reviewed_at, pur.reviewed_by,
+           u.first_name, u.last_name
     FROM profile_update_requests pur
     JOIN users u ON pur.user_id = u.id
-    WHERE pur.status = 'pending'
-    ORDER BY pur.is_read ASC, pur.created_at DESC
-    LIMIT 2
+    ORDER BY 
+        CASE WHEN pur.status = 'pending' THEN 0 ELSE 1 END ASC,
+        pur.is_read ASC,
+        CASE WHEN pur.status = 'pending' THEN pur.created_at ELSE pur.reviewed_at END DESC
 ";
 
 $notif_result = $conn->query($notif_query);
@@ -43,28 +46,45 @@ while ($row = $notif_result->fetch_assoc()) {
 // Helper for "15 minutes ago"
 function time_elapsed_string($datetime, $full = false)
 {
-    $now = new DateTime;
-    $ago = new DateTime($datetime);
+    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
     $diff = $now->diff($ago);
+
+    // Calculate weeks and remaining days
+    $weeks = floor($diff->d / 7);
+    $days = $diff->d % 7;
 
     $string = [
         'y' => 'year',
         'm' => 'month',
+        'w' => 'week',
         'd' => 'day',
         'h' => 'hour',
         'i' => 'minute',
         's' => 'second'
     ];
-    foreach ($string as $k => &$v) {
-        if ($diff->$k) {
-            $v = $diff->$k . ' ' . $v . ($diff->$k > 1 ? 's' : '');
+
+    // Build the parts array with actual values
+    $parts = [];
+    foreach ($string as $unit => $text) {
+        if ($unit === 'w') {
+            $value = $weeks;
+        } elseif ($unit === 'd') {
+            $value = $days;
         } else {
-            unset($string[$k]);
+            $value = $diff->$unit;
+        }
+
+        if ($value > 0) {
+            $parts[] = $value . ' ' . $text . ($value > 1 ? 's' : '');
         }
     }
 
-    if (!$full) $string = array_slice($string, 0, 1);
-    return $string ? implode(', ', $string) . ' ago' : 'just now';
+    if (!$full) {
+        $parts = array_slice($parts, 0, 1);
+    }
+
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
 ?>
 <!DOCTYPE html>
@@ -137,38 +157,59 @@ function time_elapsed_string($datetime, $full = false)
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
 
-                    <?php if (count($notifications) === 0): ?>
-                        <div class="notification-item">
-                            <div class="notification-content">
-                                <div class="notification-title">No new notifications</div>
+                    <div class="notification-list">
+                        <?php if (count($notifications) === 0): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No profile update requests</div>
+                                </div>
                             </div>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($notifications as $notif): ?>
-                            <div class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>">
-                                <a href="supereach.php?id=<?= $notif['id'] ?>" class="notification-link">
-                                    <div class="notification-icon">
-                                        <i class="fas fa-exclamation-triangle"></i>
-                                    </div>
-                                    <div class="notification-content">
-                                        <div class="notification-title">Admin Profile Update</div>
-                                        <div class="notification-message">
-                                            <?= htmlspecialchars($notif['department']) ?> Administrator requested to update their profile.
+                        <?php else: ?>
+                            <?php foreach ($notifications as $notif): ?>
+                                <div class="notification-item 
+                         <?= $notif['is_read'] == 0 ? 'unread' : '' ?> 
+                         status-<?= htmlspecialchars($notif['status']) ?>">
+                                    <a href="supereach.php?id=<?= $notif['id'] ?>" class="notification-link">
+                                        <div class="notification-icon">
+                                            <?php if ($notif['status'] == 'pending'): ?>
+                                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                                            <?php elseif ($notif['status'] == 'approved'): ?>
+                                                <i class="fas fa-check-circle text-success"></i>
+                                            <?php else: ?>
+                                                <i class="fas fa-times-circle text-danger"></i>
+                                            <?php endif; ?>
                                         </div>
-                                        <div class="notification-time">
-                                            <?= time_elapsed_string($notif['created_at']) ?>
+                                        <div class="notification-content">
+                                            <div class="notification-title">
+                                                Profile Update <?= ucfirst($notif['status']) ?>
+                                                <span class="badge badge-<?=
+                                                                            $notif['status'] == 'pending' ? 'warning' : ($notif['status'] == 'approved' ? 'success' : 'danger')
+                                                                            ?>">
+                                                    <?= ucfirst($notif['status']) ?>
+                                                </span>
+                                            </div>
+                                            <div class="notification-message">
+                                                <?= htmlspecialchars($notif['department']) ?> Administrator requested to update their profile.
+                                            </div>
+                                            <div class="notification-time">
+                                                <?php if ($notif['status'] == 'pending'): ?>
+                                                    Requested <?= time_elapsed_string($notif['created_at']) ?>
+                                                <?php else: ?>
+                                                    <?= ucfirst($notif['status']) ?> by
+                                                    <?= htmlspecialchars($notif['reviewed_by']) ?>
+                                                    <?= time_elapsed_string($notif['reviewed_at']) ?>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
-                                    </div>
-                                </a>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
 
-                    <?php if (count($notifications) > 1): ?>
-                        <div class="notification-footer">
-                            <a href="supernotif.php" class="view-all">View All Notifications</a>
-                        </div>
-                    <?php endif; ?>
+                    <div class="notification-footer">
+                        <a href="supernotif.php" class="view-all">View All Notifications</a>
+                    </div>
                 </div>
             </div>
 

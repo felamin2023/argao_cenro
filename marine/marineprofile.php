@@ -35,25 +35,28 @@ $phone = htmlspecialchars($user['phone'] ?? '');
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marine and Coastal Informations</title>
+    <title>Profile</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <link rel="stylesheet" href="/denr/superadmin/css/marineprofile.css">
-    <link rel="stylesheet" href="/denr/superadmin/js/marineprofile.js">
-
-
+    <link rel="stylesheet" href="/denr/superadmin/css/treeprofile.css">
+    <!-- Remove or fix this line: -->
+    <!-- <link rel="stylesheet" href="/denr/superadmin/js/treeprofile.js"> -->
+    <!-- If you have a JS file, use: -->
+    <!-- <script src="/denr/superadmin/js/treeprofile.js"></script> -->
 </head>
 
 <body>
+
+
     <header>
         <div class="logo">
-            <a href="marinehome.php">
+            <a href="treehome.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
 
         <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
+        <button class="mobile-toggle" aria-label="Toggle menu">
             <i class="fas fa-bars"></i>
         </button>
 
@@ -61,27 +64,26 @@ $phone = htmlspecialchars($user['phone'] ?? '');
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
                     <i class="fas fa-bars"></i>
                 </div>
                 <div class="dropdown-menu center">
-                    <a href="mpa-management.php" class="dropdown-item">
-                        <i class="fas fa-water"></i>
-                        <span>MPA Management</span>
-                    </a>
-                    <a href="habitat.php" class="dropdown-item">
+                    <a href="treecutting.php" class="dropdown-item">
                         <i class="fas fa-tree"></i>
-                        <span>Habitat Assessment</span>
+                        <span>Tree Cutting</span>
                     </a>
-                    <a href="species.php" class="dropdown-item">
-                        <i class="fas fa-fish"></i>
-                        <span>Species Monitoring</span>
+                    <a href="lumber.php" class="dropdown-item">
+                        <i class="fas fa-store"></i>
+                        <span>Lumber Dealers</span>
                     </a>
-                    <a href="reports.php" class="dropdown-item">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Reports & Analytics</span>
+                    <a href="chainsaw.php" class="dropdown-item">
+                        <i class="fas fa-tools"></i>
+                        <span>Registered Chainsaw</span>
                     </a>
-
+                    <a href="woodprocessing.php" class="dropdown-item">
+                        <i class="fas fa-industry"></i>
+                        <span>Wood Processing</span>
+                    </a>
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
                         <span>Incident Reports</span>
@@ -93,7 +95,7 @@ $phone = htmlspecialchars($user['phone'] ?? '');
             <!-- Messages Icon -->
             <div class="nav-item">
                 <div class="nav-icon">
-                    <a href="marinemessage.php">
+                    <a href="treemessage.php" aria-label="Messages">
                         <i class="fas fa-envelope" style="color: black;"></i>
                     </a>
                 </div>
@@ -101,7 +103,7 @@ $phone = htmlspecialchars($user['phone'] ?? '');
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
                     <i class="fas fa-bell"></i>
                     <span class="badge">1</span>
                 </div>
@@ -112,31 +114,31 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                     </div>
 
                     <div class="notification-item unread">
-                        <a href="marineeach.php?id=1" class="notification-link">
+                        <a href="treeeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                                <i class="fas fa-exclamation-triangle"></i>
                             </div>
                             <div class="notification-content">
-                                <div class="notification-title">Marine Pollution Alert</div>
-                                <div class="notification-message">Community member reported plastic waste dumping in Lawis Beach.</div>
-                                <div class="notification-time">10 minutes ago</div>
+                                <div class="notification-title">Illegal Logging Alert</div>
+                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
+                                <div class="notification-time">15 minutes ago</div>
                             </div>
                         </a>
                     </div>
 
                     <div class="notification-footer">
-                        <a href="marinenotif.php" class="view-all">View All Notifications</a>
+                        <a href="treenotification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon <?php echo $current_page === 'marineprofile.php' ? 'active' : ''; ?>">
+                <div class="nav-icon active" aria-haspopup="true" aria-expanded="false">
                     <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
-                    <a href="marineprofile.php" class="dropdown-item active-page">
+                    <a href="treeprofile.php" class="dropdown-item active-page">
                         <i class="fas fa-user-edit"></i>
                         <span>Edit Profile</span>
                     </a>
@@ -149,7 +151,6 @@ $phone = htmlspecialchars($user['phone'] ?? '');
         </div>
     </header>
 
-
     <!-- Notification Popup -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
@@ -158,11 +159,12 @@ $phone = htmlspecialchars($user['phone'] ?? '');
             <h1 class="profile-title">Admin Profile</h1>
             <p class="profile-subtitle">View and manage your account information</p>
         </div>
-
         <div class="profile-body-main">
             <form id="profile-form" class="profile-body" enctype="multipart/form-data">
                 <div class="profile-picture-container">
-                    <img src="<?php echo $profile_image; ?>" alt="Profile Picture" class="profile-picture" id="profile-picture" onerror="this.onerror=null;this.src='../default-profile.jpg';">
+                    <img src="<?php echo $profile_image; ?>" alt="Profile Picture" class="profile-picture" id="profile-picture"
+                        onerror="this.onerror=null;this.src='/denr/superadmin/default-profile.jpg';">
+
                     <div class="profile-picture-placeholder" id="profile-placeholder" style="display:none;">
                         <i class="fas fa-user"></i>
                     </div>
@@ -174,11 +176,11 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                 <div class="profile-info-grid ">
                     <div class="profile-info-item">
                         <div class="profile-info-label">First Name</div>
-                        <input type="text" class="profile-info-value" id="first-name" name="first_name" value="<?php echo $first_name; ?>" required>
+                        <input type="text" class="profile-info-value" id="first-name" name="first_name" value="<?php echo $first_name; ?>">
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Last Name</div>
-                        <input type="text" class="profile-info-value" id="last-name" name="last_name" value="<?php echo $last_name; ?>" required>
+                        <input type="text" class="profile-info-value" id="last-name" name="last_name" value="<?php echo $last_name; ?>">
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Age</div>
@@ -186,7 +188,7 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Email</div>
-                        <input type="email" class="profile-info-value" id="email" name="email" value="<?php echo $email; ?>" disabled>
+                        <input type="email" class="profile-info-value" id="email" name="email" value="<?php echo $email; ?>">
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Role</div>
@@ -214,7 +216,6 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                 </div>
             </form>
         </div>
-
     </div>
 
     <!-- Profile Update Confirmation Modal -->
@@ -236,6 +237,19 @@ $phone = htmlspecialchars($user['phone'] ?? '');
         </div>
     </div>
 
+    <div id="otpModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeModal">&times;</span>
+            <h3>Email Verification</h3>
+            <p>We've sent a 6-digit code to your new email address.</p>
+            <input type="text" id="otpInput" maxlength="6" placeholder="Enter OTP code">
+            <div style="margin-top:10px; display: flex; align-items: center; gap: 10px;">
+                <button type="button" id="sendOtpBtn">Verify</button>
+                <button type="button" id="resendOtpBtn">Resend</button>
+                <span id="otpMessage" style="color:red; margin-left: 10px; font-size: 13px;"></span>
+            </div>
+        </div>
+    </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
@@ -270,7 +284,7 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.class.contains('center') ?
+                        menu.style.transform = menu.classList.contains('center') ?
                             'translateX(-50%) translateY(10px)' :
                             'translateY(10px)';
                     }
@@ -369,7 +383,15 @@ $phone = htmlspecialchars($user['phone'] ?? '');
             const closeInfoBtn = document.getElementById('close-info-modal-btn');
             const notification = document.getElementById('profile-notification');
             let pendingFormData = null;
-            // Intercept form submit to show confirmation modal
+
+            // Store original email for OTP check
+            const originalEmail = "<?php echo $email; ?>";
+            let emailChanged = false;
+
+            document.getElementById('email').addEventListener('input', function(e) {
+                emailChanged = (e.target.value.trim().toLowerCase() !== originalEmail.trim().toLowerCase());
+            });
+
             profileForm.addEventListener('submit', function(e) {
                 e.preventDefault();
                 pendingFormData = new FormData(profileForm);
@@ -380,46 +402,127 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                 confirmModal.style.display = 'none';
                 pendingFormData = null;
             };
-            confirmBtn.onclick = function() {
-                if (!pendingFormData) return;
-                confirmBtn.disabled = true;
 
-                fetch('../backend/marine/update_marine_profile.php', {
+            confirmBtn.onclick = async function() {
+                if (!pendingFormData) return;
+
+                try {
+                    confirmBtn.disabled = true;
+                    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+                    // If email changed, request OTP first
+                    if (emailChanged) {
+                        pendingFormData.append('request_otp', '1');
+                    }
+
+                    const response = await fetch('../backend/tree/update_tree_profile.php', {
                         method: 'POST',
                         body: pendingFormData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        confirmBtn.disabled = false;
-                        confirmModal.style.display = 'none';
-
-                        if (data.success) {
-                            infoModal.style.display = 'flex';
-                        } else {
-                            notification.textContent = data.error || 'Update failed.';
-                            notification.style.display = 'block';
-                            notification.style.opacity = '1';
-                            setTimeout(() => {
-                                notification.style.opacity = '0';
-                                setTimeout(() => {
-                                    notification.style.display = 'none';
-                                }, 400);
-                            }, 3000);
-                        }
-
-                        pendingFormData = null;
-                    })
-                    .catch(() => {
-                        confirmBtn.disabled = false;
-                        confirmModal.style.display = 'none';
-                        alert('An error occurred while updating profile.');
-                        pendingFormData = null;
                     });
+
+                    const data = await response.json();
+
+                    if (data.error && data.error.includes('already have a pending')) {
+                        showNotification(data.error, 'error');
+                        confirmModal.style.display = 'none';
+                        return;
+                    }
+
+                    if (data.otp_required) {
+                        showOtpModal();
+                        return;
+                    }
+
+                    if (data.success) {
+                        infoModal.style.display = 'flex';
+                    } else {
+                        showNotification(data.error || 'Update failed', 'error');
+                    }
+                } catch (error) {
+                    showNotification('Network error occurred. Please try again.', 'error');
+                } finally {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = '<i class="fas fa-save"></i> Confirm Update';
+                    confirmModal.style.display = 'none';
+                }
             };
+
+            function showOtpModal() {
+                document.getElementById('otpModal').style.display = 'block';
+                document.getElementById('otpMessage').textContent = '';
+            }
+
+            function hideOtpModal() {
+                document.getElementById('otpModal').style.display = 'none';
+            }
+
+            document.getElementById('sendOtpBtn').addEventListener('click', verifyOtp);
+            document.getElementById('resendOtpBtn').addEventListener('click', resendOtp);
+            document.getElementById('closeModal').addEventListener('click', hideOtpModal);
+
+            async function verifyOtp() {
+                const otpInput = document.getElementById('otpInput').value;
+                if (!otpInput || otpInput.length !== 6) {
+                    document.getElementById('otpMessage').textContent = 'Please enter a valid 6-digit OTP';
+                    return;
+                }
+                // Always create a fresh FormData for OTP verification
+                const profileForm = document.getElementById('profile-form');
+                const verifyFormData = new FormData(profileForm);
+                verifyFormData.append('otp_code', otpInput);
+
+                try {
+                    const response = await fetch('../backend/tree/update_tree_profile.php', {
+                        method: 'POST',
+                        body: verifyFormData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        hideOtpModal();
+                        infoModal.style.display = 'flex';
+                    } else {
+                        document.getElementById('otpMessage').textContent = data.error || 'Invalid OTP';
+                    }
+                } catch (error) {
+                    document.getElementById('otpMessage').textContent = 'Verification failed. Please try again.';
+                }
+            }
+
+            async function resendOtp() {
+                const resendBtn = document.getElementById('resendOtpBtn');
+                resendBtn.disabled = true;
+                resendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+                try {
+                    // Get the current email value from the input
+                    const email = document.getElementById('email').value;
+                    const formData = new FormData();
+                    formData.append('email', email);
+                    formData.append('request_otp', '1');
+
+                    const response = await fetch('../backend/tree/update_tree_profile.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.otp_required) {
+                        document.getElementById('otpMessage').textContent = 'New OTP sent to your email';
+                    } else {
+                        document.getElementById('otpMessage').textContent = data.error || 'Failed to resend OTP';
+                    }
+                } catch (error) {
+                    document.getElementById('otpMessage').textContent = 'Failed to resend OTP';
+                } finally {
+                    resendBtn.disabled = false;
+                    resendBtn.innerHTML = 'Resend';
+                }
+            }
 
             closeInfoBtn.onclick = function() {
                 infoModal.style.display = 'none';
-                // Show notification
                 notification.textContent = 'Profile update request sent!';
                 notification.style.display = 'block';
                 notification.style.opacity = '1';
@@ -431,6 +534,26 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                     }, 400);
                 }, 1500);
             };
+
+            // Notification function
+            function showNotification(message, type = 'success') {
+                const notification = document.getElementById('profile-notification');
+                notification.textContent = message;
+                notification.style.display = 'block';
+                // Only error or pending gets red, success gets black
+                if (type === 'error' || (message && message.toLowerCase().includes('pending'))) {
+                    notification.style.backgroundColor = '#ff4444';
+                } else {
+                    notification.style.backgroundColor = '#323232';
+                }
+                notification.style.opacity = '1';
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => {
+                        notification.style.display = 'none';
+                    }, 400);
+                }, 3000);
+            }
         });
     </script>
 </body>

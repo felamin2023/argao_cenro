@@ -127,7 +127,9 @@ header {
   transition: var(--transition);
   padding: 0;
 }
-
+.dropdown-menu::-webkit-scrollbar {
+  display: none;
+}
 /* Notification-specific dropdown styles */
 .notifications-dropdown {
   min-width: 350px;
@@ -757,4 +759,9 @@ table tbody tr:last-child td:last-child {
 .edit-form-maindiv {
   display: flex;
   gap: 20px;
+}
+.notification-list {
+  max-height: 375px;
+  overflow-y: auto;
+  width: fit-content;
 }
