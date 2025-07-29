@@ -502,7 +502,9 @@ header {
 }
 
 .approve-button,
-.reject-button {
+.reject-button,
+#deleteBtn,
+#backBtn {
   background-color: var(--primary-color);
   color: white;
   border: none;
@@ -518,4 +520,128 @@ header {
   background-color: var(--primary-dark);
   transform: translateY(-2px);
   box-shadow: var(--box-shadow);
+}
+
+/* Confirmation Modal Styles */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 20000;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(30, 30, 30, 0.35);
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 36px 32px 28px 32px;
+  width: 50%;
+  max-width: 95vw;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  position: relative;
+  margin: 15% auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.modal-content div {
+  display: flex;
+  gap: 20px;
+}
+
+.modal-content p {
+  font-size: 1.15rem;
+  color: #1a3d5d;
+  margin-bottom: 18px;
+}
+
+.modal-content label {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.modal-content input[type="text"] {
+  width: 90%;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid #bbb;
+  margin-bottom: 18px;
+  font-size: 1rem;
+}
+
+.modal-content button {
+  margin: 0 8px;
+  min-width: 110px;
+  padding: 10px 0;
+  border-radius: 5px;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.modal-content .approve-button {
+  background: #28a745;
+  color: #fff;
+}
+
+.modal-content .reject-button {
+  background: #dc3545;
+  color: #fff;
+}
+
+.modal-content .delete-button {
+  background: #dc3545;
+  color: #fff;
+}
+
+.modal-content .close-modal {
+  background: #eee;
+  color: #333;
+}
+
+.modal-content .close-modal:hover {
+  background: #ccc;
+}
+
+.modal-content .approve-button:hover {
+  background: #218838;
+}
+
+.modal-content .reject-button:hover,
+.modal-content .delete-button:hover {
+  background: #b71c1c;
+}
+
+/* Notification Popup for Approve/Reject */
+#action-notification {
+  display: none;
+  position: fixed;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #323232;
+  color: #fff;
+  padding: 16px 36px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  z-index: 30000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  text-align: center;
+  min-width: 220px;
+  max-width: 90vw;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#action-notification.success {
+  background: #28a745;
+}
+#action-notification.error {
+  background: #dc3545;
 }

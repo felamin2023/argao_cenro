@@ -14,6 +14,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Registration</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/denr/superadmin/css/superregister.css">
     <style>
         :root {
             --primary: #2e7d32;
@@ -230,84 +231,419 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
             border-radius: 5px;
             font-weight: bold;
         }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0, 0, 0);
+            background-color: rgba(0, 0, 0, 0.4);
+            padding-top: 60px;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 400px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        #otpInput {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            background: var(--light-bg);
+        }
+
+        #sendOtpBtn,
+        #resendOtpBtn {
+            padding: 10px 15px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #sendOtpBtn:hover,
+        #resendOtpBtn:hover {
+            background: var(--primary-dark);
+        }
+
+        #otpMessage {
+            margin-top: 10px;
+            font-size: 13px;
+            color: red;
+        }
+
+        /* Loading overlay styles */
+        #loadingScreen {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.1);
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-direction: row;
+            -webkit-backdrop-filter: blur(3px);
+            backdrop-filter: blur(3px);
+        }
+
+        #loadingScreen .loading-text {
+            font-size: 1.5rem;
+            color: #008031;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        #loadingLogo {
+            width: 60px;
+            height: 60px;
+            transition: width 0.5s, height 0.5s;
+        }
     </style>
 </head>
 
 <body>
-
-
-    <?php if ($success): ?>
-        <div class="success-message">
-            <div class="message-content">
-                <h1>Successfully Registered</h1>
-                <p>You can now log in to your account.</p>
-                <a href="user_login.php">OKAY</a>
-            </div>
-        </div>
-    <?php endif; ?>
+    <!-- Loading overlay -->
+    <div id="loadingScreen">
+        <div class="loading-text">Loading...</div>
+        <img id="loadingLogo" src="../denr.png" alt="Loading Logo">
+    </div>
     <div class="form-container">
         <div class="form-header">
             <div class="form-icon">
-                <i class="fas fa-user-plus"></i> <!-- Yellow user-plus icon -->
+                <i class="fas fa-user-plus"></i>
             </div>
             <h2>Create Account</h2>
         </div>
-
-        <form action="../backend/user/register.php" method="POST">
-            <div class="form-group">
-                <label>Username</label>
-                <input type="text" name="username"
-                    placeholder="<?= !empty($errors['username']) ? $errors['username'] : 'Username' ?>"
-                    value="<?= !empty($errors['username']) ? '' : htmlspecialchars($old['username'] ?? '') ?>"
-                    class="<?= !empty($errors['username']) ? 'error' : '' ?>" required>
-            </div>
-
+        <form id="registerForm" action="../backend/user/register.php" method="POST" autocomplete="off">
             <div class="form-group">
                 <label>Email</label>
-                <input type="email" name="email"
-                    placeholder="<?= !empty($errors['email']) ? $errors['email'] : 'Email' ?>"
-                    value="<?= !empty($errors['email']) ? '' : htmlspecialchars($old['email'] ?? '') ?>"
-                    class="<?= !empty($errors['email']) ? 'error' : '' ?>" required>
+                <input type="email" name="email" id="email"
+                    placeholder="Email" required>
             </div>
-
             <div class="form-group">
                 <label>Phone Number</label>
-                <input type="text" name="phone"
-                    placeholder="<?= !empty($errors['phone']) ? $errors['phone'] : 'Phone Number (e.g. 09123456789)' ?>"
-                    value="<?= !empty($errors['phone']) ? '' : htmlspecialchars($old['phone'] ?? '') ?>"
-                    class="<?= !empty($errors['phone']) ? 'error' : '' ?>" required>
+                <input type="text" name="phone" id="phone"
+                    placeholder="Phone Number (e.g. 09123456789)" required disabled>
             </div>
-
-            <div class="form-group">
+            <div class="form-group" style="position:relative;">
                 <label>Password</label>
                 <div class="input-wrapper">
                     <input type="password" name="password" id="password"
-                        placeholder="<?= !empty($errors['password']) ? $errors['password'] : 'Password' ?>"
-                        class="<?= !empty($errors['password']) ? 'error' : '' ?>" required>
+                        placeholder="Password" required disabled>
                     <button type="button" class="password-toggle" id="togglePassword">
                         <i class="fas fa-eye-slash"></i>
                     </button>
                 </div>
             </div>
-
-            <button type="submit" class="submit-btn">Register</button>
-
+            <div class="form-group" style="position:relative;">
+                <label>Confirm Password</label>
+                <div class="input-wrapper">
+                    <input type="password" name="confirm_password" id="confirm_password"
+                        placeholder="Confirm Password" required disabled>
+                    <button type="button" class="password-toggle" id="toggleConfirmPassword">
+                        <i class="fas fa-eye-slash"></i>
+                    </button>
+                </div>
+            </div>
+            <button type="button" id="verifyEmailBtn">Verify Email</button>
+            <button type="submit" id="registerBtn" style="display:none;">Register</button>
+            <div id="formError" style="color:red;margin-top:10px;"></div>
             <div class="form-footer">
                 <p>Already have an account? <a href="user_login.php">Login</a></p>
             </div>
         </form>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const toggleBtn = document.getElementById('togglePassword');
-            const passwordInput = document.getElementById('password');
+    <!-- OTP Modal -->
+    <div id="otpModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeModal">&times;</span>
+            <h3>Email Verification</h3>
+            <input type="text" id="otpInput" maxlength="6" placeholder="Enter OTP code">
+            <div style="margin-top:10px; display: flex; align-items: center; gap: 10px;">
+                <button type="button" id="sendOtpBtn">Send</button>
+                <button type="button" id="resendOtpBtn">Resend</button>
+                <span id="otpMessage" style="color:red; margin-left: 10px; font-size: 13px;"></span>
+            </div>
+        </div>
+    </div>
 
-            toggleBtn.addEventListener('click', function() {
-                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordInput.setAttribute('type', type);
-                this.innerHTML = type === 'password' ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+    <div class="success-message" id="successMessage" style="display:none;">
+        <div class="message-content">
+            <h1>Successfully Registered</h1>
+            <p>You can now log in to your account.</p>
+            <a href="user_login.php">OKAY</a>
+        </div>
+    </div>
+
+    <script>
+        // Password toggle logic
+        document.addEventListener('DOMContentLoaded', function() {
+            function togglePassword(inputId, btnId) {
+                const btn = document.getElementById(btnId);
+                const input = document.getElementById(inputId);
+                btn.addEventListener('click', function() {
+                    const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                    input.setAttribute('type', type);
+                    btn.innerHTML = type === 'password' ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+                });
+            }
+            togglePassword('password', 'togglePassword');
+            togglePassword('confirm_password', 'toggleConfirmPassword');
+
+            // Email verification and OTP logic
+            const verifyEmailBtn = document.getElementById('verifyEmailBtn');
+            const emailInput = document.getElementById('email');
+            const phoneInput = document.getElementById('phone');
+            const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirm_password');
+            const registerBtn = document.getElementById('registerBtn');
+            const formError = document.getElementById('formError');
+            const otpModal = document.getElementById('otpModal');
+            const closeModal = document.getElementById('closeModal');
+            const otpInput = document.getElementById('otpInput');
+            const sendOtpBtn = document.getElementById('sendOtpBtn');
+            const resendOtpBtn = document.getElementById('resendOtpBtn');
+            const otpMessage = document.getElementById('otpMessage');
+            const successMessage = document.getElementById('successMessage');
+            const loadingScreen = document.getElementById('loadingScreen');
+            let emailVerified = false;
+
+            function showLoading() {
+                loadingScreen.style.display = 'flex';
+            }
+
+            function hideLoading() {
+                loadingScreen.style.display = 'none';
+            }
+
+            // Email validation function
+            function isValidEmail(email) {
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            }
+
+            verifyEmailBtn.addEventListener('click', function() {
+                formError.textContent = '';
+                const email = emailInput.value.trim();
+
+                if (!email) {
+                    formError.textContent = 'Please enter your email.';
+                    return;
+                }
+
+                if (!isValidEmail(email)) {
+                    formError.textContent = 'Please enter a valid email address.';
+                    return;
+                }
+
+                verifyEmailBtn.disabled = true;
+                showLoading();
+
+                const formData = new FormData();
+                formData.append('action', 'send_otp');
+                formData.append('email', email);
+
+                fetch('../backend/user/register.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        hideLoading();
+                        verifyEmailBtn.disabled = false;
+                        if (data.success) {
+                            otpModal.style.display = 'block';
+                            // For testing only - remove in production
+                            console.log('OTP for testing:', data.otp);
+                        } else {
+                            formError.textContent = data.error || 'Email verification failed.';
+                        }
+                    })
+                    .catch(() => {
+                        hideLoading();
+                        verifyEmailBtn.disabled = false;
+                        formError.textContent = 'Network error.';
+                    });
             });
+
+            closeModal.addEventListener('click', function() {
+                otpModal.style.display = 'none';
+            });
+
+            sendOtpBtn.addEventListener('click', function() {
+                otpMessage.textContent = '';
+                const otp = otpInput.value.trim();
+
+                if (!otp || !/^\d{6}$/.test(otp)) {
+                    otpMessage.textContent = 'Please enter a valid 6-digit OTP.';
+                    return;
+                }
+
+                showLoading();
+
+                const formData = new FormData();
+                formData.append('action', 'verify_otp');
+                formData.append('otp', otp);
+
+                fetch('../backend/user/register.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        hideLoading();
+                        if (data.success) {
+                            otpModal.style.display = 'none';
+                            emailVerified = true;
+                            phoneInput.disabled = false;
+                            passwordInput.disabled = false;
+                            confirmPasswordInput.disabled = false;
+                            registerBtn.style.display = '';
+                            verifyEmailBtn.style.display = 'none';
+                            formError.textContent = '';
+                        } else {
+                            otpMessage.textContent = data.error || 'Incorrect OTP.';
+                        }
+                    })
+                    .catch(() => {
+                        hideLoading();
+                        otpMessage.textContent = 'Network error.';
+                    });
+            });
+
+            resendOtpBtn.addEventListener('click', function() {
+                const email = emailInput.value.trim();
+                showLoading();
+
+                const formData = new FormData();
+                formData.append('action', 'send_otp');
+                formData.append('email', email);
+
+                fetch('../backend/user/register.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        hideLoading();
+                        if (data.success) {
+                            otpMessage.textContent = 'OTP resent! Check your email.';
+                            // For testing only - remove in production
+                            console.log('New OTP for testing:', data.otp);
+                        } else {
+                            otpMessage.textContent = data.error || 'Failed to resend OTP.';
+                        }
+                    })
+                    .catch(() => {
+                        hideLoading();
+                        otpMessage.textContent = 'Network error.';
+                    });
+            });
+
+            // Registration submit
+            document.getElementById('registerForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                if (!emailVerified) {
+                    formError.textContent = 'Please verify your email first.';
+                    return;
+                }
+
+                const phone = phoneInput.value.trim();
+                const password = passwordInput.value;
+                const confirmPassword = confirmPasswordInput.value;
+
+                // Additional client-side validation
+                if (!phone) {
+                    formError.textContent = 'Phone number is required.';
+                    return;
+                }
+
+                if (!/^09\d{9}$/.test(phone)) {
+                    formError.textContent = 'Please enter a valid phone number (e.g., 09123456789).';
+                    return;
+                }
+
+                if (!password || !confirmPassword) {
+                    formError.textContent = 'Both password fields are required.';
+                    return;
+                }
+
+                if (password !== confirmPassword) {
+                    formError.textContent = 'Passwords do not match.';
+                    return;
+                }
+
+                if (password.length < 8) {
+                    formError.textContent = 'Password must be at least 8 characters.';
+                    return;
+                }
+
+                showLoading();
+
+                const formData = new FormData(this);
+                formData.append('action', 'register');
+
+                fetch('../backend/user/register.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        hideLoading();
+                        if (data.success) {
+                            window.location.href = 'user_register.php?success=1';
+                        } else {
+                            formError.textContent = data.error || 'Registration failed.';
+                        }
+                    })
+                    .catch(() => {
+                        hideLoading();
+                        formError.textContent = 'Network error.';
+                    });
+            });
+
+            // Success message logic (handled by backend redirect)
+            <?php if (isset($_GET['success']) && $_GET['success'] == 1): ?>
+                successMessage.style.display = 'flex';
+            <?php endif; ?>
         });
     </script>
 </body>

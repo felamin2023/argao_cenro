@@ -232,8 +232,11 @@ if (!empty($request['image'])) {
             <div id="approveModal" class="modal" style="display:none;">
                 <div class="modal-content">
                     <p>Are you sure you want to approve this profile update?</p>
-                    <button id="confirmApprove" class="approve-button">Yes, Approve</button>
-                    <button class="close-modal">Cancel</button>
+                    <div>
+                        <button id="confirmApprove" class="approve-button">Yes, Approve</button>
+                        <button class="close-modal">Cancel</button>
+                    </div>
+
                 </div>
             </div>
             <div id="rejectModal" class="modal" style="display:none;">
@@ -241,21 +244,26 @@ if (!empty($request['image'])) {
                     <p>Are you sure you want to reject this profile update?</p>
                     <label for="reason">Reason for rejection:</label>
                     <input type="text" id="reason" name="reason_for_rejection" style="width:100%;">
-                    <button id="confirmReject" class="reject-button">Yes, Reject</button>
-                    <button class="close-modal">Cancel</button>
+                    <div>
+                        <button id="confirmReject" class="reject-button">Yes, Reject</button>
+                        <button class="close-modal">Cancel</button>
+                    </div>
                 </div>
             </div>
             <div id="deleteModal" class="modal" style="display:none;">
                 <div class="modal-content">
                     <p>Are you sure you want to delete this profile update request?</p>
-                    <button id="confirmDelete" class="delete-button">Yes, Delete</button>
-                    <button class="close-modal">Cancel</button>
+                    <div>
+                        <button id="confirmDelete" class="delete-button">Yes, Delete</button>
+                        <button class="close-modal">Cancel</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- JavaScript remains unchanged -->
+    <div id="action-notification"></div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
@@ -360,6 +368,21 @@ if (!empty($request['image'])) {
                 });
             }
 
+            // Notification popup for approve/reject
+            function showActionNotification(message, type = 'success') {
+                const notif = document.getElementById('action-notification');
+                notif.textContent = message;
+                notif.className = type === 'error' ? 'error' : 'success';
+                notif.style.display = 'block';
+                notif.style.opacity = '1';
+                setTimeout(() => {
+                    notif.style.opacity = '0';
+                    setTimeout(() => {
+                        notif.style.display = 'none';
+                    }, 400);
+                }, 1800);
+            }
+
             // Modal logic for approve/reject/delete/back
             const approveBtn = document.getElementById('approveBtn');
             const rejectBtn = document.getElementById('rejectBtn');
@@ -399,7 +422,10 @@ if (!empty($request['image'])) {
             if (confirmApprove) {
                 confirmApprove.addEventListener('click', function() {
                     formAction.value = 'approve';
-                    updateForm.submit();
+                    showActionNotification('Update request approved!', 'success');
+                    setTimeout(() => {
+                        updateForm.submit();
+                    }, 900);
                 });
             }
             if (confirmReject) {
@@ -416,7 +442,10 @@ if (!empty($request['image'])) {
                         }
                         reasonField.value = reasonInput.value;
                     }
-                    updateForm.submit();
+                    showActionNotification('Update request rejected.', 'error');
+                    setTimeout(() => {
+                        updateForm.submit();
+                    }, 900);
                 });
             }
             if (confirmDelete) {

@@ -1,60 +1,42 @@
 <?php
 session_start();
-ob_start();
+include '../backend/connection.php'; // ✅ Correct path
 
-// Database credentials
-$host = "localhost";
-$user = "root";
-$pass = "";
-$dbname = "cenro_argao";
+$email = ''; // Initialize safely
+$password = '';
+$error = '';
 
-$conn = new mysqli($host, $user, $pass, $dbname);
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
 
-// Default values
-$error = "";
-$old = ['username' => ''];
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $res = $stmt->get_result();
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $username = trim($_POST['username']);
-    $password = $_POST['password'];
-    $old['username'] = $username;
+    if ($res->num_rows === 1) {
+        $user = $res->fetch_assoc();
+        if (password_verify($password, $user['password'])) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['role'] = $user['role'];
 
-    if (empty($username)) {
-        $error = "Username is required";
-    } elseif (empty($password)) {
-        $error = "Password is required";
-    } else {
-        $stmt = $conn->prepare("SELECT id, username, password, department FROM users WHERE username = ?");
-        $stmt->bind_param("s", $username);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result && $result->num_rows === 1) {
-            $user = $result->fetch_assoc();
-
-            if (password_verify($password, $user['password'])) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['department'] = $user['department'];
-
-                header("Location: user_home.php");
-
-                ob_end_flush();
-                exit();
-            } else {
-                $error = "Incorrect password";
-            }
+            header("Location: user_home.php");
+            exit();
         } else {
-            $error = "Username not found";
+            $error = "Incorrect password.";
         }
-
-        $stmt->close();
+    } else {
+        $error = "Email not found.";
     }
+
+    $stmt->close();
 }
 ?>
+
+
+
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -62,8 +44,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Login Page</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <title>User Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --primary-color: #2e7d32;
@@ -401,33 +383,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <div class="logo-icon">🔒</div>
             </div>
             <h2>Welcome Back</h2>
+
             <?php if (!empty($error)): ?>
                 <p class="error-message"><?= htmlspecialchars($error) ?></p>
             <?php endif; ?>
+
             <form method="POST" action="">
                 <div class="input-group">
-                    <label for="username">Username</label>
+                    <label for="email">Email</label>
                     <div class="input-field">
-                        <input
-                            type="text"
-                            name="username"
-                            placeholder="<?= in_array($error, ['Username is required', 'Username not found']) ? htmlspecialchars($error) : 'Username' ?>"
-                            class="<?= in_array($error, ['Username is required', 'Username not found']) ? 'error' : '' ?>"
-                            value="<?= htmlspecialchars($old['username'] ?? '') ?>"
-                            required />
+                        <input type="email" name="email" value="<?= htmlspecialchars($email) ?>" placeholder="Enter your email" required>
+
                     </div>
                 </div>
 
                 <div class="input-group">
                     <label for="password">Password</label>
                     <div class="input-field">
-                        <input
-                            type="password"
+                        <input type="password"
                             name="password"
                             id="password"
-                            placeholder="<?= in_array($error, ['Password is required', 'Incorrect password']) ? htmlspecialchars($error) : 'Password' ?>"
-                            class="<?= in_array($error, ['Password is required', 'Incorrect password']) ? 'error' : '' ?>"
-                            required />
+                            placeholder="Enter your password"
+                            required>
                         <button type="button" class="password-toggle" id="togglePassword">
                             <i class="fas fa-eye-slash"></i>
                         </button>
@@ -443,7 +420,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </form>
         </div>
 
-        <!-- Forgot Password Form -->
+        <!-- Forgot Password Form (unchanged) -->
         <div class="forgot-password-form" id="forgotPasswordForm">
             <div class="logo">
                 <div class="logo-icon">🔑</div>
@@ -467,32 +444,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Password toggle functionality
             const togglePassword = document.getElementById('togglePassword');
             const passwordInput = document.getElementById('password');
-            const eyeIcon = togglePassword.querySelector('i');
-
-            // Initialize with eye-slash icon (password hidden)
-            eyeIcon.classList.remove('fa-eye');
-            eyeIcon.classList.add('fa-eye-slash');
 
             togglePassword.addEventListener('click', function() {
                 const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
                 passwordInput.setAttribute('type', type);
-
-                // Toggle eye icon
-                if (type === 'password') {
-                    eyeIcon.classList.replace('fa-eye', 'fa-eye-slash');
-                } else {
-                    eyeIcon.classList.replace('fa-eye-slash', 'fa-eye');
-                }
+                this.querySelector('i').classList.toggle('fa-eye-slash');
+                this.querySelector('i').classList.toggle('fa-eye');
             });
 
-            // Forgot password functionality
+            // Forgot password form toggle
             const forgotPasswordLink = document.getElementById('forgotPasswordLink');
             const backToLogin = document.getElementById('backToLogin');
             const loginForm = document.getElementById('loginForm');
             const forgotPasswordForm = document.getElementById('forgotPasswordForm');
-            const resetPasswordForm = document.getElementById('resetPasswordForm');
 
             forgotPasswordLink.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -506,17 +473,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 forgotPasswordForm.classList.remove('active');
             });
 
-            resetPasswordForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const email = document.getElementById('resetEmail').value;
-
-                // Here you would normally send the email to your server
-                alert('Password reset link would be sent to: ' + email);
-
-                // Reset and hide the form
-                resetPasswordForm.reset();
-                loginForm.classList.remove('blurred');
-                forgotPasswordForm.classList.remove('active');
+            // Form submission handling
+            document.querySelector('form').addEventListener('submit', function() {
+                // You can add client-side validation here if needed
             });
         });
     </script>

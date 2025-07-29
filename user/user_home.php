@@ -1,5 +1,44 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
+    header("Location: user_login.php");
+    exit();
+}
+include_once __DIR__ . '/../backend/connection.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $stmt->store_result();
+
+    if ($stmt->num_rows === 1) {
+        $stmt->bind_result($id, $hashed_password, $role);
+        $stmt->fetch();
+
+        if (password_verify($password, $hashed_password)) {
+            $_SESSION['user_id'] = $id;
+            $_SESSION['role'] = $role;
+
+            header("Location: user_home.php");
+            exit();
+        } else {
+            $error = "Incorrect password.";
+        }
+    } else {
+        $error = "User not found.";
+    }
+
+    $stmt->close();
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -312,9 +351,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -347,13 +394,20 @@
             padding: 90px 40px 40px 40px;
             max-width: 1200px;
             margin: 0 auto;
-            margin-top:-8%;
+            margin-top: -8%;
             animation: fadeIn 0.5s ease-out;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Content Header with Edit and Save Buttons */
@@ -408,7 +462,8 @@
             border-left: 4px solid var(--primary-color);
         }
 
-        h2, h3 {
+        h2,
+        h3 {
             color: var(--primary-color);
             margin-bottom: 20px;
             font-weight: 600;
@@ -475,14 +530,14 @@
             padding: 20px;
             box-shadow: var(--box-shadow);
         }
-        
+
         .chart-legend-container {
             display: flex;
             flex-direction: column;
             align-items: center;
             margin-top: 20px;
         }
-        
+
         .chart-legend {
             display: flex;
             flex-wrap: wrap;
@@ -490,13 +545,13 @@
             justify-content: center;
             margin-bottom: 15px;
         }
-        
+
         .legend-item {
             display: flex;
             align-items: center;
             font-size: 14px;
         }
-        
+
         .legend-color {
             width: 15px;
             height: 15px;
@@ -889,7 +944,7 @@
             .two-column {
                 grid-template-columns: 1fr;
             }
-            
+
             .stat-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
@@ -899,7 +954,7 @@
             .main-nav {
                 display: none;
             }
-            
+
             .mobile-menu-toggle {
                 display: block;
             }
@@ -909,19 +964,19 @@
             .main-content {
                 padding: 90px 20px 20px 20px;
             }
-            
+
             .stat-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .header-left .logo img {
                 height: 32px;
             }
-            
+
             .chart-container {
                 height: 300px;
             }
-            
+
             .edit-actions {
                 position: static;
                 justify-content: center;
@@ -940,16 +995,18 @@
                 width: auto;
                 justify-content: flex-start;
             }
-            
-            .filter-btn, .apply-filter-btn {
+
+            .filter-btn,
+            .apply-filter-btn {
                 padding: 8px 12px;
                 font-size: 13px;
             }
-            
-            .filter-btn i, .apply-filter-btn i {
+
+            .filter-btn i,
+            .apply-filter-btn i {
                 font-size: 11px;
             }
-            
+
             .filter-content {
                 min-width: 180px;
             }
@@ -974,29 +1031,31 @@
             display: block;
             margin: 0 auto;
         }
+
         .habitat-section {
             border: 1px solid darkgreen;
             border-left: none !important;
         }
     </style>
 </head>
+
 <body>
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
-                <div class="nav-item dropdown">
+            <div class="nav-item dropdown">
                 <div class="nav-icon">
                     <i class="fas fa-bars"></i>
                 </div>
@@ -1005,8 +1064,8 @@
                         <i class="fas fa-file-invoice"></i>
                         <span>Report Incident</span>
                     </a>
-                    
-                      <a href="useraddseed.php" class="dropdown-item">
+
+                    <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -1031,13 +1090,13 @@
                         <span>Chainsaw Permit</span>
                     </a>
                 </div>
-                </div>
-                
+            </div>
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-bell"></i>
+                    <i class="fas fa-bell"></i>
                     <span class="badge">1</span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
@@ -1045,7 +1104,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -1056,34 +1115,34 @@
                                 <div class="notification-message">Chainsaw Renewal has been approved.</div>
                                 <div class="notification-time">10 minutes ago</div>
                             </div>
-                    </a>
-                </div>
-                
+                        </a>
+                    </div>
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-user-circle"></i>
+                    <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
                     <a href="user_profile.php" class="dropdown-item">
-                            <i class="fas fa-user-edit"></i>
-                            <span>Edit Profile</span>
-                        </a>
-                    <a href="user_login.php" class="dropdown-item">
-                            <i class="fas fa-sign-out-alt"></i>
-                            <span>Logout</span>
-                        </a>
-                    </div>
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="logout.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
+            </div>
         </div>
     </header>
-    
+
     <div class="main-content">
         <!-- Filter dropdown container above the title -->
         <div class="filter-container">
@@ -1099,10 +1158,10 @@
                         <a href="habitat.php" class="filter-item">Habitat Assessment</a>
                         <a href="species.php" class="filter-item">Species Monitoring</a>
                         <a href="reports.php" class="filter-item">Reports & Analytics</a>
-                        
+
                     </div>
                 </div>
-                
+
                 <button class="apply-filter-btn">
                     <i class="fas fa-filter"></i> Apply
                 </button>
@@ -1112,7 +1171,7 @@
         <!-- Modified content header section with Edit and Save buttons -->
         <div class="content-header">
             <div class="edit-actions">
-                
+
             </div>
             <h1>Coastal and Marine Ecosystems Management Program</h1>
         </div>
@@ -1151,20 +1210,20 @@
             <div class="content-header">
                 <h3 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 700; font-size: 24px; color: var(--primary-dark); text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px;">MPA Management & Networking</h3>
             </div>
-            
+
             <div class="figure-container">
                 <div class="figure-title">Regional Performance on MPA Management</div>
-                
+
                 <!-- Chart container -->
                 <div class="chart-container">
                     <canvas id="performanceChart"></canvas>
                     <div class="chart-legend-container">
                         <div class="chart-legend" id="chartLegend"></div>
-                       
+
                     </div>
                 </div>
             </div>
-           
+
         </div>
 
         <div class="component-section habitat-section">
@@ -1263,218 +1322,218 @@
             </div>
         </div>
     </div>
-    
-    
+
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-        // Mobile menu toggle
-        const mobileToggle = document.querySelector('.mobile-toggle');
-        const navContainer = document.querySelector('.nav-container');
-        
-        if (mobileToggle) {
-            mobileToggle.addEventListener('click', () => {
-                navContainer.classList.toggle('active');
-            });
-        }
-        
-        // Improved dropdown functionality
-        const dropdowns = document.querySelectorAll('.dropdown');
-        
-        dropdowns.forEach(dropdown => {
-            const toggle = dropdown.querySelector('.nav-icon');
-            const menu = dropdown.querySelector('.dropdown-menu');
-                        
-            // Show menu on hover
-            dropdown.addEventListener('mouseenter', () => {
-                menu.style.opacity = '1';
-                menu.style.visibility = 'visible';
-                menu.style.transform = menu.classList.contains('center') 
-                    ? 'translateX(-50%) translateY(0)' 
-                    : 'translateY(0)';
-            });
-            
-            // Hide menu when leaving both button and menu
-            dropdown.addEventListener('mouseleave', (e) => {
-                // Check if we're leaving the entire dropdown area
-                if (!dropdown.contains(e.relatedTarget)) {
-                    menu.style.opacity = '0';
-                    menu.style.visibility = 'hidden';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(10px)' 
-                        : 'translateY(10px)';
-                }
-            });
-            
-            // Additional check for menu mouseleave
-            menu.addEventListener('mouseleave', (e) => {
-                if (!dropdown.contains(e.relatedTarget)) {
-                    menu.style.opacity = '0';
-                    menu.style.visibility = 'hidden';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(10px)' 
-                        : 'translateY(10px)';
-                }
-            });
-        });
+            // Mobile menu toggle
+            const mobileToggle = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
 
-        // Close dropdowns when clicking outside (for mobile)
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.dropdown')) {
-                document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                    menu.style.opacity = '0';
-                    menu.style.visibility = 'hidden';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(10px)' 
-                        : 'translateY(10px)';
+            if (mobileToggle) {
+                mobileToggle.addEventListener('click', () => {
+                    navContainer.classList.toggle('active');
                 });
             }
-        });
 
-        // Mobile dropdown toggle
-        if (window.innerWidth <= 992) {
+            // Improved dropdown functionality
+            const dropdowns = document.querySelectorAll('.dropdown');
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                
-                toggle.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // Close other dropdowns
-                    document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                        if (otherMenu !== menu) {
-                            otherMenu.style.display = 'none';
+
+                // Show menu on hover
+                dropdown.addEventListener('mouseenter', () => {
+                    menu.style.opacity = '1';
+                    menu.style.visibility = 'visible';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
+                });
+
+                // Hide menu when leaving both button and menu
+                dropdown.addEventListener('mouseleave', (e) => {
+                    // Check if we're leaving the entire dropdown area
+                    if (!dropdown.contains(e.relatedTarget)) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
+                    }
+                });
+
+                // Additional check for menu mouseleave
+                menu.addEventListener('mouseleave', (e) => {
+                    if (!dropdown.contains(e.relatedTarget)) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
+                    }
+                });
+            });
+
+            // Close dropdowns when clicking outside (for mobile)
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.dropdown')) {
+                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
+                    });
+                }
+            });
+
+            // Mobile dropdown toggle
+            if (window.innerWidth <= 992) {
+                dropdowns.forEach(dropdown => {
+                    const toggle = dropdown.querySelector('.nav-icon');
+                    const menu = dropdown.querySelector('.dropdown-menu');
+
+                    toggle.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        // Close other dropdowns
+                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
+                            if (otherMenu !== menu) {
+                                otherMenu.style.display = 'none';
+                            }
+                        });
+
+                        // Toggle current dropdown
+                        if (menu.style.display === 'block') {
+                            menu.style.display = 'none';
+                        } else {
+                            menu.style.display = 'block';
                         }
                     });
-                    
-                    // Toggle current dropdown
-                    if (menu.style.display === 'block') {
-                        menu.style.display = 'none';
-                    } else {
-                        menu.style.display = 'block';
-                    }
                 });
-            });
-        }
+            }
 
-        // Mark all notifications as read
-        const markAllRead = document.querySelector('.mark-all-read');
-        if (markAllRead) {
-            markAllRead.addEventListener('click', function(e) {
-                e.preventDefault();
-                document.querySelectorAll('.notification-item.unread').forEach(item => {
-                    item.classList.remove('unread');
+            // Mark all notifications as read
+            const markAllRead = document.querySelector('.mark-all-read');
+            if (markAllRead) {
+                markAllRead.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.querySelectorAll('.notification-item.unread').forEach(item => {
+                        item.classList.remove('unread');
+                    });
+                    document.querySelector('.badge').style.display = 'none';
                 });
-                document.querySelector('.badge').style.display = 'none';
-            });
-        }
+            }
 
-        // Create the performance chart
-        const ctx = document.getElementById('performanceChart').getContext('2d');
-        const performanceChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: ['PAs assessed', 'PAs monitored', 'PAs water quality', 'MPA Network', 'Habitats monitored'],
-                datasets: [
-                    {
-                        label: 'Target',
-                        data: [100, 100, 100, 100, 100],
-                        backgroundColor: 'rgba(169, 169, 169, 0.7)',
-                        borderColor: 'rgba(169, 169, 169, 1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Actual',
-                        data: [12, 100, 100, 100, 103],
-                        backgroundColor: 'rgba(43, 102, 37, 0.7)',
-                        borderColor: 'rgba(43, 102, 37, 1)',
-                        borderWidth: 1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 120,
-                        title: {
-                            display: true,
-                            text: 'Percentage (%)'
+            // Create the performance chart
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            const performanceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['PAs assessed', 'PAs monitored', 'PAs water quality', 'MPA Network', 'Habitats monitored'],
+                    datasets: [{
+                            label: 'Target',
+                            data: [100, 100, 100, 100, 100],
+                            backgroundColor: 'rgba(169, 169, 169, 0.7)',
+                            borderColor: 'rgba(169, 169, 169, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Actual',
+                            data: [12, 100, 100, 100, 103],
+                            backgroundColor: 'rgba(43, 102, 37, 0.7)',
+                            borderColor: 'rgba(43, 102, 37, 1)',
+                            borderWidth: 1
                         }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
+                    ]
                 },
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return context.dataset.label + ': ' + context.raw + '%';
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 120,
+                            title: {
+                                display: true,
+                                text: 'Percentage (%)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
                             }
                         }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.raw + '%';
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1500,
+                        easing: 'easeInOutQuart'
                     }
-                },
-                animation: {
-                    duration: 1500,
-                    easing: 'easeInOutQuart'
                 }
+            });
+
+            // Custom legend
+            const legendItems = performanceChart.data.datasets.map((dataset, i) => {
+                return {
+                    label: dataset.label,
+                    backgroundColor: dataset.backgroundColor,
+                    borderColor: dataset.borderColor
+                };
+            });
+
+            const legendContainer = document.getElementById('chartLegend');
+            legendItems.forEach(item => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+
+                const colorBox = document.createElement('div');
+                colorBox.className = 'legend-color';
+                colorBox.style.backgroundColor = item.backgroundColor;
+                colorBox.style.border = `1px solid ${item.borderColor}`;
+
+                const text = document.createElement('span');
+                text.textContent = item.label;
+
+                legendItem.appendChild(colorBox);
+                legendItem.appendChild(text);
+                legendContainer.appendChild(legendItem);
+            });
+
+            // Filter button functionality
+            const applyFilterBtn = document.querySelector('.apply-filter-btn');
+            if (applyFilterBtn) {
+                applyFilterBtn.addEventListener('click', function() {
+                    // Here you would implement your filter functionality
+                    alert('Filters applied. Implement your filter functionality here.');
+                });
             }
-        });
-        
-        // Custom legend
-        const legendItems = performanceChart.data.datasets.map((dataset, i) => {
-            return {
-                label: dataset.label,
-                backgroundColor: dataset.backgroundColor,
-                borderColor: dataset.borderColor
-            };
-        });
-        
-        const legendContainer = document.getElementById('chartLegend');
-        legendItems.forEach(item => {
-            const legendItem = document.createElement('div');
-            legendItem.className = 'legend-item';
-            
-            const colorBox = document.createElement('div');
-            colorBox.className = 'legend-color';
-            colorBox.style.backgroundColor = item.backgroundColor;
-            colorBox.style.border = `1px solid ${item.borderColor}`;
-            
-            const text = document.createElement('span');
-            text.textContent = item.label;
-            
-            legendItem.appendChild(colorBox);
-            legendItem.appendChild(text);
-            legendContainer.appendChild(legendItem);
-        });
 
-        // Filter button functionality
-        const applyFilterBtn = document.querySelector('.apply-filter-btn');
-        if (applyFilterBtn) {
-            applyFilterBtn.addEventListener('click', function() {
-                // Here you would implement your filter functionality
-                alert('Filters applied. Implement your filter functionality here.');
-            });
-        }
-
-        // Edit button functionality
-        const editBtn = document.querySelector('.btn-edit');
-        if (editBtn) {
-            editBtn.addEventListener('click', function() {
-                // Here you would implement your edit functionality
-                alert('Edit mode activated. Implement your edit functionality here.');
-                // Example: Enable form fields, show editable content, etc.
-            });
-        }
+            // Edit button functionality
+            const editBtn = document.querySelector('.btn-edit');
+            if (editBtn) {
+                editBtn.addEventListener('click', function() {
+                    // Here you would implement your edit functionality
+                    alert('Edit mode activated. Implement your edit functionality here.');
+                    // Example: Enable form fields, show editable content, etc.
+                });
+            }
         });
     </script>
 </body>
+
 </html>
