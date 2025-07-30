@@ -13,7 +13,6 @@ if (!isset($_SESSION['user_id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
     <link rel="stylesheet" href="/denr/superadmin/css/superprofile.css">
 </head>
 
@@ -25,33 +24,23 @@ if (!isset($_SESSION['user_id'])) {
             </a>
         </div>
 
-        <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
 
-
-        <!-- Navigation on the right -->
         <div class="nav-container">
-            <!-- Dashboard Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
                     <i class="fas fa-bars"></i>
                 </div>
                 <div class="dropdown-menu center">
-
                     <a href="superlogs.php" class="dropdown-item">
                         <i class="fas fa-user-shield" style="color: white;"></i>
                         <span>Admin Logs</span>
                     </a>
-
-
-
                 </div>
             </div>
 
-
-            <!-- Messages Icon -->
             <div class="nav-item">
                 <div class="nav-icon">
                     <a href="supermessage.php">
@@ -60,7 +49,6 @@ if (!isset($_SESSION['user_id'])) {
                 </div>
             </div>
 
-            <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
                     <i class="fas fa-bell"></i>
@@ -71,7 +59,6 @@ if (!isset($_SESSION['user_id'])) {
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-
                     <div class="notification-item unread">
                         <a href="supereach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -84,14 +71,12 @@ if (!isset($_SESSION['user_id'])) {
                             </div>
                         </a>
                     </div>
-
                     <div class="notification-footer">
                         <a href="supernotif.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
 
-            <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon active">
                     <i class="fas fa-user-circle"></i>
@@ -109,7 +94,6 @@ if (!isset($_SESSION['user_id'])) {
             </div>
         </div>
     </header>
-
 
     <?php
     include __DIR__ . '/backend/connection.php';
@@ -130,8 +114,7 @@ if (!isset($_SESSION['user_id'])) {
     $role = htmlspecialchars($user['role'] ?? '');
     $department = htmlspecialchars($user['department'] ?? '');
     ?>
-    <!-- Profile Content -->
-    <!-- Notification Popup -->
+
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
     <div class="profile-container">
@@ -177,6 +160,15 @@ if (!isset($_SESSION['user_id'])) {
                         <div class="profile-info-label">Department</div>
                         <input type="text" class="profile-info-value" id="department" name="department" value="<?php echo $department; ?>" disabled>
                     </div>
+                    <div class="profile-info-item">
+                        <div class="profile-info-label">New Password</div>
+                        <input type="password" class="profile-info-value" id="password" name="password" placeholder="Enter new password">
+                    </div>
+                    <div class="profile-info-item">
+                        <div class="profile-info-label">Confirm Password</div>
+                        <input type="password" class="profile-info-value" id="confirm-password" name="confirm_password" placeholder="Confirm new password">
+                        <div id="password-error" style="color: red; font-size: 12px; display: none;">Passwords do not match</div>
+                    </div>
                 </div>
                 <div class="profile-actions">
                     <button type="submit" class="btn btn-primary" id="update-profile-btn">
@@ -185,13 +177,35 @@ if (!isset($_SESSION['user_id'])) {
                 </div>
             </form>
         </div>
-
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Profile update via AJAX
+            const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirm-password');
+            const passwordError = document.getElementById('password-error');
+
+            function validatePasswords() {
+                if (passwordInput.value !== confirmPasswordInput.value) {
+                    confirmPasswordInput.style.borderColor = 'red';
+                    passwordError.style.display = 'block';
+                    return false;
+                } else {
+                    confirmPasswordInput.style.borderColor = '';
+                    passwordError.style.display = 'none';
+                    return true;
+                }
+            }
+
+            confirmPasswordInput.addEventListener('input', validatePasswords);
+            passwordInput.addEventListener('input', validatePasswords);
+
             document.getElementById('profile-form').addEventListener('submit', function(e) {
+                if ((passwordInput.value || confirmPasswordInput.value) && !validatePasswords()) {
+                    e.preventDefault();
+                    return false;
+                }
+
                 e.preventDefault();
                 const formData = new FormData(this);
                 fetch('backend/admin/update_profile.php', {
@@ -206,7 +220,6 @@ if (!isset($_SESSION['user_id'])) {
                             setTimeout(() => {
                                 document.getElementById('update-profile-btn').innerHTML = '<i class="fas fa-save"></i> Update Profile';
                                 document.getElementById('update-profile-btn').style.backgroundColor = '';
-                                // Show notification popup
                                 const notif = document.getElementById('profile-notification');
                                 notif.textContent = 'Profile updated successfully!';
                                 notif.style.display = 'block';
@@ -225,7 +238,7 @@ if (!isset($_SESSION['user_id'])) {
                     })
                     .catch(() => alert('An error occurred while updating profile.'));
             });
-            // Mobile menu toggle
+
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
 
@@ -235,14 +248,12 @@ if (!isset($_SESSION['user_id'])) {
                 });
             }
 
-            // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
 
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
 
-                // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
@@ -251,9 +262,7 @@ if (!isset($_SESSION['user_id'])) {
                         'translateY(0)';
                 });
 
-                // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
-                    // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
@@ -263,7 +272,6 @@ if (!isset($_SESSION['user_id'])) {
                     }
                 });
 
-                // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
@@ -275,7 +283,6 @@ if (!isset($_SESSION['user_id'])) {
                 });
             });
 
-            // Close dropdowns when clicking outside (for mobile)
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
@@ -288,7 +295,6 @@ if (!isset($_SESSION['user_id'])) {
                 }
             });
 
-            // Mobile dropdown toggle
             if (window.innerWidth <= 992) {
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
@@ -298,14 +304,12 @@ if (!isset($_SESSION['user_id'])) {
                         e.preventDefault();
                         e.stopPropagation();
 
-                        // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
 
-                        // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
                         } else {
@@ -315,7 +319,6 @@ if (!isset($_SESSION['user_id'])) {
                 });
             }
 
-            // Mark all notifications as read
             const markAllRead = document.querySelector('.mark-all-read');
             if (markAllRead) {
                 markAllRead.addEventListener('click', function(e) {
@@ -327,7 +330,6 @@ if (!isset($_SESSION['user_id'])) {
                 });
             }
 
-            // Profile picture upload functionality
             document.getElementById('profile-upload-input').addEventListener('change', function(e) {
                 if (e.target.files.length > 0) {
                     const file = e.target.files[0];
@@ -346,8 +348,6 @@ if (!isset($_SESSION['user_id'])) {
                 }
             });
 
-
-            // Add hover effect to info items
             const infoItems = document.querySelectorAll('.profile-info-item');
             infoItems.forEach(item => {
                 const value = item.querySelector('.profile-info-value');

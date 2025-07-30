@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", function () {
-  // Mobile menu toggle
   const mobileToggle = document.querySelector(".mobile-toggle");
   const navContainer = document.querySelector(".nav-container");
 
@@ -9,14 +8,12 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Improved dropdown functionality
   const dropdowns = document.querySelectorAll(".dropdown");
 
   dropdowns.forEach((dropdown) => {
     const toggle = dropdown.querySelector(".nav-icon");
     const menu = dropdown.querySelector(".dropdown-menu");
 
-    // Show menu on hover
     dropdown.addEventListener("mouseenter", () => {
       menu.style.opacity = "1";
       menu.style.visibility = "visible";
@@ -25,9 +22,7 @@ document.addEventListener("DOMContentLoaded", function () {
         : "translateY(0)";
     });
 
-    // Hide menu when leaving both button and menu
     dropdown.addEventListener("mouseleave", (e) => {
-      // Check if we're leaving the entire dropdown area
       if (!dropdown.contains(e.relatedTarget)) {
         menu.style.opacity = "0";
         menu.style.visibility = "hidden";
@@ -37,7 +32,6 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
 
-    // Additional check for menu mouseleave
     menu.addEventListener("mouseleave", (e) => {
       if (!dropdown.contains(e.relatedTarget)) {
         menu.style.opacity = "0";
@@ -49,7 +43,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Close dropdowns when clicking outside (for mobile)
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".dropdown")) {
       document.querySelectorAll(".dropdown-menu").forEach((menu) => {
@@ -62,7 +55,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Mobile dropdown toggle
   if (window.innerWidth <= 992) {
     dropdowns.forEach((dropdown) => {
       const toggle = dropdown.querySelector(".nav-icon");
@@ -72,14 +64,12 @@ document.addEventListener("DOMContentLoaded", function () {
         e.preventDefault();
         e.stopPropagation();
 
-        // Close other dropdowns
         document.querySelectorAll(".dropdown-menu").forEach((otherMenu) => {
           if (otherMenu !== menu) {
             otherMenu.style.display = "none";
           }
         });
 
-        // Toggle current dropdown
         if (menu.style.display === "block") {
           menu.style.display = "none";
         } else {
@@ -89,7 +79,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Mark all notifications as read
   const markAllRead = document.querySelector(".mark-all-read");
   if (markAllRead) {
     markAllRead.addEventListener("click", function (e) {
@@ -101,7 +90,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Profile picture upload functionality
   document
     .getElementById("profile-upload-input")
     .addEventListener("change", function (e) {
@@ -122,7 +110,25 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
 
-  // Profile update request with confirmation and info modals
+  const passwordInput = document.getElementById("password");
+  const confirmPasswordInput = document.getElementById("confirm-password");
+  const passwordError = document.getElementById("password-error");
+
+  function validatePasswords() {
+    if (passwordInput.value !== confirmPasswordInput.value) {
+      confirmPasswordInput.style.borderColor = "red";
+      passwordError.style.display = "block";
+      return false;
+    } else {
+      confirmPasswordInput.style.borderColor = "";
+      passwordError.style.display = "none";
+      return true;
+    }
+  }
+
+  confirmPasswordInput.addEventListener("input", validatePasswords);
+  passwordInput.addEventListener("input", validatePasswords);
+
   const updateBtn = document.getElementById("update-profile-btn");
   const profileForm = document.getElementById("profile-form");
   const confirmModal = document.getElementById("profile-confirm-modal");
@@ -133,7 +139,6 @@ document.addEventListener("DOMContentLoaded", function () {
   const notification = document.getElementById("profile-notification");
   let pendingFormData = null;
 
-  // Store original email for OTP check
   const originalEmail = "<?php echo $email; ?>";
   let emailChanged = false;
 
@@ -145,6 +150,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   profileForm.addEventListener("submit", function (e) {
     e.preventDefault();
+    if (
+      (passwordInput.value || confirmPasswordInput.value) &&
+      !validatePasswords()
+    ) {
+      return false;
+    }
     pendingFormData = new FormData(profileForm);
     confirmModal.style.display = "flex";
   });
@@ -162,7 +173,6 @@ document.addEventListener("DOMContentLoaded", function () {
       confirmBtn.innerHTML =
         '<i class="fas fa-spinner fa-spin"></i> Processing...';
 
-      // If email changed, request OTP first
       if (emailChanged) {
         pendingFormData.append("request_otp", "1");
       }
@@ -222,7 +232,6 @@ document.addEventListener("DOMContentLoaded", function () {
         "Please enter a valid 6-digit OTP";
       return;
     }
-    // Always create a fresh FormData for OTP verification
     const profileForm = document.getElementById("profile-form");
     const verifyFormData = new FormData(profileForm);
     verifyFormData.append("otp_code", otpInput);
@@ -256,7 +265,6 @@ document.addEventListener("DOMContentLoaded", function () {
     resendBtn.disabled = true;
     resendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
     try {
-      // Get the current email value from the input
       const email = document.getElementById("email").value;
       const formData = new FormData();
       formData.append("email", email);
@@ -302,12 +310,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 1500);
   };
 
-  // Notification function
   function showNotification(message, type = "success") {
     const notification = document.getElementById("profile-notification");
     notification.textContent = message;
     notification.style.display = "block";
-    // Only error or pending gets red, success gets black
     if (
       type === "error" ||
       (message && message.toLowerCase().includes("pending"))
