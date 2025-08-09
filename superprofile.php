@@ -4,6 +4,28 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: superlogin.php');
     exit();
 }
+include_once __DIR__ . '/backend/connection.php';
+$user_id = $_SESSION['user_id'];
+$stmt = $conn->prepare("SELECT department FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$stmt->bind_result($department);
+if ($stmt->fetch()) {
+    if (strtolower($department) !== 'cenro') {
+        $stmt->close();
+        $conn->close();
+        header('Location: superlogin.php');
+        exit();
+    }
+} else {
+    $stmt->close();
+    $conn->close();
+    session_unset();
+    session_destroy();
+    header('Location: superlogin.php');
+    exit();
+}
+$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
