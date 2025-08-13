@@ -1,5 +1,5 @@
 <?php
-// backend/admin/add_admin.php
+
 session_start();
 header('Content-Type: application/json');
 if (!isset($_SESSION['user_id'])) {
@@ -27,7 +27,7 @@ $phone = $_POST['phone'];
 $status = $_POST['status'];
 $role = 'Admin';
 include_once __DIR__ . '/../connection.php';
-// Check if email already exists
+
 $stmt = $conn->prepare('SELECT id FROM users WHERE email = ?');
 $stmt->bind_param('s', $email);
 $stmt->execute();

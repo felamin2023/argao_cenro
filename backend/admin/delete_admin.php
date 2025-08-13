@@ -1,5 +1,5 @@
 <?php
-// backend/admin/delete_admin.php
+
 session_start();
 header('Content-Type: application/json');
 if (!isset($_SESSION['user_id'])) {

@@ -351,7 +351,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
             </div>
             <h2>Create Account</h2>
         </div>
-        <form id="registerForm" action="../backend/user/register.php" method="POST" autocomplete="off">
+        <form id="registerForm" action="../backend/users/register.php" method="POST" autocomplete="off">
             <div class="form-group">
                 <label>Email</label>
                 <input type="email" name="email" id="email"
@@ -480,7 +480,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
                 formData.append('action', 'send_otp');
                 formData.append('email', email);
 
-                fetch('../backend/user/register.php', {
+                fetch('../backend/users/register.php', {
                         method: 'POST',
                         body: formData
                     })
@@ -522,7 +522,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
                 formData.append('action', 'verify_otp');
                 formData.append('otp', otp);
 
-                fetch('../backend/user/register.php', {
+                fetch('../backend/users/register.php', {
                         method: 'POST',
                         body: formData
                     })
@@ -556,7 +556,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
                 formData.append('action', 'send_otp');
                 formData.append('email', email);
 
-                fetch('../backend/user/register.php', {
+                fetch('../backend/users/register.php', {
                         method: 'POST',
                         body: formData
                     })
@@ -621,7 +621,7 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
                 const formData = new FormData(this);
                 formData.append('action', 'register');
 
-                fetch('../backend/user/register.php', {
+                fetch('../backend/users/register.php', {
                         method: 'POST',
                         body: formData
                     })

@@ -11,21 +11,21 @@ function sendOTP($email, $otp_code)
     $mail = new PHPMailer(true);
 
     try {
-        // Server settings
-        $mail->SMTPDebug = SMTP::DEBUG_OFF; // Change to DEBUG_SERVER for troubleshooting
+
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'argaocenro@gmail.com'; // Your Gmail
-        $mail->Password   = 'rlqh eihc lyoa etbl'; // Your app password
+        $mail->Username   = 'argaocenro@gmail.com';
+        $mail->Password   = 'rlqh eihc lyoa etbl';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 
-        // Recipients
-        $mail->setFrom('argaocenro@gmail.com', 'DENR System'); // Must match authenticated email
+
+        $mail->setFrom('argaocenro@gmail.com', 'DENR System');
         $mail->addAddress($email);
 
-        // Content
+
         $mail->isHTML(true);
         $mail->Subject = 'DENR Account: Email Verification Code';
         $mail->Body    = "
@@ -39,7 +39,7 @@ function sendOTP($email, $otp_code)
         $mail->send();
         return true;
     } catch (Exception $e) {
-        // Log the error for debugging
+
         error_log("Mailer Error: " . $mail->ErrorInfo);
         return false;
     }

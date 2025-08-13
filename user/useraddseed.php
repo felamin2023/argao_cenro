@@ -1,5 +1,44 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
+    header("Location: user_login.php");
+    exit();
+}
+include_once __DIR__ . '/../backend/connection.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $stmt->store_result();
+
+    if ($stmt->num_rows === 1) {
+        $stmt->bind_result($id, $hashed_password, $role);
+        $stmt->fetch();
+
+        if (password_verify($password, $hashed_password)) {
+            $_SESSION['user_id'] = $id;
+            $_SESSION['role'] = $role;
+
+            header("Location: user_home.php");
+            exit();
+        } else {
+            $error = "Incorrect password.";
+        }
+    } else {
+        $error = "User not found.";
+    }
+
+    $stmt->close();
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -112,7 +151,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -154,7 +193,7 @@
             border-left: 4px solid var(--primary-color);
         }
 
-       
+
         .dropdown-item:hover {
             background: var(--light-gray);
             padding-left: 30px;
@@ -332,9 +371,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -369,7 +416,7 @@
             align-items: center;
             margin-top: -1%;
             padding: 0 20px;
-            margin-bottom:2%;
+            margin-bottom: 2%;
         }
 
         .page-title {
@@ -405,6 +452,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
+
         .form-row {
             display: flex;
             flex-wrap: wrap;
@@ -421,11 +469,11 @@
         .form-group.full-width {
             flex: 1 0 100%;
         }
-        
+
         .form-group.two-thirds {
             flex: 2 0 400px;
         }
-        
+
         .form-group.one-third {
             flex: 1 0 200px;
         }
@@ -437,7 +485,7 @@
             font-size: 14px;
             font-weight: bold;
         }
-        
+
         .form-group input,
         .form-group textarea,
         .form-group select {
@@ -448,7 +496,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
-        
+
         .form-group input:focus,
         .form-group textarea:focus,
         .form-group select:focus {
@@ -456,7 +504,7 @@
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .form-group textarea {
             height: 180px;
             resize: vertical;
@@ -493,7 +541,8 @@
             margin-top: 20px;
         }
 
-        .save-btn, .view-records-btn {
+        .save-btn,
+        .view-records-btn {
             background-color: #005117;
             color: #fff;
             border: none;
@@ -549,7 +598,7 @@
             margin-top: 20px;
         }
 
-        .records-table th, 
+        .records-table th,
         .records-table td {
             padding: 12px 15px;
             text-align: left;
@@ -603,7 +652,7 @@
             .mobile-toggle {
                 display: block;
             }
-            
+
             /* Header Styles */
             header {
                 display: flex;
@@ -663,14 +712,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px; /* smaller width */
-            height: 40px; /* smaller height */
-            background: rgb(233, 255, 242); /* slightly brighter background */
-            border-radius: 12px; /* softer corners */
+            width: 40px;
+            /* smaller width */
+            height: 40px;
+            /* smaller height */
+            background: rgb(233, 255, 242);
+            /* slightly brighter background */
+            border-radius: 12px;
+            /* softer corners */
             cursor: pointer;
             transition: var(--transition);
-            color: black; /* changed icon color to black */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* subtle shadow for depth */
+            color: black;
+            /* changed icon color to black */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            /* subtle shadow for depth */
         }
 
         .nav-icon:hover {
@@ -680,7 +735,8 @@
         }
 
         .nav-icon i {
-            font-size: 1.3rem; /* smaller icon size */
+            font-size: 1.3rem;
+            /* smaller icon size */
             color: inherit;
             transition: color 0.3s ease;
         }
@@ -732,8 +788,10 @@
         }
 
         .mark-all-read:hover {
-            color: var(--primary-dark); /* Slightly darker color on hover */
-            transform: scale(1.1); /* Slightly bigger on hover */
+            color: var(--primary-dark);
+            /* Slightly darker color on hover */
+            transform: scale(1.1);
+            /* Slightly bigger on hover */
         }
 
         .notification-item {
@@ -875,9 +933,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle - Larger */
@@ -905,10 +971,10 @@
             background-color: #f9f9f9;
         }
 
-      
+
         /* Main Content */
         .main-container {
-            margin-top:-0.5%;
+            margin-top: -0.5%;
             padding: 30px;
         }
 
@@ -1224,7 +1290,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
-            MARGIN-TOP:-1%;
+            MARGIN-TOP: -1%;
             margin-bottom: 10px;
             padding: 15px;
         }
@@ -1254,7 +1320,7 @@
         .name-field input::placeholder {
             color: #999;
         }
-        
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .notifications-dropdown {
@@ -1294,32 +1360,32 @@
             header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -1335,19 +1401,21 @@
         }
     </style>
 </head>
+
 <body>
-<header>
+    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -1355,14 +1423,14 @@
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-                
-                
-                       <div class="dropdown-menu center">
+
+
+                <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-                     <a href="useraddseed.php" class="dropdown-item active-page">
+                    <a href="useraddseed.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -1387,7 +1455,7 @@
                         <span>Chainsaw Permit</span>
                     </a>
 
-                    
+
                 </div>
             </div>
 
@@ -1402,7 +1470,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -1415,13 +1483,13 @@
                             </div>
                         </a>
                     </div>
-                
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -1458,12 +1526,9 @@
             <div class="form-header">
                 <h2>Seedling Request - Requirement</h2>
             </div>
-            
-            
-            <div class="form-body">
-                <!-- Sample Letter Button -->
-             
 
+
+            <div class="form-body">
                 <div class="name-fields">
                     <div class="name-field">
                         <input type="text" placeholder="First Name" required>
@@ -1476,12 +1541,12 @@
                     </div>
                 </div>
 
-                   <div class="sample-letter-btn">
+                <div class="sample-letter-btn">
                     <button class="download-sample" id="downloadSample">
                         <i class="fas fa-file-word"></i> Download Sample Letter (DOCS)
                     </button>
                 </div>
-                
+
                 <div class="requirements-list">
                     <!-- Single Requirement -->
                     <div class="requirement-item">
@@ -1521,7 +1586,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Information about the letter -->
                     <div class="fee-info">
                         <p><strong>Your request letter should include:</strong></p>
@@ -1538,7 +1603,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="form-footer">
                 <button class="btn btn-primary" id="submitApplication">
                     <i class="fas fa-paper-plane"></i> Submit Request
@@ -1550,43 +1615,54 @@
     <!-- File Preview Modal -->
     <div id="filePreviewModal" class="modal">
         <div class="modal-content">
-            <span class="close-modal">&times;</span>
+            <span id="closeFilePreviewModal" class="close-modal">&times;</span>
             <h3 id="modal-title">File Preview</h3>
             <iframe id="filePreviewFrame" class="file-preview" src="about:blank"></iframe>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content" style="max-width:400px;text-align:center;">
+            <span id="closeConfirmModal" class="close-modal">&times;</span>
+            <h3>Confirm Submission</h3>
+            <p>Are you sure you want to submit this seedling request?</p>
+            <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Submit</button>
+            <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
         </div>
     </div>
 
     <!-- Sample Letter Content (hidden) -->
     <div id="sampleLetterContent" style="display: none;">
         <p style="text-align: right;">[Your Address]<br>[City, Province]<br>[Date]</p>
-        
+
         <p style="text-align: left; margin-top: 30px;">
             <strong>CENRO Argao<br>
-           
+
         </p>
-        
+
         <p style="margin-top: 30px;"><strong>Subject: Request for Seedlings</strong></p>
-        
+
         <p style="margin-top: 20px; text-align: justify;">
             Dear Sir/Madam,
         </p>
-        
+
         <p style="text-align: justify; text-indent: 50px;">
             I am writing to formally request [number] seedlings of [seedling name/species] for [purpose - e.g., reforestation project, backyard planting, etc.]. The seedlings will be planted at [location/address where seedlings will be planted].
         </p>
-        
+
         <p style="text-align: justify; text-indent: 50px;">
             The purpose of this request is [explain purpose in more detail]. This initiative is part of [explain any project or personal initiative if applicable].
         </p>
-        
+
         <p style="text-align: justify; text-indent: 50px;">
             I would be grateful if you could approve this request at your earliest convenience. Please let me know if you require any additional information or documentation to process this request.
         </p>
-        
+
         <p style="margin-top: 30px;">
             Thank you for your time and consideration.
         </p>
-        
+
         <p style="margin-top: 50px;">
             Sincerely,<br><br>
             _________________________<br>
@@ -1597,11 +1673,10 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     const isActive = navContainer.classList.toggle('active');
@@ -1609,33 +1684,26 @@
                 });
             }
 
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-                    navContainer.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-            });
-
-            
-           // File input change handler
-            document.querySelectorAll('.file-input').forEach(input => {
-                input.addEventListener('change', function() {
-                    const fileName = this.files[0] ? this.files[0].name : 'No file chosen';
-                    this.parentElement.querySelector('.file-name').textContent = fileName;
-                    
-                    if (this.files[0]) {
-                        addUploadedFile(this.id, this.files[0]);
+            // New file input and preview logic
+            const fileInput = document.getElementById('file-1');
+            const uploadedFilesContainer = document.getElementById('uploaded-files-1');
+            let selectedFile = null;
+            if (fileInput) {
+                fileInput.addEventListener('change', function() {
+                    uploadedFilesContainer.innerHTML = '';
+                    const file = this.files[0];
+                    this.parentElement.querySelector('.file-name').textContent = file ? file.name : 'No file chosen';
+                    if (file) {
+                        selectedFile = file;
+                        addUploadedFile(file);
+                    } else {
+                        selectedFile = null;
                     }
                 });
-            });
+            }
 
-            // Function to add uploaded file to the list
-            function addUploadedFile(inputId, file) {
-                const requirementId = inputId.split('-')[1];
-                const uploadedFilesContainer = document.getElementById(`uploaded-files-${requirementId}`);
-                
-                // Create file icon based on file type
+            function addUploadedFile(file) {
+                uploadedFilesContainer.innerHTML = '';
                 let fileIcon;
                 if (file.type.includes('pdf')) {
                     fileIcon = '<i class="fas fa-file-pdf file-icon"></i>';
@@ -1646,8 +1714,6 @@
                 } else {
                     fileIcon = '<i class="fas fa-file file-icon"></i>';
                 }
-                
-                // Create file item
                 const fileItem = document.createElement('div');
                 fileItem.className = 'file-item';
                 fileItem.innerHTML = `
@@ -1656,308 +1722,230 @@
                         <span>${file.name}</span>
                     </div>
                     <div class="file-actions">
-                        <button class="file-action-btn view-file" data-file="${file.name}" title="View">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="file-action-btn" title="Download">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button class="file-action-btn delete-file" title="Delete">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <button class="file-action-btn view-file" title="View"><i class="fas fa-eye"></i></button>
+                        <button class="file-action-btn delete-file" title="Delete"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
-                
                 uploadedFilesContainer.appendChild(fileItem);
-                
-                // Add event listeners to the new buttons
+
+                // View file
                 fileItem.querySelector('.view-file').addEventListener('click', function() {
                     previewFile(file);
                 });
-                
+                // Delete file
                 fileItem.querySelector('.delete-file').addEventListener('click', function() {
-                    fileItem.remove();
-                    // Clear the file input if this was the only file
-                    if (uploadedFilesContainer.children.length === 0) {
-                        document.getElementById(inputId).value = '';
-                        document.getElementById(inputId).parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                    }
+                    uploadedFilesContainer.innerHTML = '';
+                    fileInput.value = '';
+                    fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
+                    selectedFile = null;
                 });
             }
 
             // File preview functionality
             const modal = document.getElementById('filePreviewModal');
             const modalFrame = document.getElementById('filePreviewFrame');
-            const closeModal = document.querySelector('.close-modal');
-            
-            // Add click event to all view buttons (including existing ones)
-            document.addEventListener('click', function(e) {
-                if (e.target.closest('.view-file')) {
-                    const fileName = e.target.closest('.view-file').getAttribute('data-file');
-                    // In a real app, you would get the actual file URL here
-                    // For demo purposes, we'll just show the file name
-                    document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
-                    
-                    // For demo, we'll show a placeholder
-                    // In a real app, you would set the iframe src to the actual file URL
-                    modalFrame.src = "about:blank";
-                    modalFrame.srcdoc = `
-                        <html>
-                            <head>
-                                <style>
-                                    body { 
-                                        font-family: Arial, sans-serif; 
-                                        display: flex; 
-                                        justify-content: center; 
-                                        align-items: center; 
-                                        height: 100vh; 
-                                        margin: 0; 
-                                        background-color: #f5f5f5;
-                                    }
-                                    .preview-content {
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    .file-icon {
-                                        font-size: 48px;
-                                        color: #2b6625;
-                                        margin-bottom: 20px;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="preview-content">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file"></i>
-                                    </div>
-                                    <h2>${fileName}</h2>
-                                    <p>This is a preview of the uploaded file.</p>
-                                    <p>In a real application, the actual file content would be displayed here.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `;
-                    
-                    modal.style.display = "block";
-                }
-            });
-            
-            // Close modal when clicking X
-            closeModal.addEventListener('click', function() {
-                modal.style.display = "none";
-            });
-            
-            // Close modal when clicking outside
-            window.addEventListener('click', function(event) {
-                if (event.target == modal) {
-                    modal.style.display = "none";
-                }
-            });
+            const closeFilePreviewModal = document.getElementById('closeFilePreviewModal');
 
-            // Function to preview file (would be more complex in a real app)
             function previewFile(file) {
+                const modalFrame = document.getElementById('filePreviewFrame');
+                if (!modalFrame) return;
+                // Always clear both src and srcdoc before setting
+                modalFrame.removeAttribute('src');
+                modalFrame.removeAttribute('srcdoc');
                 const reader = new FileReader();
-                
                 reader.onload = function(e) {
-                    if (file.type.includes('image')) {
-                        // For images, display directly
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            margin: 0; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh;
-                                            background-color: #f5f5f5;
-                                        }
-                                        img { 
-                                            max-width: 100%; 
-                                            max-height: 100%; 
-                                            object-fit: contain;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <img src="${e.target.result}" alt="${file.name}">
-                                </body>
-                            </html>
-                        `;
-                    } else if (file.type.includes('pdf')) {
-                        // For PDFs, we would typically use a PDF viewer library
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            font-family: Arial, sans-serif; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh; 
-                                            margin: 0; 
-                                            background-color: #f5f5f5;
-                                        }
-                                        .preview-content {
-                                            text-align: center;
-                                            padding: 20px;
-                                        }
-                                        .file-icon {
-                                            font-size: 48px;
-                                            color: #2b6625;
-                                            margin-bottom: 20px;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <div class="preview-content">
-                                        <div class="file-icon">
-                                            <i class="fas fa-file-pdf"></i>
-                                        </div>
-                                        <h2>${file.name}</h2>
-                                        <p>PDF preview would be displayed here with a proper PDF viewer.</p>
-                                    </div>
-                                </body>
-                            </html>
-                        `;
+                    if (file.type.startsWith('image/')) {
+                        modalFrame.srcdoc = `<img src='${e.target.result}' style='max-width:100%;max-height:80vh;'>`;
+                    } else if (file.type === 'application/pdf') {
+                        modalFrame.src = e.target.result;
+                    } else if (
+                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                        file.type === 'application/msword'
+                    ) {
+                        // For doc/docx, show a download link
+                        const url = URL.createObjectURL(file);
+                        modalFrame.srcdoc = `<div style='padding:20px;text-align:center;'>Cannot preview this file type.<br><a href='${url}' download='${file.name}' style='color:#2b6625;font-weight:bold;'>Download ${file.name}</a></div>`;
                     } else {
-                        // For other files, show a generic preview
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            font-family: Arial, sans-serif; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh; 
-                                            margin: 0; 
-                                            background-color: #f5f5f5;
-                                        }
-                                        .preview-content {
-                                            text-align: center;
-                                            padding: 20px;
-                                        }
-                                        .file-icon {
-                                            font-size: 48px;
-                                            color: #2b6625;
-                                            margin-bottom: 20px;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <div class="preview-content">
-                                        <div class="file-icon">
-                                            <i class="fas fa-file"></i>
-                                        </div>
-                                        <h2>${file.name}</h2>
-                                        <p>File preview not available for this file type.</p>
-                                        <p>Please download the file to view its contents.</p>
-                                    </div>
-                                </body>
-                            </html>
-                        `;
+                        modalFrame.srcdoc = `<div style='padding:20px;'>Cannot preview this file type.</div>`;
                     }
-                    
-                    document.getElementById('modal-title').textContent = `Preview: ${file.name}`;
-                    modal.style.display = "block";
+                    modal.style.display = 'block';
                 };
-                
-                if (file.type.includes('image')) {
+                if (file.type.startsWith('image/')) {
                     reader.readAsDataURL(file);
+                } else if (file.type === 'application/pdf') {
+                    reader.readAsDataURL(file);
+                } else if (
+                    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                    file.type === 'application/msword'
+                ) {
+                    // For doc/docx, just show download link
+                    reader.onload();
                 } else {
-                    // For non-image files, we don't actually need to read the content for this demo
-                    reader.readAsText(file.slice(0, 1024)); // Just read a small part for demo
+                    reader.onload();
                 }
             }
 
-            // Submit application button
-            document.getElementById('submitApplication').addEventListener('click', function() {
-                // Check if the required file is uploaded
-                const fileInput = document.getElementById('file-1');
-                const uploadedFiles = document.getElementById('uploaded-files-1').children;
-                
-                if (fileInput.files.length === 0 && uploadedFiles.length === 0) {
-                    alert('Please upload your request letter before submitting.');
-                    document.querySelector('.requirement-item').style.borderLeft = '4px solid #ff4757';
-                    setTimeout(() => {
-                        document.querySelector('.requirement-item').style.borderLeft = '4px solid var(--primary-color)';
-                    }, 2000);
-                } else {
-                    // Show success message
-                    const confirmation = document.createElement('div');
-                    confirmation.textContent = 'Seedling request submitted successfully!';
-                    confirmation.style.position = 'fixed';
-                    confirmation.style.bottom = '20px';
-                    confirmation.style.right = '20px';
-                    confirmation.style.backgroundColor = 'var(--primary-color)';
-                    confirmation.style.color = 'white';
-                    confirmation.style.padding = '10px 20px';
-                    confirmation.style.borderRadius = 'var(--border-radius)';
-                    confirmation.style.boxShadow = 'var(--box-shadow)';
-                    confirmation.style.zIndex = '2000';
-                    document.body.appendChild(confirmation);
-                    
-                    setTimeout(() => {
-                        confirmation.style.opacity = '0';
-                        confirmation.style.transform = 'translateY(20px)';
-                        setTimeout(() => {
-                            document.body.removeChild(confirmation);
-                        }, 300);
-                    }, 3000);
-                    
-                    // In a real app, you would submit the form data to the server here
-                    console.log('Seedling request submitted');
+            if (closeFilePreviewModal) {
+                closeFilePreviewModal.addEventListener('click', function() {
+                    modal.style.display = 'none';
+                });
+            }
+            window.addEventListener('click', function(event) {
+                if (event.target == modal) {
+                    modal.style.display = 'none';
                 }
             });
 
-            // Download sample letter button
-            document.getElementById('downloadSample').addEventListener('click', function() {
-                // Create a Blob with the sample letter content
-                const sampleLetterContent = document.getElementById('sampleLetterContent').innerHTML;
-                const blob = new Blob([`
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="UTF-8">
-                        <title>Seedling Request Letter</title>
-                        <style>
-                            body {
-                                font-family: Arial, sans-serif;
-                                line-height: 1.6;
-                                margin: 50px;
+            // Confirmation modal logic
+            const confirmModal = document.getElementById('confirmModal');
+            const closeConfirmModal = document.getElementById('closeConfirmModal');
+            const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
+            const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
+            const successModal = document.getElementById('successModal');
+            const closeSuccessModal = document.getElementById('closeSuccessModal');
+            const okSuccessBtn = document.getElementById('okSuccessBtn');
+
+            const submitApplicationBtn = document.getElementById('submitApplication');
+            if (submitApplicationBtn) {
+                submitApplicationBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    // Validate fields
+                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
+                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    if (!firstName || !lastName) {
+                        alert('First name and last name are required.');
+                        return;
+                    }
+                    if (!selectedFile) {
+                        alert('Please upload your request letter.');
+                        return;
+                    }
+                    if (confirmModal) confirmModal.style.display = 'block';
+                });
+            }
+
+            if (closeConfirmModal) {
+                closeConfirmModal.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+                });
+            }
+            if (cancelSubmitBtn) {
+                cancelSubmitBtn.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+                });
+            }
+
+            if (confirmSubmitBtn) {
+                confirmSubmitBtn.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+                    // Prepare form data
+                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
+                    const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
+                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    const formData = new FormData();
+                    formData.append('first_name', firstName);
+                    formData.append('middle_name', middleName);
+                    formData.append('last_name', lastName);
+                    formData.append('request_letter', selectedFile);
+
+                    fetch('../backend/users/requestseed.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Clear all inputs
+                                document.querySelector('.name-fields input[placeholder="First Name"]').value = '';
+                                document.querySelector('.name-fields input[placeholder="Middle Name"]').value = '';
+                                document.querySelector('.name-fields input[placeholder="Last Name"]').value = '';
+                                if (fileInput) {
+                                    fileInput.value = '';
+                                    fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
+                                }
+                                uploadedFilesContainer.innerHTML = '';
+                                selectedFile = null;
+                                // Show notification using the provided bar
+                                showProfileNotification('Seedling request submitted successfully!');
+                            } else {
+                                alert(data.errors ? data.errors.join('\n') : 'Failed to submit request.');
                             }
-                        </style>
-                    </head>
-                    <body>
-                        ${sampleLetterContent}
-                    </body>
-                    </html>
-                `], { type: 'text/html' });
-                
-                // Create a download link
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Seedling_Request_Letter_Template.doc';
-                document.body.appendChild(a);
-                a.click();
-                
-                // Clean up
+                        })
+                        .catch(() => {
+                            alert('Network error.');
+                        });
+                });
+            }
+
+
+            // Success notification logic using #profile-notification
+            function showProfileNotification(message) {
+                const notif = document.getElementById('profile-notification');
+                if (!notif) return;
+                notif.textContent = message;
+                notif.style.display = 'block';
+                notif.style.opacity = '1';
                 setTimeout(() => {
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                }, 100);
-            });
+                    notif.style.opacity = '0';
+                    setTimeout(() => {
+                        notif.style.display = 'none';
+                        notif.style.opacity = '1';
+                    }, 400);
+                }, 2200);
+            }
+
+            // Download sample letter button
+            const downloadSampleBtn = document.getElementById('downloadSample');
+            if (downloadSampleBtn) {
+                downloadSampleBtn.addEventListener('click', function() {
+                    // Create a Blob with the sample letter content
+                    const sampleLetterContent = document.getElementById('sampleLetterContent').innerHTML;
+                    const blob = new Blob([`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="UTF-8">
+                            <title>Seedling Request Letter</title>
+                            <style>
+                                body {
+                                    font-family: Arial, sans-serif;
+                                    line-height: 1.6;
+                                    margin: 50px;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            ${sampleLetterContent}
+                        </body>
+                        </html>
+                    `], {
+                        type: 'text/html'
+                    });
+
+                    // Create a download link
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Seedling_Request_Letter_Template.doc';
+                    document.body.appendChild(a);
+                    a.click();
+
+                    // Clean up
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }, 100);
+                });
+            }
 
             // Add files button (demo functionality)
-            document.getElementById('addFilesBtn').addEventListener('click', function() {
-                // This would be more sophisticated in a real app
-                alert('In a real application, this would open a dialog to add multiple files at once.');
-            });
+            const addFilesBtn = document.getElementById('addFilesBtn');
+            if (addFilesBtn) {
+                addFilesBtn.addEventListener('click', function() {
+                    // This would be more sophisticated in a real app
+                    alert('In a real application, this would open a dialog to add multiple files at once.');
+                });
+            }
 
             // Initialize existing file items with event listeners
             document.querySelectorAll('.file-item .view-file').forEach(btn => {
@@ -2001,7 +1989,7 @@
                             </body>
                         </html>
                     `;
-                    modal.style.display = "block";
+                    if (modal) modal.style.display = "block";
                 });
             });
 
@@ -2010,7 +1998,6 @@
                 btn.addEventListener('click', function() {
                     const fileItem = this.closest('.file-item');
                     fileItem.remove();
-                    
                     // In a real app, you would also need to clear the corresponding file input
                     // and update the file name display
                 });
@@ -2018,4 +2005,5 @@
         });
     </script>
 </body>
+
 </html>

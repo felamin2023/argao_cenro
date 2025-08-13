@@ -34,9 +34,9 @@ if (!empty($errors)) {
     exit();
 }
 
-// Check if password is being changed
+
 if (!empty($password)) {
-    // Get current password hash
+
     $sql_check = "SELECT password FROM users WHERE id = ?";
     $stmt_check = $conn->prepare($sql_check);
     $stmt_check->bind_param('i', $user_id);
@@ -45,7 +45,7 @@ if (!empty($password)) {
     $user = $result->fetch_assoc();
     $stmt_check->close();
 
-    // Verify if new password is different from current
+
     if (password_verify($password, $user['password'])) {
         echo json_encode(['success' => false, 'error' => 'New password must be different from current password']);
         exit();
@@ -76,7 +76,7 @@ if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPL
         if (move_uploaded_file($fileTmp, $dest)) {
             $profile_image = $newName;
 
-            // Remove old profile image if it exists
+
             $sql_get_old = "SELECT image FROM users WHERE id = ?";
             $stmt_get_old = $conn->prepare($sql_get_old);
             $stmt_get_old->bind_param('i', $user_id);

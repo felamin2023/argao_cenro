@@ -22,23 +22,23 @@ if (!in_array($status, $allowed)) {
     exit();
 }
 include_once __DIR__ . '/../connection.php';
-// If rejected, log the reason and send email
+
 if ($status === 'Rejected' && isset($_POST['reason']) && trim($_POST['reason']) !== '') {
     $reason = trim($_POST['reason']);
     $rejected_by = $_SESSION['user_id'];
-    // Insert into registration_rejection_logs
+
     $logStmt = $conn->prepare('INSERT INTO registration_rejection_logs (user_id, rejected_by, reason) VALUES (?, ?, ?)');
     $logStmt->bind_param('iis', $id, $rejected_by, $reason);
     $logStmt->execute();
     $logStmt->close();
 
-    // Fetch rejected user's email
+
     $emailStmt = $conn->prepare('SELECT email, first_name FROM users WHERE id = ?');
     $emailStmt->bind_param('i', $id);
     $emailStmt->execute();
     $emailStmt->bind_result($user_email, $user_first_name);
     if ($emailStmt->fetch()) {
-        // Send rejection email
+
         include_once __DIR__ . '/../../send_mail_smtp.php';
         $subject = 'DENR Admin Registration Rejected';
         $body = "Dear $user_first_name,\n\nWe regret to inform you that your admin registration has been rejected.\n\nReason: $reason\n\nIf you have questions, please contact the system administrator.\n\nThank you.";

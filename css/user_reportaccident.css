@@ -1010,3 +1010,50 @@ body {
   width: 90%;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+.photo-preview-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 15px;
+  padding: 10px;
+  border: 1px dashed #ccc;
+  min-height: 120px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.photo-preview {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.photo-preview-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.remove-photo {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: red;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  line-height: 20px;
+  cursor: pointer;
+  font-size: 12px;
+}
+#addPhotoBtn {
+  background-color: var(--primary-color);
+  color: var(--white);
+  border: none;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-radius: 5px;
+  font-weight: bold;
+  font-size: 16px;
+  transition: all 0.3s;
+}

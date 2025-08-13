@@ -195,16 +195,7 @@ $phone = htmlspecialchars($user['phone'] ?? '');
                         <div class="profile-info-label">Phone</div>
                         <input type="text" class="profile-info-value" id="phone" name="phone" value="<?php echo $phone; ?>">
                     </div>
-                    <div class="profile-info-item">
-                        <div class="profile-info-label">Department</div>
-                        <select class="profile-info-value" id="department" name="department" required>
-                            <option value="Marine" <?php if ($department === "Marine") echo 'selected'; ?>>Marine</option>
-                            <option value="Wildlife" <?php if ($department === "Wildlife") echo 'selected'; ?>>Wildlife</option>
-                            <option value="Seedling" <?php if ($department === "Seedling") echo 'selected'; ?>>Seedling</option>
-                            <option value="Tree Cutting" <?php if ($department === "Tree Cutting") echo 'selected'; ?>>Tree Cutting</option>
-                            <option value="Cenro" <?php if ($department === "Cenro") echo 'selected'; ?>>Cenro</option>
-                        </select>
-                    </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">New Password</div>
                         <input type="password" class="profile-info-value" id="password" name="password" placeholder="Enter new password">

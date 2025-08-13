@@ -6,34 +6,18 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $stmt->store_result();
+$user_id = $_SESSION['user_id'];
+$reports = [];
+$stmt = $conn->prepare("SELECT id, date_time, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY date_time DESC");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
 
-    if ($stmt->num_rows === 1) {
-        $stmt->bind_result($id, $hashed_password, $role);
-        $stmt->fetch();
-
-        if (password_verify($password, $hashed_password)) {
-            $_SESSION['user_id'] = $id;
-            $_SESSION['role'] = $role;
-
-            header("Location: user_home.php");
-            exit();
-        } else {
-            $error = "Incorrect password.";
-        }
-    } else {
-        $error = "User not found.";
-    }
-
-    $stmt->close();
+while ($row = $result->fetch_assoc()) {
+    $reports[] = $row;
 }
+$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -197,23 +181,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label for="contact">CONTACT NO:</label>
                         <input type="text" id="contact" name="contact" required>
                     </div>
-
                     <div class="form-group two-thirds">
                         <label for="location">LOCATION:</label>
                         <input type="text" id="location" name="location" required>
                     </div>
                 </div>
 
+                <!-- Improved Photo Upload Section -->
                 <div class="form-row">
-                    <div class="form-group one-third">
-                        <label for="photo">PHOTO:</label>
-                        <input type="file" id="photo" name="photo" required>
+                    <div class="form-group full-width">
+                        <label>UPLOAD PHOTOS (Max 5):</label>
+                        <button type="button" id="addPhotoBtn" style="margin-bottom:10px;">Add Photo(s)</button>
+                        <input type="file" id="photos" name="photos[]" multiple accept="image/*" style="display:none;">
+                        <div id="photoPreview" class="photo-preview-container"></div>
                     </div>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group one-third">
                         <label for="datetime">DATE & TIME:</label>
                         <input type="datetime-local" id="datetime" name="datetime" required>
                     </div>
-                    <div class="form-group one-third">
+                    <div class="form-group two-thirds">
                         <label for="categories" style="margin-top: 0;">CATEGORIES:</label>
                         <select id="categories" name="categories" required>
                             <option value="">-- Select Category --</option>
@@ -259,14 +248,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>1</td>
-                        <td>2025-04-15</td>
-                        <td>Lawis</td>
-                        <td>Marine Pollution</td>
-                        <td class="status-approved">Approved</td>
-                    </tr>
-
+                    <?php if (empty($reports)): ?>
+                        <tr>
+                            <td colspan="5" class="no-records">No incident reports found</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($reports as $report): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($report['id']) ?></td>
+                                <td><?= date('Y-m-d', strtotime($report['date_time'])) ?></td>
+                                <td><?= htmlspecialchars($report['location']) ?></td>
+                                <td><?= htmlspecialchars($report['category']) ?></td>
+                                <td class="status-<?= strtolower($report['status']) ?>">
+                                    <?= htmlspecialchars($report['status']) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -275,17 +273,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script>
         document.getElementById('datetime').value = new Date().toISOString().slice(0, 16);
 
-        document.addEventListener('DOMContentLoaded', function() {
 
+        document.addEventListener('DOMContentLoaded', function() {
+            const photoInput = document.getElementById('photos');
+            const addPhotoBtn = document.getElementById('addPhotoBtn');
+            const photoPreview = document.getElementById('photoPreview');
+            const maxPhotos = 5;
+            let selectedFiles = [];
+
+            addPhotoBtn.addEventListener('click', function() {
+                photoInput.click();
+            });
+
+            photoInput.addEventListener('change', function(e) {
+                // Add new files to selectedFiles, avoiding duplicates and max limit
+                const newFiles = Array.from(photoInput.files);
+                for (let file of newFiles) {
+                    if (selectedFiles.length >= maxPhotos) break;
+                    // Avoid duplicates by name+size
+                    if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+                        selectedFiles.push(file);
+                    }
+                }
+                renderPreviews();
+                // Reset input so user can select the same file again if needed
+                photoInput.value = '';
+            });
+
+            function renderPreviews() {
+                photoPreview.innerHTML = '';
+                selectedFiles.forEach((file, idx) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const previewWrapper = document.createElement('div');
+                        previewWrapper.className = 'photo-preview-wrapper';
+
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        img.className = 'photo-preview';
+
+                        const removeBtn = document.createElement('span');
+                        removeBtn.className = 'remove-photo';
+                        removeBtn.innerHTML = '×';
+                        removeBtn.onclick = function() {
+                            selectedFiles.splice(idx, 1);
+                            renderPreviews();
+                        };
+
+                        previewWrapper.appendChild(img);
+                        previewWrapper.appendChild(removeBtn);
+                        photoPreview.appendChild(previewWrapper);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            // Existing form submission code
             const form = document.getElementById("incidentForm");
             const confirmationModal = document.getElementById("confirmationModal");
             const confirmBtn = document.getElementById("confirmSubmit");
             const cancelBtn = document.getElementById("cancelSubmit");
             const notification = document.getElementById("profile-notification");
 
+
             form.addEventListener("submit", function(e) {
-                e.preventDefault(); // stop immediate submit
-                confirmationModal.classList.remove("hidden-modal"); // show modal
+                e.preventDefault();
+                if (selectedFiles.length === 0) {
+                    alert('Please upload at least one photo');
+                    return;
+                }
+                confirmationModal.classList.remove("hidden-modal");
             });
 
             cancelBtn.addEventListener("click", function() {
@@ -294,61 +351,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             confirmBtn.addEventListener("click", function() {
                 confirmationModal.classList.add("hidden-modal");
-
                 const formData = new FormData(form);
-                formData.append('submit', 'true');
+                // Remove any existing photos[] from formData (in case browser adds empty)
+                formData.delete('photos[]');
+                // Append all selected files
+                selectedFiles.forEach(file => {
+                    formData.append('photos[]', file);
+                });
 
                 fetch(form.action, {
                         method: "POST",
                         body: formData
                     })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
+                    .then(response => response.json())
                     .then(data => {
-                        if (data.success) {
-                            notification.textContent = data.message;
-                            notification.style.backgroundColor = "#28a745";
-                            notification.style.display = "block";
+                        notification.textContent = data.message;
+                        notification.style.backgroundColor = data.success ? "#28a745" : "#dc3545";
+                        notification.style.display = "block";
 
-                            setTimeout(() => {
-                                notification.style.display = "none";
-                                // Use one of these options:
-
-                                // Option 1: Redirect to the same page (refresh)
+                        setTimeout(() => {
+                            notification.style.display = "none";
+                            if (data.success) {
                                 window.location.reload();
-
-                                // Option 2: Redirect to specific correct path
-                                // window.location.href = "/your-project-folder/user/user_reportaccident.php";
-
-                                // Option 3: Get current path and redirect (most reliable)
-                                const currentPath = window.location.pathname;
-                                window.location.href = currentPath;
-                            }, 3000);
-
-                            form.reset();
-                        } else {
-                            // Error handling remains the same
-                            notification.textContent = data.message;
-                            notification.style.backgroundColor = "#dc3545";
-                            notification.style.display = "block";
-                            setTimeout(() => {
-                                notification.style.display = "none";
-                            }, 3000);
-                        }
+                            }
+                        }, 3000);
                     })
                     .catch(error => {
-                        // Error handling remains the same
                         notification.textContent = "Error submitting form: " + error.message;
                         notification.style.backgroundColor = "#dc3545";
                         notification.style.display = "block";
                         setTimeout(() => {
                             notification.style.display = "none";
                         }, 3000);
-                        console.error('Error:', error);
                     });
             });
             // Mobile menu toggle

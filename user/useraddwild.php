@@ -1,5 +1,26 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
+    header("Location: user_login.php");
+    exit();
+}
+include_once __DIR__ . '/../backend/connection.php';
+
+$user_id = $_SESSION['user_id'];
+$reports = [];
+$stmt = $conn->prepare("SELECT id, date_time, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY date_time DESC");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+while ($row = $result->fetch_assoc()) {
+    $reports[] = $row;
+}
+$stmt->close();
+?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -112,7 +133,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -154,7 +175,7 @@
             border-left: 4px solid var(--primary-color);
         }
 
-       
+
         .dropdown-item:hover {
             background: var(--light-gray);
             padding-left: 30px;
@@ -332,9 +353,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -369,7 +398,7 @@
             align-items: center;
             margin-top: -1%;
             padding: 0 20px;
-            margin-bottom:2%;
+            margin-bottom: 2%;
         }
 
         .page-title {
@@ -405,6 +434,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
+
         .form-row {
             display: flex;
             flex-wrap: wrap;
@@ -421,11 +451,11 @@
         .form-group.full-width {
             flex: 1 0 100%;
         }
-        
+
         .form-group.two-thirds {
             flex: 2 0 400px;
         }
-        
+
         .form-group.one-third {
             flex: 1 0 200px;
         }
@@ -437,7 +467,7 @@
             font-size: 14px;
             font-weight: bold;
         }
-        
+
         .form-group input,
         .form-group textarea,
         .form-group select {
@@ -448,7 +478,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
-        
+
         .form-group input:focus,
         .form-group textarea:focus,
         .form-group select:focus {
@@ -456,7 +486,7 @@
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .form-group textarea {
             height: 180px;
             resize: vertical;
@@ -493,7 +523,8 @@
             margin-top: 20px;
         }
 
-        .save-btn, .view-records-btn {
+        .save-btn,
+        .view-records-btn {
             background-color: #005117;
             color: #fff;
             border: none;
@@ -549,7 +580,7 @@
             margin-top: 20px;
         }
 
-        .records-table th, 
+        .records-table th,
         .records-table td {
             padding: 12px 15px;
             text-align: left;
@@ -603,7 +634,7 @@
             .mobile-toggle {
                 display: block;
             }
-            
+
             /* Header Styles */
             header {
                 display: flex;
@@ -663,14 +694,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px; /* smaller width */
-            height: 40px; /* smaller height */
-            background: rgb(233, 255, 242); /* slightly brighter background */
-            border-radius: 12px; /* softer corners */
+            width: 40px;
+            /* smaller width */
+            height: 40px;
+            /* smaller height */
+            background: rgb(233, 255, 242);
+            /* slightly brighter background */
+            border-radius: 12px;
+            /* softer corners */
             cursor: pointer;
             transition: var(--transition);
-            color: black; /* changed icon color to black */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* subtle shadow for depth */
+            color: black;
+            /* changed icon color to black */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            /* subtle shadow for depth */
         }
 
         .nav-icon:hover {
@@ -680,7 +717,8 @@
         }
 
         .nav-icon i {
-            font-size: 1.3rem; /* smaller icon size */
+            font-size: 1.3rem;
+            /* smaller icon size */
             color: inherit;
             transition: color 0.3s ease;
         }
@@ -732,8 +770,10 @@
         }
 
         .mark-all-read:hover {
-            color: var(--primary-dark); /* Slightly darker color on hover */
-            transform: scale(1.1); /* Slightly bigger on hover */
+            color: var(--primary-dark);
+            /* Slightly darker color on hover */
+            transform: scale(1.1);
+            /* Slightly bigger on hover */
         }
 
         .notification-item {
@@ -875,9 +915,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle - Larger */
@@ -905,10 +953,10 @@
             background-color: #f9f9f9;
         }
 
-      
+
         /* Main Content */
         .main-container {
-            margin-top:-0.5%;
+            margin-top: -0.5%;
             padding: 30px;
         }
 
@@ -1217,11 +1265,11 @@
             margin-top: 10px;
             transition: all 0.3s;
         }
-        
+
         .download-btn:hover {
             background-color: #1e4a1a;
         }
-        
+
         .download-btn i {
             margin-right: 8px;
         }
@@ -1255,19 +1303,19 @@
             color: white;
         }
 
-         /* Add new styles for name fields */
+        /* Add new styles for name fields */
         .name-fields {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
             margin-bottom: 20px;
         }
-        
+
         .name-field {
             flex: 1;
             min-width: 200px;
         }
-        
+
         .name-field input {
             width: 100%;
             padding: 12px 15px;
@@ -1278,13 +1326,13 @@
             height: 40px;
             box-sizing: border-box;
         }
-        
+
         .name-field input:focus {
             outline: none;
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .name-field input::placeholder {
             color: #999;
         }
@@ -1323,7 +1371,7 @@
                 margin: 10% auto;
             }
 
-             .permit-type-selector {
+            .permit-type-selector {
                 flex-wrap: nowrap;
                 overflow-x: auto;
                 padding-bottom: 10px;
@@ -1341,32 +1389,32 @@
             header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -1387,23 +1435,24 @@
         }
     </style>
 </head>
+
 <body>
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
-                <div class="nav-item dropdown">
+            <div class="nav-item dropdown">
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
@@ -1412,8 +1461,8 @@
                         <i class="fas fa-file-invoice"></i>
                         <span>Report Incident</span>
                     </a>
-                  
-                         <a href="useraddseed.php" class="dropdown-item">
+
+                    <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -1438,13 +1487,13 @@
                         <span>Chainsaw Permit</span>
                     </a>
                 </div>
-                </div>
-                
+            </div>
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-bell"></i>
+                    <i class="fas fa-bell"></i>
                     <span class="badge">1</span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
@@ -1452,47 +1501,47 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
                                 <i class="fas fa-exclamation-circle"></i>
                             </div>
                             <div class="notification-content">
-                            <div class="notification-title">Chainsaw Renewal Status</div>
+                                <div class="notification-title">Chainsaw Renewal Status</div>
                                 <div class="notification-message">Chainsaw Renewal has been approved.</div>
                                 <div class="notification-time">10 minutes ago</div>
                             </div>
-                    </a>
-                </div>
-                
+                        </a>
+                    </div>
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-user-circle"></i>
+                    <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
                     <a href="user_profile.php" class="dropdown-item">
-                            <i class="fas fa-user-edit"></i>
-                            <span>Edit Profile</span>
-                        </a>
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
                     <a href="user_login.php" class="dropdown-item">
-                            <i class="fas fa-sign-out-alt"></i>
-                            <span>Logout</span>
-                        </a>
-                    </div>
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
+            </div>
         </div>
     </header>
 
-   
-       <div class="main-container">
+
+    <div class="main-container">
         <div class="action-buttons">
             <button class="btn btn-primary" id="addFilesBtn">
                 <i class="fas fa-plus-circle"></i> Add
@@ -1505,11 +1554,11 @@
             </a>
         </div>
 
-        <div class="requirements-form">
+        <form class="requirements-form" id="wildlifeForm" enctype="multipart/form-data" method="POST" action="../backend/users/addwildlifepermit.php">
             <div class="form-header">
                 <h2>Wildlife Registration Permit - Requirements</h2>
             </div>
-            
+
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
@@ -1519,16 +1568,16 @@
 
                 <div class="name-fields">
                     <div class="name-field">
-                        <input type="text" placeholder="First Name" required>
+                        <input type="text" name="first_name" placeholder="First Name" required>
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Middle Name">
+                        <input type="text" name="middle_name" placeholder="Middle Name">
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Last Name" required>
+                        <input type="text" name="last_name" placeholder="Last Name" required>
                     </div>
                 </div>
-                
+
                 <!-- Original Requirements for New Permit -->
                 <div class="requirements-list" id="new-requirements">
                     <!-- Requirement 1 -->
@@ -1549,7 +1598,7 @@
                                 <label for="file-1" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload Filled Form
                                 </label>
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-1" name="application_form" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-1">
@@ -1574,7 +1623,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1588,7 +1637,7 @@
                                 <label for="file-2" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-2" name="sec_cda_dti_registration" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-2">
@@ -1596,7 +1645,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1610,7 +1659,7 @@
                                 <label for="file-3" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-3" name="scientific_expertise" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-3">
@@ -1618,7 +1667,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 4 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1632,7 +1681,7 @@
                                 <label for="file-4" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-4" name="financial_plan" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-4">
@@ -1640,7 +1689,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1654,7 +1703,7 @@
                                 <label for="file-5" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-5" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-5" name="facility_design" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-5">
@@ -1662,7 +1711,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1676,7 +1725,7 @@
                                 <label for="file-6" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-6" name="community_clearance" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-6">
@@ -1684,7 +1733,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 7 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1698,7 +1747,7 @@
                                 <label for="file-7" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-7" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-7" name="vicinity_map" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-7">
@@ -1706,7 +1755,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 8 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1722,7 +1771,7 @@
                                     <label for="file-8a" class="file-input-label">
                                         <i class="fas fa-upload"></i> Upload File
                                     </label>
-                                    <input type="file" id="file-8a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                    <input type="file" id="file-8a" name="proof_of_purchase" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
                                 </div>
                                 <div class="uploaded-files" id="uploaded-files-8a">
@@ -1735,7 +1784,7 @@
                                     <label for="file-8b" class="file-input-label">
                                         <i class="fas fa-upload"></i> Upload File
                                     </label>
-                                    <input type="file" id="file-8b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                    <input type="file" id="file-8b" name="deed_of_donation" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
                                 </div>
                                 <div class="uploaded-files" id="uploaded-files-8b">
@@ -1744,7 +1793,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 9 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1758,7 +1807,9 @@
                                 <label for="file-9" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-9" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-9" name="inspection_report" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <!-- Notification Popup -->
+                                <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-9">
@@ -1766,7 +1817,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Fee Information -->
                     <div class="fee-info">
                         <p><strong>Application and Processing Fee:</strong> ₱500.00</p>
@@ -1774,7 +1825,7 @@
                         <p><strong>Total Fee:</strong> ₱3,000.00</p>
                     </div>
                 </div>
-                
+
                 <!-- Renewal Requirements (from image) -->
                 <div class="requirements-list renewal-requirements" id="renewal-requirements">
                     <!-- Requirement 1 -->
@@ -1820,7 +1871,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1842,7 +1893,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1864,7 +1915,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 4 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1928,7 +1979,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1979,7 +2030,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -2001,7 +2052,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Fee Information -->
                     <div class="fee-info">
                         <p><strong>Small Scale:</strong> (Application & processing fee) 500 + (Permit fee) 2,500 = ₱3,000.00</p>
@@ -2009,13 +2060,13 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="form-footer">
-                <button class="btn btn-primary" id="submitApplication">
+                <button class="btn btn-primary" id="submitApplication" type="button">
                     <i class="fas fa-paper-plane"></i> Submit Application
                 </button>
             </div>
-        </div>
+        </form>
     </div>
 
     <!-- File Preview Modal -->
@@ -2027,8 +2078,19 @@
         </div>
     </div>
 
+    <div id="confirmationModal" class="modal" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
+        <div class="modal-content" style="background:#fff; padding:30px; border-radius:10px; max-width:400px; margin:auto; text-align:center;">
+            <h3>Confirm Submission</h3>
+            <p>Are you sure you want to submit this wildlife permit application?</p>
+            <button id="confirmYes" class="btn btn-primary" style="margin:10px;">Yes</button>
+            <button id="confirmNo" class="btn btn-outline">No</button>
+        </div>
+    </div>
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
+        function getFileName(input) {
+            return input && input.files && input.files.length > 0 ? input.files[0].name : null;
+        }
+        document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
@@ -2052,14 +2114,14 @@
             const permitTypeBtns = document.querySelectorAll('.permit-type-btn');
             const newRequirements = document.getElementById('new-requirements');
             const renewalRequirements = document.getElementById('renewal-requirements');
-            
+
             permitTypeBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
                     // Remove active class from all buttons
                     permitTypeBtns.forEach(b => b.classList.remove('active'));
                     // Add active class to clicked button
                     this.classList.add('active');
-                    
+
                     // Show/hide requirements based on selection
                     if (this.dataset.type === 'new') {
                         newRequirements.style.display = 'grid';
@@ -2070,12 +2132,72 @@
                     }
                 });
             });
-            
+
             // Initialize with New Permit selected
             document.querySelector('.permit-type-btn[data-type="new"]').click();
 
-            // [Rest of the JavaScript code remains exactly the same]
+            // Update file name display for all file inputs
+            document.querySelectorAll('.file-input').forEach(function(input) {
+                input.addEventListener('change', function() {
+                    var fileNameSpan = this.parentElement.querySelector('.file-name');
+                    if (this.files && this.files.length > 0) {
+                        fileNameSpan.textContent = this.files[0].name;
+                    } else {
+                        fileNameSpan.textContent = 'No file chosen';
+                    }
+                });
+            });
+
+            // Confirmation modal logic
+            const form = document.getElementById('wildlifeForm');
+            const submitBtn = document.getElementById('submitApplication');
+            const modal = document.getElementById('confirmationModal');
+            const confirmYes = document.getElementById('confirmYes');
+            const confirmNo = document.getElementById('confirmNo');
+
+            submitBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                modal.style.display = 'flex';
+            });
+            confirmNo.addEventListener('click', function() {
+                modal.style.display = 'none';
+            });
+            confirmYes.addEventListener('click', function() {
+                // Print values to console
+                const firstName = form.querySelector('input[name="first_name"]').value;
+                const middleName = form.querySelector('input[name="middle_name"]').value;
+                const lastName = form.querySelector('input[name="last_name"]').value;
+                const fileFields = [
+                    'application_form',
+                    'sec_cda_dti_registration',
+                    'scientific_expertise',
+                    'financial_plan',
+                    'facility_design',
+                    'community_clearance',
+                    'vicinity_map',
+                    'proof_of_purchase',
+                    'deed_of_donation',
+                    'inspection_report'
+                ];
+                console.log('First Name:', firstName);
+                console.log('Middle Name:', middleName);
+                console.log('Last Name:', lastName);
+                fileFields.forEach(function(field) {
+                    const input = form.querySelector('input[name="' + field + '"]');
+                    console.log(field + ':', getFileName(input));
+                });
+                modal.style.display = 'none';
+                // Show notification
+                var notif = document.getElementById('profile-notification');
+                notif.textContent = 'Application submitted!';
+                notif.style.display = 'block';
+                notif.style.background = '#28a745';
+                setTimeout(function() {
+                    notif.style.display = 'none';
+                }, 3000);
+            });
         });
     </script>
 </body>
+
 </html>

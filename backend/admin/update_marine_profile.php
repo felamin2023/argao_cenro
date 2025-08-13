@@ -1,5 +1,5 @@
 <?php
-// backend/admin/update_marine_profile.php
+
 session_start();
 header('Content-Type: application/json');
 
@@ -12,20 +12,20 @@ require_once __DIR__ . '/../../backend/connection.php';
 
 $user_id = $_SESSION['user_id'];
 
-// Collect fields
+
 $first_name = trim($_POST['first_name'] ?? '');
 $last_name = trim($_POST['last_name'] ?? '');
 $age = trim($_POST['age'] ?? '');
 $department = trim($_POST['department'] ?? '');
 $phone = trim($_POST['phone'] ?? '');
 
-// Validate required fields
+
 if ($first_name === '' || $last_name === '' || $department === '') {
     echo json_encode(['success' => false, 'error' => 'Missing required fields.']);
     exit();
 }
 
-// Handle image upload if present
+
 $image_filename = null;
 if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
     $upload_dir = __DIR__ . '/../../upload/admin_profiles/';
@@ -43,7 +43,7 @@ if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPL
     }
 }
 
-// Fetch email for the request
+
 $email = '';
 $stmt = $conn->prepare('SELECT email FROM users WHERE id = ?');
 $stmt->bind_param('i', $user_id);
@@ -52,7 +52,7 @@ $stmt->bind_result($email);
 $stmt->fetch();
 $stmt->close();
 
-// Insert request into profile_update_requests
+
 $sql = "INSERT INTO profile_update_requests (user_id, image, first_name, last_name, age, email, department, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param(

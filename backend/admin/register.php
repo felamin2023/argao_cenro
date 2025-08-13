@@ -4,7 +4,7 @@ header('Content-Type: application/json');
 
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Check if email was verified via OTP
+
     if (!isset($_SESSION['email_verified']) || !$_SESSION['email_verified']) {
         $errors['email'] = 'Please verify your email first.';
     } else {
@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
 
-        // Validation
+
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors['email'] = 'Invalid email';
         }
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors['confirm_password'] = 'Passwords do not match';
         }
 
-        // Check if email already exists and its status
+
         if (empty($errors)) {
             include '../../backend/connection.php';
             $stmt = $conn->prepare("SELECT id, status FROM users WHERE email = ?");
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->num_rows > 0) {
                 $stmt->fetch();
                 if (strtolower($existing_status) === 'rejected') {
-                    // Update the existing rejected record
+
                     $stmt->close();
                     $update = $conn->prepare("UPDATE users SET phone=?, role=?, department=?, password=?, status='Pending' WHERE id=?");
                     $role = 'Admin';
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn->close();
             } else {
                 $stmt->close();
-                // Insert new record
+
                 $role = 'Admin';
                 $password_hash = password_hash($password, PASSWORD_DEFAULT);
                 $sql = "INSERT INTO users (email, phone, role, department, password) VALUES (?, ?, ?, ?, ?)";

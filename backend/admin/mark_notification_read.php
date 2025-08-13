@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 if (isset($_POST['mark_all'])) {
-    // Mark all as read for all notifications
+
     $conn->query("UPDATE profile_update_requests SET is_read = 1 WHERE is_read = 0");
     echo json_encode(['success' => true]);
     exit();

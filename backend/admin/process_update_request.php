@@ -21,13 +21,13 @@ if ($request_id <= 0 || !$action) {
 $reviewed_at = date('Y-m-d H:i:s');
 
 if ($action === 'approve') {
-    // Update request status first
+
     $stmt = $conn->prepare("UPDATE profile_update_requests SET status = 'approved', reviewed_at = ?, reviewed_by = ? WHERE id = ?");
     $stmt->bind_param("ssi", $reviewed_at, $reviewed_by, $request_id);
     $stmt->execute();
     $stmt->close();
 
-    // Fetch the approved request details including password
+
     $stmt = $conn->prepare("SELECT user_id, image, first_name, last_name, age, email, department, phone, password FROM profile_update_requests WHERE id = ?");
     $stmt->bind_param("i", $request_id);
     $stmt->execute();
@@ -46,7 +46,7 @@ if ($action === 'approve') {
         $phone = $request['phone'];
         $password = $request['password'];
 
-        // Update user with password if it was provided in the request
+
         if (!empty($password)) {
             $stmt = $conn->prepare("UPDATE users SET image = ?, first_name = ?, last_name = ?, age = ?, email = ?, department = ?, phone = ?, password = ? WHERE id = ?");
             $stmt->bind_param("ssssssssi", $image, $first_name, $last_name, $age, $email, $department, $phone, $password, $user_id_to_update);
