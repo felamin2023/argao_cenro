@@ -55,11 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $requestLetter = uploadFile($_FILES['request_letter']);
 
         if ($requestLetter) {
+            // Insert with status_updated_by set to the current user
             $stmt = $conn->prepare("INSERT INTO seedling_requests (
-                user_id, first_name, middle_name, last_name, request_letter
-            ) VALUES (?, ?, ?, ?, ?)");
+                    user_id, first_name, middle_name, last_name, request_letter, status_updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?)");
 
-            $stmt->bind_param("issss", $userId, $firstName, $middleName, $lastName, $requestLetter);
+            $stmt->bind_param("issssi", $userId, $firstName, $middleName, $lastName, $requestLetter, $userId);
 
             if ($stmt->execute()) {
                 echo json_encode(['success' => true, 'message' => 'Seedling request submitted successfully!']);
