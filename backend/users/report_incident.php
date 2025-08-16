@@ -22,28 +22,21 @@ try {
     $user_id = $_SESSION['user_id'];
 
 
-    $first_name = filter_input(INPUT_POST, 'first_name', FILTER_SANITIZE_STRING);
-    $last_name = filter_input(INPUT_POST, 'last_name', FILTER_SANITIZE_STRING);
-    $age = filter_input(INPUT_POST, 'age', FILTER_VALIDATE_INT);
+
+    $who = filter_input(INPUT_POST, 'who', FILTER_SANITIZE_STRING);
+    $what = filter_input(INPUT_POST, 'what', FILTER_SANITIZE_STRING);
+    $where = filter_input(INPUT_POST, 'where', FILTER_SANITIZE_STRING);
+    $when = filter_input(INPUT_POST, 'when', FILTER_SANITIZE_STRING);
+    $why = filter_input(INPUT_POST, 'why', FILTER_SANITIZE_STRING);
     $contact = filter_input(INPUT_POST, 'contact', FILTER_SANITIZE_STRING);
-    $location = filter_input(INPUT_POST, 'location', FILTER_SANITIZE_STRING);
-    $datetime = filter_input(INPUT_POST, 'datetime', FILTER_SANITIZE_STRING);
     $category = filter_input(INPUT_POST, 'categories', FILTER_SANITIZE_STRING);
     $description = filter_input(INPUT_POST, 'description', FILTER_SANITIZE_STRING);
 
-
     if (
-        empty($first_name) || empty($last_name) || $age === false || empty($contact) ||
-        empty($location) || empty($datetime) || empty($category) || empty($description)
+        empty($who) || empty($what) || empty($where) || empty($when) || empty($why) || empty($contact) || empty($category) || empty($description)
     ) {
         jsonResponse(false, 'All fields are required');
     }
-
-
-    if ($age <= 0) {
-        jsonResponse(false, 'Please enter a valid age');
-    }
-
 
     $contact = preg_replace('/[^0-9]/', '', $contact);
     if (!preg_match('/^09[0-9]{9}$/', $contact)) {
@@ -117,11 +110,10 @@ try {
 
 
     $stmt = $conn->prepare("INSERT INTO incident_reports 
-        (user_id, first_name, last_name, age, contact_no, location, photos, date_time, category, description, status) 
+        (user_id, who, what, `where`, `when`, why, contact_no, photos, category, description, status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')");
 
     if (!$stmt) {
-
         foreach ($uploaded_files as $file) {
             @unlink($upload_dir . $file);
         }
@@ -129,15 +121,15 @@ try {
     }
 
     $stmt->bind_param(
-        "ississssss",
+        "isssssssss",
         $user_id,
-        $first_name,
-        $last_name,
-        $age,
+        $who,
+        $what,
+        $where,
+        $when,
+        $why,
         $contact,
-        $location,
         $photos_json,
-        $datetime,
         $category,
         $description
     );
@@ -145,7 +137,6 @@ try {
     if ($stmt->execute()) {
         jsonResponse(true, 'Incident report submitted successfully!');
     } else {
-
         foreach ($uploaded_files as $file) {
             @unlink($upload_dir . $file);
         }

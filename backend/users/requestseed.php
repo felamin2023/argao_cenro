@@ -10,7 +10,6 @@ require_once __DIR__ . '/../../backend/connection.php';
 
 function uploadFile($file)
 {
-
     $uploadDir = dirname(__DIR__, 2) . '/upload/user/requestseed/';
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0777, true);
@@ -30,9 +29,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $firstName = trim($_POST['first_name'] ?? '');
     $middleName = trim($_POST['middle_name'] ?? '');
     $lastName = trim($_POST['last_name'] ?? '');
+    $seedlingName = trim($_POST['seedling_name'] ?? '');
+    $quantity = intval($_POST['quantity'] ?? 0);
 
     if (empty($firstName) || empty($lastName)) {
         $errors[] = "First name and last name are required.";
+    }
+
+    if (empty($seedlingName)) {
+        $errors[] = "Seedling name is required.";
+    }
+    if ($quantity <= 0) {
+        $errors[] = "Quantity must be greater than 0.";
     }
 
     if (!isset($_FILES['request_letter']) || $_FILES['request_letter']['error'] !== UPLOAD_ERR_OK) {
@@ -55,12 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $requestLetter = uploadFile($_FILES['request_letter']);
 
         if ($requestLetter) {
-            // Insert with status_updated_by set to the current user
+            // Insert without status_updated_by (it will be NULL by default)
             $stmt = $conn->prepare("INSERT INTO seedling_requests (
-                    user_id, first_name, middle_name, last_name, request_letter, status_updated_by
-                ) VALUES (?, ?, ?, ?, ?, ?)");
+                        user_id, first_name, middle_name, last_name, seedling_name, quantity, request_letter
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
-            $stmt->bind_param("issssi", $userId, $firstName, $middleName, $lastName, $requestLetter, $userId);
+            $stmt->bind_param("issssis", $userId, $firstName, $middleName, $lastName, $seedlingName, $quantity, $requestLetter);
 
             if ($stmt->execute()) {
                 echo json_encode(['success' => true, 'message' => 'Seedling request submitted successfully!']);

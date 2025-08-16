@@ -1,5 +1,43 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
+    header("Location: user_login.php");
+    exit();
+}
+include_once __DIR__ . '/../backend/connection.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $stmt->store_result();
+
+    if ($stmt->num_rows === 1) {
+        $stmt->bind_result($id, $hashed_password, $role);
+        $stmt->fetch();
+
+        if (password_verify($password, $hashed_password)) {
+            $_SESSION['user_id'] = $id;
+            $_SESSION['role'] = $role;
+
+            header("Location: user_home.php");
+            exit();
+        } else {
+            $error = "Incorrect password.";
+        }
+    } else {
+        $error = "User not found.";
+    }
+
+    $stmt->close();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -111,7 +149,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -329,9 +367,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -361,7 +407,7 @@
 
         /* Main Content */
         .main-container {
-            margin-top:-0.5%;
+            margin-top: -0.5%;
             padding: 30px;
         }
 
@@ -475,21 +521,24 @@
             gap: 10px;
         }
 
-      .requirement-number {
-    background: var(--primary-color);
-    color: white;
-    width: 25px;
-    height: 25px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.9rem;
-    margin-right: 10px;
-    flex-shrink: 0; /* Add this to prevent shrinking */
-    line-height: 25px; /* Add this to ensure vertical centering */
-    text-align: center; /* Add this for horizontal centering */
-}
+        .requirement-number {
+            background: var(--primary-color);
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            margin-right: 10px;
+            flex-shrink: 0;
+            /* Add this to prevent shrinking */
+            line-height: 25px;
+            /* Add this to ensure vertical centering */
+            text-align: center;
+            /* Add this for horizontal centering */
+        }
 
         .new-number {
             display: inline;
@@ -670,11 +719,11 @@
             margin-top: 10px;
             transition: all 0.3s;
         }
-        
+
         .download-btn:hover {
             background-color: #1e4a1a;
         }
-        
+
         .download-btn i {
             margin-right: 8px;
         }
@@ -708,19 +757,19 @@
             color: white;
         }
 
-         /* Add new styles for name fields */
+        /* Add new styles for name fields */
         .name-fields {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
             margin-bottom: 20px;
         }
-        
+
         .name-field {
             flex: 1;
             min-width: 200px;
         }
-        
+
         .name-field input {
             width: 100%;
             padding: 12px 15px;
@@ -731,17 +780,17 @@
             height: 40px;
             box-sizing: border-box;
         }
-        
+
         .name-field input:focus {
             outline: none;
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .name-field input::placeholder {
             color: #999;
         }
-        
+
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -777,7 +826,7 @@
                 margin: 10% auto;
             }
 
-             .permit-type-selector {
+            .permit-type-selector {
                 flex-wrap: nowrap;
                 overflow-x: auto;
                 padding-bottom: 10px;
@@ -795,32 +844,32 @@
             header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -841,23 +890,24 @@
         }
     </style>
 </head>
+
 <body>
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
-                <div class="nav-item dropdown">
+            <div class="nav-item dropdown">
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
@@ -875,13 +925,13 @@
                         <span>Chainsaw Renewal</span>
                     </a>
                 </div>
-                </div>
-                
+            </div>
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-bell"></i>
+                    <i class="fas fa-bell"></i>
                     <span class="badge">1</span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
@@ -889,57 +939,57 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
                                 <i class="fas fa-exclamation-circle"></i>
                             </div>
                             <div class="notification-content">
-                            <div class="notification-title">Chainsaw Renewal Status</div>
+                                <div class="notification-title">Chainsaw Renewal Status</div>
                                 <div class="notification-message">Chainsaw Renewal has been approved.</div>
                                 <div class="notification-time">10 minutes ago</div>
                             </div>
-                    </a>
-                </div>
-                
+                        </a>
+                    </div>
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
-                        <i class="fas fa-user-circle"></i>
+                    <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
                     <a href="user_profile.php" class="dropdown-item">
-                            <i class="fas fa-user-edit"></i>
-                            <span>Edit Profile</span>
-                        </a>
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
                     <a href="user_login.php" class="dropdown-item">
-                            <i class="fas fa-sign-out-alt"></i>
-                            <span>Logout</span>
-                        </a>
-                    </div>
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
+            </div>
         </div>
     </header>
 
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -947,15 +997,15 @@
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-                
-                
-                       <div class="dropdown-menu center">
+
+
+                <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-                    
-                       <a href="useraddseed.php" class="dropdown-item">
+
+                    <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -995,7 +1045,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -1008,13 +1058,13 @@
                             </div>
                         </a>
                     </div>
-                
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -1051,75 +1101,68 @@
             <div class="form-header">
                 <h2>Lumber Dealer Permit - Requirements</h2>
             </div>
-            
+
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
                     <button class="permit-type-btn active" data-type="new">New Permit</button>
                     <button class="permit-type-btn" data-type="renewal">Renewal</button>
                 </div>
-                
 
-                 <!-- Add name fields here -->
-        <div class="name-fields">
-            <div class="name-field">
-                <input type="text" placeholder="First Name" required>
-            </div>
-            <div class="name-field">
-                <input type="text" placeholder="Middle Name">
-            </div>
-            <div class="name-field">
-                <input type="text" placeholder="Last Name" required>
-            </div>
-        </div>
+                <!-- Name fields -->
+                <div class="name-fields">
+                    <div class="name-field">
+                        <input type="text" placeholder="First Name" required>
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Middle Name">
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Last Name" required>
+                    </div>
+                </div>
+
                 <div class="requirements-list">
-
-                   <!-- Requirement 1 (Common) -->
+                    <!-- Requirement 1 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">1</span>
                                 <span class="requirement-number renewal-number" style="display:none">1</span>
-                               Complete Staff Work (CSW) by the inspecting officer- 3 copies from inspecting officer for signature of RPS chief
+                                Complete Staff Work (CSW) by the inspecting officer- 3 copies from inspecting officer for signature of RPS chief
                             </div>
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-4" class="file-input-label">
+                                <label for="file-1" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
-                            <div class="uploaded-files" id="uploaded-files-4">
-                                <!-- Files will appear here -->
-                            </div>
                         </div>
-    </div>
+                    </div>
 
-                         <!-- Requirement 2 (Common) -->
+                    <!-- Requirement 2 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">2</span>
                                 <span class="requirement-number renewal-number" style="display:none">2</span>
-                            Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
+                                Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
                             </div>
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-4" class="file-input-label">
+                                <label for="file-2" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
-                            <div class="uploaded-files" id="uploaded-files-4">
-                                <!-- Files will appear here -->
-                            </div>
                         </div>
+                    </div>
 
- </div>
                     <!-- Requirement 3 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1139,19 +1182,14 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-1" class="file-input-label">
+                                <label for="file-3" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-1">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
-
-
 
                     <!-- Requirement 4 (Common) -->
                     <div class="requirement-item">
@@ -1164,37 +1202,30 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-2" class="file-input-label">
+                                <label for="file-4" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-2">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
 
                     <!-- Requirement 5 (New Only) -->
-                    <div class="requirement-item" id="requirement-3">
+                    <div class="requirement-item" id="requirement-5">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">5</span>
-                                <span class="requirement-number renewal-number" style="display:none">5</span>
                                 Business Management Plan (3 copies)
                             </div>
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-3" class="file-input-label">
+                                <label for="file-5" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-5" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-3">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
@@ -1210,19 +1241,16 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-4" class="file-input-label">
+                                <label for="file-6" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-4">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
 
-                    <!-- Requirement 7 (Common for both New and Renewal) -->
+                    <!-- Requirement 7 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -1233,20 +1261,17 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-5" class="file-input-label">
+                                <label for="file-7" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-5" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-7" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-5">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
 
-                    <!-- Requirement 8(New Only) -->
-                    <div class="requirement-item" id="requirement-6">
+                    <!-- Requirement 8 (New Only) -->
+                    <div class="requirement-item" id="requirement-8">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">8</span>
@@ -1255,20 +1280,17 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-6" class="file-input-label">
+                                <label for="file-8" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-8" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-6">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
 
                     <!-- Requirement 9 (Renewal Only) -->
-                    <div class="requirement-item" id="requirement-7">
+                    <div class="requirement-item" id="requirement-9">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number renewal-number">7</span>
@@ -1277,59 +1299,50 @@
                         </div>
                         <div class="file-upload">
                             <div class="file-input-container">
-                                <label for="file-7" class="file-input-label">
+                                <label for="file-9" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-7" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-9" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-7">
-                                <!-- Files will appear here -->
                             </div>
                         </div>
                     </div>
 
-                    <!-- Requirement 9 (Common) -->
+                    <!-- Requirement 10 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">9</span>
                                 <span class="requirement-number renewal-number">8</span>
-                                Regulatory Fees 
+                                Regulatory Fees
                             </div>
                         </div>
                         <div class="file-upload">
                             <div class="sub-requirement">
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of Official Receipt</p>
                                 <div class="file-input-container">
-                                    <label for="file-8a" class="file-input-label">
+                                    <label for="file-10a" class="file-input-label">
                                         <i class="fas fa-upload"></i> Upload File
                                     </label>
-                                    <input type="file" id="file-8a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                    <input type="file" id="file-10a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="uploaded-files-8a">
-                                    <!-- Files will appear here -->
                                 </div>
                             </div>
                             <div class="sub-requirement" style="margin-top: 15px;">
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of Order of Payment</p>
                                 <div class="file-input-container">
-                                    <label for="file-8b" class="file-input-label">
+                                    <label for="file-10b" class="file-input-label">
                                         <i class="fas fa-upload"></i> Upload File
                                     </label>
-                                    <input type="file" id="file-8b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                    <input type="file" id="file-10b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="uploaded-files-8b">
-                                    <!-- Files will appear here -->
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <div class="form-footer">
                 <button class="btn btn-primary" id="submitApplication">
                     <i class="fas fa-paper-plane"></i> Submit Application
@@ -1338,21 +1351,24 @@
         </div>
     </div>
 
-    <!-- File Preview Modal -->
-    <div id="filePreviewModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <h3 id="modal-title">File Preview</h3>
-            <iframe id="filePreviewFrame" class="file-preview" src="about:blank"></iframe>
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content" style="max-width:400px;text-align:center;">
+            <span id="closeConfirmModal" class="close-modal">&times;</span>
+            <h3>Confirm Submission</h3>
+            <p>Are you sure you want to submit this lumber dealer permit request?</p>
+            <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Submit</button>
+            <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
         </div>
     </div>
 
+    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     const isActive = navContainer.classList.toggle('active');
@@ -1360,434 +1376,240 @@
                 });
             }
 
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-                    navContainer.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-            });
-
             // Permit type selector functionality
             const permitTypeBtns = document.querySelectorAll('.permit-type-btn');
-            const requirement3 = document.getElementById('requirement-3');
-            const requirement6 = document.getElementById('requirement-6');
-            const requirement7 = document.getElementById('requirement-7');
-            
+            const requirement5 = document.getElementById('requirement-5');
+            const requirement8 = document.getElementById('requirement-8');
+            const requirement9 = document.getElementById('requirement-9');
+
             permitTypeBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
-                    // Remove active class from all buttons
                     permitTypeBtns.forEach(b => b.classList.remove('active'));
-                    // Add active class to clicked button
                     this.classList.add('active');
-                    
-                    // Show/hide requirements based on selection
+
                     if (this.dataset.type === 'new') {
-                        // Show new permit requirements
-                        requirement3.style.display = 'flex';
-                        requirement6.style.display = 'flex';
-                        requirement7.style.display = 'none';
-                        
-                        // Show new numbering, hide renewal numbering
+                        requirement5.style.display = 'flex';
+                        requirement8.style.display = 'flex';
+                        requirement9.style.display = 'none';
                         document.querySelectorAll('.new-number').forEach(el => el.style.display = 'inline');
                         document.querySelectorAll('.renewal-number').forEach(el => el.style.display = 'none');
-                        
-                        // Show/hide appropriate download buttons
                         document.querySelector('.new-form-btn').style.display = 'inline-flex';
                         document.querySelector('.renewal-form-btn').style.display = 'none';
                     } else {
-                        // Show renewal requirements
-                        requirement3.style.display = 'none';
-                        requirement6.style.display = 'none';
-                        requirement7.style.display = 'flex';
-                        
-                        // Show renewal numbering, hide new numbering
+                        requirement5.style.display = 'none';
+                        requirement8.style.display = 'none';
+                        requirement9.style.display = 'flex';
                         document.querySelectorAll('.new-number').forEach(el => el.style.display = 'none');
                         document.querySelectorAll('.renewal-number').forEach(el => el.style.display = 'inline');
-                        
-                        // Show/hide appropriate download buttons
                         document.querySelector('.new-form-btn').style.display = 'none';
                         document.querySelector('.renewal-form-btn').style.display = 'inline-flex';
                     }
                 });
             });
-            
+
             // Initialize with New Permit selected
             document.querySelector('.permit-type-btn[data-type="new"]').click();
 
-            // File input change handler
-            document.querySelectorAll('.file-input').forEach(input => {
-                input.addEventListener('change', function() {
-                    const fileName = this.files[0] ? this.files[0].name : 'No file chosen';
-                    this.parentElement.querySelector('.file-name').textContent = fileName;
-                    
-                    if (this.files[0]) {
-                        addUploadedFile(this.id, this.files[0]);
-                    }
-                });
-            });
-
-            // Function to add uploaded file to the list
-            function addUploadedFile(inputId, file) {
-                const requirementId = inputId.split('-')[1];
-                const uploadedFilesContainer = document.getElementById(`uploaded-files-${requirementId}`);
-                
-                // Create file icon based on file type
-                let fileIcon;
-                if (file.type.includes('pdf')) {
-                    fileIcon = '<i class="fas fa-file-pdf file-icon"></i>';
-                } else if (file.type.includes('image')) {
-                    fileIcon = '<i class="fas fa-file-image file-icon"></i>';
-                } else if (file.type.includes('word') || file.type.includes('document')) {
-                    fileIcon = '<i class="fas fa-file-word file-icon"></i>';
-                } else {
-                    fileIcon = '<i class="fas fa-file file-icon"></i>';
+            // File input handling
+            const fileInputs = [{
+                    id: 'file-1',
+                    uploaded: 'uploaded-files-1'
+                },
+                {
+                    id: 'file-2',
+                    uploaded: 'uploaded-files-2'
+                },
+                {
+                    id: 'file-3',
+                    uploaded: 'uploaded-files-3'
+                },
+                {
+                    id: 'file-4',
+                    uploaded: 'uploaded-files-4'
+                },
+                {
+                    id: 'file-5',
+                    uploaded: 'uploaded-files-5'
+                },
+                {
+                    id: 'file-6',
+                    uploaded: 'uploaded-files-6'
+                },
+                {
+                    id: 'file-7',
+                    uploaded: 'uploaded-files-7'
+                },
+                {
+                    id: 'file-8',
+                    uploaded: 'uploaded-files-8'
+                },
+                {
+                    id: 'file-9',
+                    uploaded: 'uploaded-files-9'
+                },
+                {
+                    id: 'file-10a',
+                    uploaded: 'uploaded-files-10a'
+                },
+                {
+                    id: 'file-10b',
+                    uploaded: 'uploaded-files-10b'
                 }
-                
-                // Create file item
-                const fileItem = document.createElement('div');
-                fileItem.className = 'file-item';
-                fileItem.innerHTML = `
-                    <div class="file-info">
-                        ${fileIcon}
-                        <span>${file.name}</span>
-                    </div>
-                    <div class="file-actions">
-                        <button class="file-action-btn view-file" data-file="${file.name}" title="View">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="file-action-btn" title="Download">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button class="file-action-btn delete-file" title="Delete">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                `;
-                
-                uploadedFilesContainer.appendChild(fileItem);
-                
-                // Add event listeners to the new buttons
-                fileItem.querySelector('.view-file').addEventListener('click', function() {
-                    previewFile(file);
-                });
-                
-                fileItem.querySelector('.delete-file').addEventListener('click', function() {
-                    fileItem.remove();
-                    // Clear the file input if this was the only file
-                    if (uploadedFilesContainer.children.length === 0) {
-                        document.getElementById(inputId).value = '';
-                        document.getElementById(inputId).parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                    }
-                });
-            }
+            ];
 
-            // File preview functionality
-            const modal = document.getElementById('filePreviewModal');
-            const modalFrame = document.getElementById('filePreviewFrame');
-            const closeModal = document.querySelector('.close-modal');
-            
-            // Add click event to all view buttons (including existing ones)
-            document.addEventListener('click', function(e) {
-                if (e.target.closest('.view-file')) {
-                    const fileName = e.target.closest('.view-file').getAttribute('data-file');
-                    // In a real app, you would get the actual file URL here
-                    // For demo purposes, we'll just show the file name
-                    document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
-                    
-                    // For demo, we'll show a placeholder
-                    // In a real app, you would set the iframe src to the actual file URL
-                    modalFrame.src = "about:blank";
-                    modalFrame.srcdoc = `
-                        <html>
-                            <head>
-                                <style>
-                                    body { 
-                                        font-family: Arial, sans-serif; 
-                                        display: flex; 
-                                        justify-content: center; 
-                                        align-items: center; 
-                                        height: 100vh; 
-                                        margin: 0; 
-                                        background-color: #f5f5f5;
-                                    }
-                                    .preview-content {
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    .file-icon {
-                                        font-size: 48px;
-                                        color: #2b6625;
-                                        margin-bottom: 20px;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="preview-content">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file"></i>
-                                    </div>
-                                    <h2>${fileName}</h2>
-                                    <p>This is a preview of the uploaded file.</p>
-                                    <p>In a real application, the actual file content would be displayed here.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `;
-                    
-                    modal.style.display = "block";
-                }
-            });
-            
-            // Close modal when clicking X
-            closeModal.addEventListener('click', function() {
-                modal.style.display = "none";
-            });
-            
-            // Close modal when clicking outside
-            window.addEventListener('click', function(event) {
-                if (event.target == modal) {
-                    modal.style.display = "none";
-                }
-            });
+            let selectedFiles = {};
 
-            // Function to preview file (would be more complex in a real app)
-            function previewFile(file) {
-                const reader = new FileReader();
-                
-                reader.onload = function(e) {
-                    if (file.type.includes('image')) {
-                        // For images, display directly
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            margin: 0; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh;
-                                            background-color: #f5f5f5;
-                                        }
-                                        img { 
-                                            max-width: 100%; 
-                                            max-height: 100%; 
-                                            object-fit: contain;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <img src="${e.target.result}" alt="${file.name}">
-                                </body>
-                            </html>
-                        `;
-                    } else if (file.type.includes('pdf')) {
-                        // For PDFs, we would typically use a PDF viewer library
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            font-family: Arial, sans-serif; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh; 
-                                            margin: 0; 
-                                            background-color: #f5f5f5;
-                                        }
-                                        .preview-content {
-                                            text-align: center;
-                                            padding: 20px;
-                                        }
-                                        .file-icon {
-                                            font-size: 48px;
-                                            color: #2b6625;
-                                            margin-bottom: 20px;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <div class="preview-content">
-                                        <div class="file-icon">
-                                            <i class="fas fa-file-pdf"></i>
-                                        </div>
-                                        <h2>${file.name}</h2>
-                                        <p>PDF preview would be displayed here with a proper PDF viewer.</p>
-                                    </div>
-                                </body>
-                            </html>
-                        `;
-                    } else {
-                        // For other files, show a generic preview
-                        modalFrame.srcdoc = `
-                            <html>
-                                <head>
-                                    <style>
-                                        body { 
-                                            font-family: Arial, sans-serif; 
-                                            display: flex; 
-                                            justify-content: center; 
-                                            align-items: center; 
-                                            height: 100vh; 
-                                            margin: 0; 
-                                            background-color: #f5f5f5;
-                                        }
-                                        .preview-content {
-                                            text-align: center;
-                                            padding: 20px;
-                                        }
-                                        .file-icon {
-                                            font-size: 48px;
-                                            color: #2b6625;
-                                            margin-bottom: 20px;
-                                        }
-                                    </style>
-                                </head>
-                                <body>
-                                    <div class="preview-content">
-                                        <div class="file-icon">
-                                            <i class="fas fa-file"></i>
-                                        </div>
-                                        <h2>${file.name}</h2>
-                                        <p>File preview not available for this file type.</p>
-                                        <p>Please download the file to view its contents.</p>
-                                    </div>
-                                </body>
-                            </html>
-                        `;
-                    }
-                    
-                    document.getElementById('modal-title').textContent = `Preview: ${file.name}`;
-                    modal.style.display = "block";
-                };
-                
-                if (file.type.includes('image')) {
-                    reader.readAsDataURL(file);
-                } else {
-                    // For non-image files, we don't actually need to read the content for this demo
-                    reader.readAsText(file.slice(0, 1024)); // Just read a small part for demo
-                }
-            }
-
-            // Submit application button
-            document.getElementById('submitApplication').addEventListener('click', function() {
-                // Check if all required files are uploaded
-                let allUploaded = true;
-                const requirementItems = document.querySelectorAll('.requirement-item');
-                
-                requirementItems.forEach(item => {
-                    if (item.style.display === 'none') return; // Skip hidden requirements
-                    
-                    const fileInputs = item.querySelectorAll('.file-input');
-                    const uploadedFiles = item.querySelectorAll('.file-item');
-                    
-                    fileInputs.forEach(input => {
-                        if (input.files.length === 0 && uploadedFiles.length === 0) {
-                            allUploaded = false;
-                            // Highlight the requirement that's missing files
-                            item.style.borderLeft = '4px solid #ff4757';
-                            setTimeout(() => {
-                                item.style.borderLeft = '4px solid var(--primary-color)';
-                            }, 2000);
+            fileInputs.forEach(input => {
+                const fileInput = document.getElementById(input.id);
+                if (fileInput) {
+                    fileInput.addEventListener('change', function() {
+                        const file = this.files[0];
+                        this.parentElement.querySelector('.file-name').textContent = file ? file.name : 'No file chosen';
+                        if (file) {
+                            selectedFiles[input.id] = file;
+                        } else {
+                            selectedFiles[input.id] = null;
                         }
                     });
-                });
-                
-                if (allUploaded) {
-                    // Show success message
-                    const confirmation = document.createElement('div');
-                    confirmation.textContent = 'Application submitted successfully!';
-                    confirmation.style.position = 'fixed';
-                    confirmation.style.bottom = '20px';
-                    confirmation.style.right = '20px';
-                    confirmation.style.backgroundColor = 'var(--primary-color)';
-                    confirmation.style.color = 'white';
-                    confirmation.style.padding = '10px 20px';
-                    confirmation.style.borderRadius = 'var(--border-radius)';
-                    confirmation.style.boxShadow = 'var(--box-shadow)';
-                    confirmation.style.zIndex = '2000';
-                    document.body.appendChild(confirmation);
-                    
-                    setTimeout(() => {
-                        confirmation.style.opacity = '0';
-                        confirmation.style.transform = 'translateY(20px)';
-                        setTimeout(() => {
-                            document.body.removeChild(confirmation);
-                        }, 300);
-                    }, 3000);
-                    
-                    // In a real app, you would submit the form data to the server here
-                    console.log('Application submitted with all files');
-                } else {
-                    alert('Please upload all required files before submitting.');
                 }
             });
 
+            // Confirmation modal logic
+            const confirmModal = document.getElementById('confirmModal');
+            const closeConfirmModal = document.getElementById('closeConfirmModal');
+            const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
+            const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
+
+            const submitApplicationBtn = document.getElementById('submitApplication');
+            if (submitApplicationBtn) {
+                submitApplicationBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    // Validate fields
+                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
+                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    if (!firstName || !lastName) {
+                        alert('First name and last name are required.');
+                        return;
+                    }
+
+                    // Check if required files are uploaded based on permit type
+                    const isNewPermit = document.querySelector('.permit-type-btn[data-type="new"]').classList.contains('active');
+                    const requiredFiles = isNewPermit ? ['file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-10a', 'file-10b'] : ['file-1', 'file-2', 'file-3', 'file-4', 'file-6', 'file-7', 'file-9', 'file-10a', 'file-10b'];
+
+                    let allRequiredFilesUploaded = true;
+                    requiredFiles.forEach(fileId => {
+                        if (!selectedFiles[fileId]) {
+                            allRequiredFilesUploaded = false;
+                            const requirementItem = document.getElementById(fileId).closest('.requirement-item');
+                            if (requirementItem) {
+                                requirementItem.style.borderLeft = '4px solid #ff4757';
+                                setTimeout(() => {
+                                    requirementItem.style.borderLeft = '4px solid var(--primary-color)';
+                                }, 2000);
+                            }
+                        }
+                    });
+
+                    if (!allRequiredFilesUploaded) {
+                        alert('Please upload all required files before submitting.');
+                        return;
+                    }
+
+                    if (confirmModal) confirmModal.style.display = 'block';
+                });
+            }
+
+            if (closeConfirmModal) {
+                closeConfirmModal.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+                });
+            }
+            if (cancelSubmitBtn) {
+                cancelSubmitBtn.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+                });
+            }
+
+            if (confirmSubmitBtn) {
+                confirmSubmitBtn.addEventListener('click', function() {
+                    if (confirmModal) confirmModal.style.display = 'none';
+
+                    // Prepare form data
+                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
+                    const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
+                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    const permitType = document.querySelector('.permit-type-btn.active').dataset.type;
+
+                    const formData = new FormData();
+                    formData.append('first_name', firstName);
+                    formData.append('middle_name', middleName);
+                    formData.append('last_name', lastName);
+                    formData.append('permit_type', permitType);
+
+                    // Append all files
+                    fileInputs.forEach(input => {
+                        if (selectedFiles[input.id]) {
+                            formData.append(input.id.replace('-', '_'), selectedFiles[input.id]);
+                        }
+                    });
+
+                    fetch('../backend/users/addlumber.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.json().then(err => {
+                                    throw new Error(err.errors ? err.errors.join('\n') : 'Server error');
+                                });
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                // Clear form and show success
+                                document.querySelectorAll('input[type="text"]').forEach(input => input.value = '');
+                                document.querySelectorAll('input[type="file"]').forEach(input => {
+                                    input.value = '';
+                                    input.parentElement.querySelector('.file-name').textContent = 'No file chosen';
+                                });
+                                selectedFiles = {};
+                                showProfileNotification(data.message);
+                            } else {
+                                throw new Error(data.errors ? data.errors.join('\n') : 'Submission failed');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert(error.message || 'Network error. Please try again.');
+                        });
+                });
+            }
+
+            function showProfileNotification(message) {
+                const notif = document.getElementById('profile-notification');
+                if (!notif) return;
+                notif.textContent = message;
+                notif.style.display = 'block';
+                notif.style.opacity = '1';
+                setTimeout(() => {
+                    notif.style.opacity = '0';
+                    setTimeout(() => {
+                        notif.style.display = 'none';
+                        notif.style.opacity = '1';
+                    }, 400);
+                }, 2200);
+            }
+
             // Add files button (demo functionality)
-            document.getElementById('addFilesBtn').addEventListener('click', function() {
-                // This would be more sophisticated in a real app
-                alert('In a real application, this would open a dialog to add multiple files at once.');
-            });
-
-            // Initialize existing file items with event listeners
-            document.querySelectorAll('.file-item .view-file').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const fileName = this.getAttribute('data-file');
-                    // For demo purposes, we'll just show the file name
-                    document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
-                    modalFrame.srcdoc = `
-                        <html>
-                            <head>
-                                <style>
-                                    body { 
-                                        font-family: Arial, sans-serif; 
-                                        display: flex; 
-                                        justify-content: center; 
-                                        align-items: center; 
-                                        height: 100vh; 
-                                        margin: 0; 
-                                        background-color: #f5f5f5;
-                                    }
-                                    .preview-content {
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    .file-icon {
-                                        font-size: 48px;
-                                        color: #2b6625;
-                                        margin-bottom: 20px;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="preview-content">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file-pdf"></i>
-                                    </div>
-                                    <h2>${fileName}</h2>
-                                    <p>This is a preview of the uploaded file.</p>
-                                    <p>In a real application, the actual file content would be displayed here.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `;
-                    modal.style.display = "block";
+            const addFilesBtn = document.getElementById('addFilesBtn');
+            if (addFilesBtn) {
+                addFilesBtn.addEventListener('click', function() {
+                    alert('In a real application, this would open a dialog to add multiple files at once.');
                 });
-            });
-
-            // Initialize existing file items with delete functionality
-            document.querySelectorAll('.file-item .fa-trash').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const fileItem = this.closest('.file-item');
-                    fileItem.remove();
-                    
-                    // In a real app, you would also need to clear the corresponding file input
-                    // and update the file name display
-                });
-            });
+            }
         });
     </script>
 </body>
+
 </html>

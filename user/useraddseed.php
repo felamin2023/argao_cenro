@@ -1287,8 +1287,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
         .name-fields {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 15px;
             MARGIN-TOP: -1%;
             margin-bottom: 10px;
@@ -1538,6 +1538,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="name-field">
                         <input type="text" placeholder="Last Name" required>
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Seedling Name" required>
+                    </div>
+                    <div class="name-field">
+                        <input type="number" placeholder="Quantity" required>
                     </div>
                 </div>
 
@@ -1812,8 +1818,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Validate fields
                     const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
                     const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    const seedlingName = document.querySelector('.name-fields input[placeholder="Seedling Name"]').value.trim();
+                    const quantity = document.querySelector('.name-fields input[placeholder="Quantity"]').value.trim();
+
                     if (!firstName || !lastName) {
                         alert('First name and last name are required.');
+                        return;
+                    }
+                    if (!seedlingName) {
+                        alert('Seedling name is required.');
+                        return;
+                    }
+                    if (!quantity || isNaN(quantity) || parseInt(quantity) <= 0) {
+                        alert('Please enter a valid quantity (must be greater than 0).');
                         return;
                     }
                     if (!selectedFile) {
@@ -1842,10 +1859,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
                     const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
                     const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    const seedlingName = document.querySelector('.name-fields input[placeholder="Seedling Name"]').value.trim();
+                    const quantity = document.querySelector('.name-fields input[placeholder="Quantity"]').value.trim();
+
                     const formData = new FormData();
                     formData.append('first_name', firstName);
                     formData.append('middle_name', middleName);
                     formData.append('last_name', lastName);
+                    formData.append('seedling_name', seedlingName);
+                    formData.append('quantity', quantity);
                     formData.append('request_letter', selectedFile);
 
                     fetch('../backend/users/requestseed.php', {
@@ -1859,6 +1881,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 document.querySelector('.name-fields input[placeholder="First Name"]').value = '';
                                 document.querySelector('.name-fields input[placeholder="Middle Name"]').value = '';
                                 document.querySelector('.name-fields input[placeholder="Last Name"]').value = '';
+                                document.querySelector('.name-fields input[placeholder="Seedling Name"]').value = '';
+                                document.querySelector('.name-fields input[placeholder="Quantity"]').value = '';
                                 if (fileInput) {
                                     fileInput.value = '';
                                     fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';

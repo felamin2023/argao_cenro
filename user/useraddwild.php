@@ -1403,7 +1403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 
 <body>
-    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+
     <header>
         <div class="logo">
             <a href="user_home.php">
@@ -1750,7 +1750,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
-
+    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
     <!-- File Preview Modal -->
     <div id="filePreviewModal" class="modal">
         <div class="modal-content">
@@ -1886,40 +1886,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             function addUploadedFileMulti(file, uploadedFilesContainer, fileInput, inputId) {
                 uploadedFilesContainer.innerHTML = '';
-                let fileIcon;
-                if (file.type.includes('pdf')) {
-                    fileIcon = '<i class="fas fa-file-pdf file-icon"></i>';
-                } else if (file.type.includes('image')) {
-                    fileIcon = '<i class="fas fa-file-image file-icon"></i>';
-                } else if (file.type.includes('word') || file.type.includes('document')) {
-                    fileIcon = '<i class="fas fa-file-word file-icon"></i>';
-                } else {
-                    fileIcon = '<i class="fas fa-file file-icon"></i>';
-                }
-                const fileItem = document.createElement('div');
-                fileItem.className = 'file-item';
-                fileItem.innerHTML = `
-                    <div class="file-info">
-                        ${fileIcon}
-                        <span style="font-weight:bold;color:#005117;">${file.name}</span>
-                    </div>
-                    <div class="file-actions">
-                        <button class="file-action-btn view-file" title="View"><i class="fas fa-eye"></i></button>
-                        <button class="file-action-btn delete-file" title="Delete"><i class="fas fa-trash"></i></button>
-                    </div>
-                `;
-                uploadedFilesContainer.appendChild(fileItem);
-                // View file
-                fileItem.querySelector('.view-file').addEventListener('click', function() {
-                    previewFile(file);
-                });
-                // Delete file
-                fileItem.querySelector('.delete-file').addEventListener('click', function() {
-                    uploadedFilesContainer.innerHTML = '';
-                    fileInput.value = '';
-                    fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                    selectedFiles[inputId] = null;
-                });
+                // Do not show the selected file at all
             }
 
             // function addUploadedFile(file) {

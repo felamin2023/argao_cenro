@@ -9,7 +9,7 @@ include_once __DIR__ . '/../backend/connection.php';
 
 $user_id = $_SESSION['user_id'];
 $reports = [];
-$stmt = $conn->prepare("SELECT id, date_time, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY date_time DESC");
+$stmt = $conn->prepare("SELECT id, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY id DESC");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -163,16 +163,16 @@ $stmt->close();
             <form id="incidentForm" action="../backend/users/report_incident.php" method="POST" enctype="multipart/form-data">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="first-name">FIRST NAME</label>
-                        <input type="text" id="first-name" name="first_name" required>
+                        <label for="who">WHO</label>
+                        <input type="text" id="who" name="who" required>
                     </div>
                     <div class="form-group">
-                        <label for="last-name">LAST NAME</label>
-                        <input type="text" id="last-name" name="last_name" required>
+                        <label for="what">WHAT</label>
+                        <input type="text" id="what" name="what" required>
                     </div>
                     <div class="form-group">
-                        <label for="age">AGE</label>
-                        <input type="number" id="age" name="age" required>
+                        <label for="where">WHERE</label>
+                        <input type="text" id="where" name="where" required>
                     </div>
                 </div>
 
@@ -181,9 +181,13 @@ $stmt->close();
                         <label for="contact">CONTACT NO:</label>
                         <input type="text" id="contact" name="contact" required>
                     </div>
-                    <div class="form-group two-thirds">
-                        <label for="location">LOCATION:</label>
-                        <input type="text" id="location" name="location" required>
+                    <div class="form-group one-third">
+                        <label for="when">WHEN</label>
+                        <input type="datetime-local" id="when" name="when" required>
+                    </div>
+                    <div class="form-group one-third">
+                        <label for="why">WHY</label>
+                        <input type="text" id="why" name="why" required>
                     </div>
                 </div>
 
@@ -198,10 +202,6 @@ $stmt->close();
                 </div>
 
                 <div class="form-row">
-                    <div class="form-group one-third">
-                        <label for="datetime">DATE & TIME:</label>
-                        <input type="datetime-local" id="datetime" name="datetime" required>
-                    </div>
                     <div class="form-group two-thirds">
                         <label for="categories" style="margin-top: 0;">CATEGORIES:</label>
                         <select id="categories" name="categories" required>
@@ -241,7 +241,7 @@ $stmt->close();
                 <thead>
                     <tr>
                         <th>Report ID</th>
-                        <th>Date</th>
+                        <!-- <th>Date</th> -->
                         <th>Location</th>
                         <th>Category</th>
                         <th>Status</th>
@@ -256,7 +256,7 @@ $stmt->close();
                         <?php foreach ($reports as $report): ?>
                             <tr>
                                 <td><?= htmlspecialchars($report['id']) ?></td>
-                                <td><?= date('Y-m-d', strtotime($report['date_time'])) ?></td>
+                                <!-- <td><?= date('Y-m-d', strtotime($report['date_time'])) ?></td> -->
                                 <td><?= htmlspecialchars($report['location']) ?></td>
                                 <td><?= htmlspecialchars($report['category']) ?></td>
                                 <td class="status-<?= strtolower($report['status']) ?>">
@@ -271,9 +271,6 @@ $stmt->close();
     </div>
 
     <script>
-        document.getElementById('datetime').value = new Date().toISOString().slice(0, 16);
-
-
         document.addEventListener('DOMContentLoaded', function() {
             const photoInput = document.getElementById('photos');
             const addPhotoBtn = document.getElementById('addPhotoBtn');

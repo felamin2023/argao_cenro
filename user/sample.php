@@ -1,30 +1,10 @@
-<?php
-session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
-    header("Location: user_login.php");
-    exit();
-}
-include_once __DIR__ . '/../backend/connection.php';
-
-$user_id = $_SESSION['user_id'];
-$reports = [];
-$stmt = $conn->prepare("SELECT id, date_time, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY date_time DESC");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-
-while ($row = $result->fetch_assoc()) {
-    $reports[] = $row;
-}
-$stmt->close();
-?>
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wildlife Registration Application</title>
+    <title>User</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -170,6 +150,7 @@ $stmt->close();
 
         .dropdown-item.active-page {
             background-color: rgb(225, 255, 220);
+
             color: var(--primary-dark);
             font-weight: bold;
             border-left: 4px solid var(--primary-color);
@@ -953,7 +934,6 @@ $stmt->close();
             background-color: #f9f9f9;
         }
 
-
         /* Main Content */
         .main-container {
             margin-top: -0.5%;
@@ -1023,6 +1003,7 @@ $stmt->close();
             border: 1px solid var(--medium-gray);
         }
 
+
         .form-header {
             background-color: var(--primary-color);
             color: var(--white);
@@ -1080,18 +1061,6 @@ $stmt->close();
             align-items: center;
             justify-content: center;
             font-size: 0.9rem;
-            margin-right: 10px;
-            flex-shrink: 0;
-            line-height: 25px;
-            text-align: center;
-        }
-
-        .new-number {
-            display: inline;
-        }
-
-        .renewal-number {
-            display: none;
         }
 
         .file-upload {
@@ -1130,7 +1099,7 @@ $stmt->close();
 
         .file-name {
             font-size: 0.9rem;
-            color: var(--dark-gray);
+            color: #555;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1151,7 +1120,7 @@ $stmt->close();
             background: white;
             padding: 8px 12px;
             border-radius: var(--border-radius);
-            border: 1px solid var(--medium-gray);
+            border: 1px solid #ddd;
         }
 
         .file-info {
@@ -1175,10 +1144,9 @@ $stmt->close();
         .file-action-btn {
             background: none;
             border: none;
-            color: var(--dark-gray);
+            color: #555;
             cursor: pointer;
             transition: var(--transition);
-            padding: 5px;
         }
 
         .file-action-btn:hover {
@@ -1187,11 +1155,14 @@ $stmt->close();
 
         .form-footer {
             padding: 20px 30px;
-            background: var(--light-gray);
-            border-top: 1px solid var(--medium-gray);
+            background: var(white);
+
             display: flex;
             justify-content: flex-end;
+            gap: 15px;
         }
+
+
 
         /* Fee Information */
         .fee-info {
@@ -1208,107 +1179,26 @@ $stmt->close();
             font-weight: 500;
         }
 
-        /* File Preview Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 2000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            overflow: auto;
+        /* Edit Mode Styles */
+        .edit-mode .requirement-title {
+            color: #0a192f;
         }
 
-        .modal-content {
-            background-color: #fefefe;
-            margin: 5% auto;
-            padding: 20px;
-            border: 1px solid #888;
-            width: 80%;
-            max-width: 800px;
-            border-radius: var(--border-radius);
-            position: relative;
+        .edit-mode .file-input-label {
+            background: #0a192f;
         }
 
-        .close-modal {
-            color: #aaa;
-            position: absolute;
-            top: 10px;
-            right: 20px;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
+        .edit-mode .file-input-label:hover {
+            background: #020c1b;
         }
 
-        .close-modal:hover {
-            color: black;
-        }
-
-        .file-preview {
-            width: 100%;
-            height: 70vh;
-            border: none;
-            margin-top: 20px;
-        }
-
-        /* Download button styles */
-        .download-btn {
-            display: inline-flex;
-            align-items: center;
-            background-color: #2b6625;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            text-decoration: none;
-            margin-top: 10px;
-            transition: all 0.3s;
-        }
-
-        .download-btn:hover {
-            background-color: #1e4a1a;
-        }
-
-        .download-btn i {
-            margin-right: 8px;
-        }
-
-        /* Permit Type Selector */
-        .permit-type-selector {
-            display: flex;
-            justify-content: flex-start;
-            margin-bottom: 20px;
-        }
-
-        .permit-type-btn {
-            padding: 12px 25px;
-            margin: 0 10px 0 0;
-            border: 2px solid #2b6625;
-            background-color: white;
-            color: #2b6625;
-            font-weight: bold;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .permit-type-btn.active {
-            background-color: #2b6625;
-            color: white;
-        }
-
-        .permit-type-btn:hover {
-            background-color: #2b6625;
-            color: white;
-        }
-
-        /* Add new styles for name fields */
         .name-fields {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
-            margin-bottom: 20px;
+            MARGIN-TOP: -1%;
+            margin-bottom: 10px;
+            padding: 15px;
         }
 
         .name-field {
@@ -1322,7 +1212,7 @@ $stmt->close();
             border: 1px solid #153415;
             border-radius: 4px;
             font-size: 14px;
-            transition: border-color 0.3s;
+            transition: all 0.3s ease;
             height: 40px;
             box-sizing: border-box;
         }
@@ -1341,6 +1231,55 @@ $stmt->close();
         @media (max-width: 768px) {
             .notifications-dropdown {
                 width: 320px;
+            }
+
+            .notification-detail-container {
+                margin-left: 0.1in;
+                margin-right: 0.1in;
+                margin-top: -27px;
+                width: auto;
+                padding: 10px;
+            }
+
+            .notification-detail-title {
+                margin-top: 20px;
+            }
+
+            .notification-detail-header {
+                padding: 20px;
+                font-size: 1.2rem;
+                text-align: center;
+                display: flex;
+                justify-content: flex-end;
+                align-items: center;
+                flex-direction: column;
+            }
+
+            .notification-status {
+                margin-top: -20px;
+                right: 2px;
+            }
+
+            .notification-detail-body {
+                padding: 20px;
+            }
+
+            .notification-detail-message p {
+                font-size: 1rem;
+            }
+
+            .meta-item {
+                flex-direction: column;
+                margin-bottom: 15px;
+            }
+
+            .meta-label {
+                margin-bottom: 5px;
+                font-size: 0.9rem;
+            }
+
+            .meta-value {
+                font-size: 0.9rem;
             }
 
             .main-container {
@@ -1364,24 +1303,6 @@ $stmt->close();
             .file-input-container {
                 flex-direction: column;
                 align-items: flex-start;
-            }
-
-            .modal-content {
-                width: 95%;
-                margin: 10% auto;
-            }
-
-            .permit-type-selector {
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                padding-bottom: 10px;
-                -webkit-overflow-scrolling: touch;
-            }
-
-            .permit-type-btn {
-                flex: 0 0 auto;
-                margin: 0 5px 0 0;
-                padding: 10px 15px;
             }
         }
 
@@ -1427,11 +1348,6 @@ $stmt->close();
             .form-header h2 {
                 font-size: 1.3rem;
             }
-
-            .permit-type-btn {
-                font-size: 0.9rem;
-                padding: 8px 12px;
-            }
         }
     </style>
 </head>
@@ -1456,17 +1372,20 @@ $stmt->close();
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
+
+
+
                 <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
+                        <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
 
-                    <a href="useraddseed.php" class="dropdown-item">
+                    <a href="useraddseed.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
-                    <a href="useraddwild.php" class="dropdown-item active-page">
+                    <a href="useraddwild.php" class="dropdown-item">
                         <i class="fas fa-paw"></i>
                         <span>Wildlife Permit</span>
                     </a>
@@ -1486,6 +1405,7 @@ $stmt->close();
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+
                 </div>
             </div>
 
@@ -1540,69 +1460,55 @@ $stmt->close();
         </div>
     </header>
 
-
     <div class="main-container">
         <div class="action-buttons">
-            <button class="btn btn-primary" id="addFilesBtn">
+            <a href="useraddseed.php" class="btn btn-outline">
                 <i class="fas fa-plus-circle"></i> Add
-            </button>
-            <a href="usereditwild.php" class="btn btn-outline">
+            </a>
+            <a href="usereditseed.php" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
-            <a href="userviewwild.php" class="btn btn-outline">
+            <a href="userviewseed.php" class="btn btn-outline">
                 <i class="fas fa-eye"></i> View
             </a>
         </div>
 
-        <form class="requirements-form" id="wildlifeForm" enctype="multipart/form-data" method="POST" action="../backend/users/addwildlifepermit.php">
+        <div class="requirements-form edit-mode" id="requirementsForm">
             <div class="form-header">
-                <h2>Wildlife Registration Permit - Requirements</h2>
+                <h2>Seedlings Request - Edit Requirement</h2>
             </div>
 
             <div class="form-body">
-                <!-- Permit Type Selector -->
-                <div class="permit-type-selector">
-                    <button class="permit-type-btn active" data-type="new">New Permit</button>
-                    <button class="permit-type-btn" data-type="renewal">Renewal</button>
-                </div>
 
                 <div class="name-fields">
                     <div class="name-field">
-                        <input type="text" name="first_name" placeholder="First Name" required>
+                        <input type="text" placeholder="First Name" required>
                     </div>
                     <div class="name-field">
-                        <input type="text" name="middle_name" placeholder="Middle Name">
+                        <input type="text" placeholder="Middle Name">
                     </div>
                     <div class="name-field">
-                        <input type="text" name="last_name" placeholder="Last Name" required>
+                        <input type="text" placeholder="Last Name" required>
                     </div>
                 </div>
-
-                <!-- Original Requirements for New Permit -->
-                <div class="requirements-list" id="new-requirements">
+                <div class="requirements-list">
                     <!-- Requirement 1 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">1</span>
-                                Application Form filed-up with 2 copies of photo of the applicant/s
-
+                                Letter of Request for Seedlings
                             </div>
                         </div>
                         <div class="file-upload">
-                            <div style="margin-bottom: 15px;">
-                                <a href="http://localhost/denr/superadmin/user/form_wild.docx" class="download-btn" id="downloadApplicationForm" download="Wildlife_Registration_Application_Form.docx">
-                                    <i class="fas fa-file-word"></i> Download Application Form (DOCX)
-                                </a>
-                            </div>
                             <div class="file-input-container">
                                 <label for="file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload Filled Form
+                                    <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-1" name="application_form" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
-                            <div class="uploaded-files" id="uploaded-files-1">
+                            <div class="uploaded-files">
                                 <!-- Example uploaded file -->
                                 <div class="file-item">
                                     <div class="file-info">
@@ -1610,9 +1516,6 @@ $stmt->close();
                                         <span>application_form.pdf</span>
                                     </div>
                                     <div class="file-actions">
-                                        <button class="file-action-btn view-file" data-file="application_form.pdf" title="View">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
                                         <button class="file-action-btn" title="Download">
                                             <i class="fas fa-download"></i>
                                         </button>
@@ -1625,580 +1528,66 @@ $stmt->close();
                         </div>
                     </div>
 
-                    <!-- Requirement 2 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">2</span>
-                                SEC/CDA Registration (Security and Exchange Commission/Cooperative Development Authority) DTI, if for commercial purposes
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-2" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-2" name="sec_cda_dti_registration" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-2">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- Requirement 3 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">3</span>
-                                Proof of Scientific Expertise (Veterinary Certificate)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-3" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-3" name="scientific_expertise" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-3">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 4 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">4</span>
-                                Financial Plan for Breeding (Financial/Bank Statement)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-4" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-4" name="financial_plan" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-4">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 5 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">5</span>
-                                Proposed Facility Design (Photo of Facility)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-5" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-5" name="facility_design" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-5">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 6 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">6</span>
-                                Prior Clearance of affected communities (Municipal or Barangay Clearance)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-6" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-6" name="community_clearance" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-6">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 7 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">7</span>
-                                Vicinity Map of the area/site (Ex. Google map Sketch map)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-7" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-7" name="vicinity_map" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-7">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 8 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">8</span>
-                                Legal Acquisition of Wildlife:
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="sub-requirement">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Proof of Purchase (Official Receipt/Deed of Sale or Captive Bred Certificate)</p>
-                                <div class="file-input-container">
-                                    <label for="file-8a" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="file-8a" name="proof_of_purchase" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="uploaded-files-8a">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Deed of Donation with Notary</p>
-                                <div class="file-input-container">
-                                    <label for="file-8b" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="file-8b" name="deed_of_donation" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="uploaded-files-8b">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 9 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">9</span>
-                                Inspection Report conducted by concerned CENRO
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-9" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-9" name="inspection_report" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <!-- Notification Popup -->
-                                <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-9">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Fee Information -->
-                    <div class="fee-info">
-                        <p><strong>Application and Processing Fee:</strong> ₱500.00</p>
-                        <p><strong>Permit Fee:</strong> ₱2,500.00</p>
-                        <p><strong>Total Fee:</strong> ₱3,000.00</p>
-                    </div>
-                </div>
-
-                <!-- Renewal Requirements (from image) -->
-                <div class="requirements-list renewal-requirements" id="renewal-requirements">
-                    <!-- Requirement 1 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">1</span>
-                                Duly accomplished application form with two recent 2'x2' photo of the applicant
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div style="margin-bottom: 15px;">
-                                <a href="http://localhost/denr/superadmin/user/form_wild.docx" class="download-btn" id="downloadRenewalForm" download="Wildlife_Renewal_Application_Form.docx">
-                                    <i class="fas fa-file-word"></i> Download Application Form (DOCX)
-                                </a>
-                            </div>
-                            <div class="file-input-container">
-                                <label for="renewal-file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload Filled Form
-                                </label>
-                                <input type="file" id="renewal-file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="renewal-uploaded-files-1">
-                                <!-- Example uploaded file -->
-                                <div class="file-item">
-                                    <div class="file-info">
-                                        <i class="fas fa-file-pdf file-icon"></i>
-                                        <span>renewal_form.pdf</span>
-                                    </div>
-                                    <div class="file-actions">
-                                        <button class="file-action-btn view-file" data-file="renewal_form.pdf" title="View">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button class="file-action-btn" title="Download">
-                                            <i class="fas fa-download"></i>
-                                        </button>
-                                        <button class="file-action-btn" title="Delete">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 2 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">2</span>
-                                Copy of previous WFP (Original copy)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="renewal-file-2" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="renewal-file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="renewal-uploaded-files-2">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 3 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">3</span>
-                                Quarterly Breeding Report & Monthly Production report
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="renewal-file-3" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="renewal-file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="renewal-uploaded-files-3">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 4 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">4</span>
-                                For additional stocks (if any)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="sub-requirement">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- WFP holders/ CITES/Non-CITES Import permit</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-4a" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-4a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-4a">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Proof of Purchase (Official Receipt/ Sales Invoice or Deed of Sale)</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-4b" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-4b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-4b">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Notarized Deed of Donation</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-4c" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-4c" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-4c">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Local Transport Permit (if applicable)</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-4d" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-4d" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-4d">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 5 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">5</span>
-                                For additional facility (if any)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="sub-requirement">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Barangay Clearance/ Mayor Clearance</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-5a" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-5a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-5a">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Proposed facility design</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-5b" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-5b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-5b">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Sketch map of the location</p>
-                                <div class="file-input-container">
-                                    <label for="renewal-file-5c" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="renewal-file-5c" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                                <div class="uploaded-files" id="renewal-uploaded-files-5c">
-                                    <!-- Files will appear here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 6 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">6</span>
-                                Inspection Report conducted by concerned CENRO/Regional Office
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="renewal-file-6" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="renewal-file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="renewal-uploaded-files-6">
-                                <!-- Files will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Fee Information -->
-                    <div class="fee-info">
-                        <p><strong>Small Scale:</strong> (Application & processing fee) 500 + (Permit fee) 2,500 = ₱3,000.00</p>
-                        <p><strong>Large Scale:</strong> (Application & processing fee) 500 + (Permit fee) 5,000 = ₱5,500.00</p>
+                    <div class="form-footer">
+                        <button id="saveBtn" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save Changes
+                        </button>
+                        <a href="wfp_view.php" class="btn btn-outline">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
                     </div>
                 </div>
             </div>
 
-            <div class="form-footer">
-                <button class="btn btn-primary" id="submitApplication" type="submit">
-                    <i class="fas fa-paper-plane"></i> Submit Application
-                </button>
-            </div>
-        </form>
-    </div>
 
-    <!-- File Preview Modal -->
-    <div id="filePreviewModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <h3 id="modal-title">File Preview</h3>
-            <iframe id="filePreviewFrame" class="file-preview" src="about:blank"></iframe>
-        </div>
-    </div>
 
-    <div id="confirmationModal" class="modal" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
-        <div class="modal-content" style="background:#fff; padding:30px; border-radius:10px; max-width:400px; margin:auto; text-align:center;">
-            <h3>Confirm Submission</h3>
-            <p>Are you sure you want to submit this wildlife permit application?</p>
-            <button id="confirmYes" class="btn btn-primary" style="margin:10px;">Yes</button>
-            <button id="confirmNo" class="btn btn-outline">No</button>
-        </div>
-    </div>
-    <script>
-        function getFileName(input) {
-            return input && input.files && input.files.length > 0 ? input.files[0].name : null;
-        }
-        document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
-            const mobileToggle = document.querySelector('.mobile-toggle');
-            const navContainer = document.querySelector('.nav-container');
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    // Mobile menu toggle
+                    const mobileToggle = document.querySelector('.mobile-toggle');
+                    const navContainer = document.querySelector('.nav-container');
 
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    const isActive = navContainer.classList.toggle('active');
-                    document.body.style.overflow = isActive ? 'hidden' : '';
-                });
-            }
-
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-                    navContainer.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-            });
-
-            // Permit type selector functionality
-            const permitTypeBtns = document.querySelectorAll('.permit-type-btn');
-            const newRequirements = document.getElementById('new-requirements');
-            const renewalRequirements = document.getElementById('renewal-requirements');
-
-            permitTypeBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    // Remove active class from all buttons
-                    permitTypeBtns.forEach(b => b.classList.remove('active'));
-                    // Add active class to clicked button
-                    this.classList.add('active');
-
-                    // Show/hide requirements based on selection
-                    if (this.dataset.type === 'new') {
-                        newRequirements.style.display = 'grid';
-                        renewalRequirements.style.display = 'none';
-                    } else {
-                        newRequirements.style.display = 'none';
-                        renewalRequirements.style.display = 'grid';
+                    if (mobileToggle) {
+                        mobileToggle.addEventListener('click', () => {
+                            const isActive = navContainer.classList.toggle('active');
+                            document.body.style.overflow = isActive ? 'hidden' : '';
+                        });
                     }
+
+                    // Close menu when clicking outside
+                    document.addEventListener('click', (e) => {
+                        if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
+                            navContainer.classList.remove('active');
+                            document.body.style.overflow = '';
+                        }
+                    });
+
+                    // File input change handler
+                    document.querySelectorAll('.file-input').forEach(input => {
+                        input.addEventListener('change', function() {
+                            const fileName = this.files[0] ? this.files[0].name : 'No file chosen';
+                            this.parentElement.querySelector('.file-name').textContent = fileName;
+                        });
+                    });
+
+                    // File delete handler
+                    document.querySelectorAll('.file-action-btn .fa-trash').forEach(btn => {
+                        btn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            const fileItem = this.closest('.file-item');
+                            fileItem.remove();
+                        });
+                    });
+
+                    // Save changes
+                    document.getElementById('saveBtn').addEventListener('click', () => {
+                        // Here you would typically send the updated files to the server
+                        alert('Changes saved successfully!');
+                        window.location.href = 'wfp_view.php';
+                    });
                 });
-            });
-
-            // Initialize with New Permit selected
-            document.querySelector('.permit-type-btn[data-type="new"]').click();
-
-            // Update file name display for all file inputs
-            document.querySelectorAll('.file-input').forEach(function(input) {
-                input.addEventListener('change', function() {
-                    var fileNameSpan = this.parentElement.querySelector('.file-name');
-                    if (this.files && this.files.length > 0) {
-                        fileNameSpan.textContent = this.files[0].name;
-                    } else {
-                        fileNameSpan.textContent = 'No file chosen';
-                    }
-                });
-            });
-
-            // Confirmation modal logic
-            const form = document.getElementById('wildlifeForm');
-            const submitBtn = document.getElementById('submitApplication');
-            const modal = document.getElementById('confirmationModal');
-            const confirmYes = document.getElementById('confirmYes');
-            const confirmNo = document.getElementById('confirmNo');
-
-            submitBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                modal.style.display = 'flex';
-            });
-            confirmNo.addEventListener('click', function() {
-                modal.style.display = 'none';
-            });
-            confirmYes.addEventListener('click', function() {
-                // Print values to console
-                const firstName = form.querySelector('input[name="first_name"]').value;
-                const middleName = form.querySelector('input[name="middle_name"]').value;
-                const lastName = form.querySelector('input[name="last_name"]').value;
-                const fileFields = [
-                    'application_form',
-                    'sec_cda_dti_registration',
-                    'scientific_expertise',
-                    'financial_plan',
-                    'facility_design',
-                    'community_clearance',
-                    'vicinity_map',
-                    'proof_of_purchase',
-                    'deed_of_donation',
-                    'inspection_report'
-                ];
-                console.log('First Name:', firstName);
-                console.log('Middle Name:', middleName);
-                console.log('Last Name:', lastName);
-                fileFields.forEach(function(field) {
-                    const input = form.querySelector('input[name="' + field + '"]');
-                    console.log(field + ':', getFileName(input));
-                });
-                modal.style.display = 'none';
-                // Show notification
-                var notif = document.getElementById('profile-notification');
-                notif.textContent = 'Application submitted!';
-                notif.style.display = 'block';
-                notif.style.background = '#28a745';
-                setTimeout(function() {
-                    notif.style.display = 'none';
-                }, 3000);
-            });
-        });
-    </script>
+            </script>
 </body>
 
 </html>

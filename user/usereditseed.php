@@ -1,11 +1,52 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
+    header("Location: user_login.php");
+    exit();
+}
+include_once __DIR__ . '/../backend/connection.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $stmt->store_result();
+
+    if ($stmt->num_rows === 1) {
+        $stmt->bind_result($id, $hashed_password, $role);
+        $stmt->fetch();
+
+        if (password_verify($password, $hashed_password)) {
+            $_SESSION['user_id'] = $id;
+            $_SESSION['role'] = $role;
+
+            header("Location: user_home.php");
+            exit();
+        } else {
+            $error = "Incorrect password.";
+        }
+    } else {
+        $error = "User not found.";
+    }
+
+    $stmt->close();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
+    <script src="https://unpkg.com/docx-preview/dist/docx-preview.js"></script>
+
     <style>
         :root {
             --primary-color: #2b6625;
@@ -112,7 +153,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -155,7 +196,7 @@
             border-left: 4px solid var(--primary-color);
         }
 
-       
+
         .dropdown-item:hover {
             background: var(--light-gray);
             padding-left: 30px;
@@ -333,9 +374,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -370,7 +419,7 @@
             align-items: center;
             margin-top: -1%;
             padding: 0 20px;
-            margin-bottom:2%;
+            margin-bottom: 2%;
         }
 
         .page-title {
@@ -406,6 +455,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
+
         .form-row {
             display: flex;
             flex-wrap: wrap;
@@ -422,11 +472,11 @@
         .form-group.full-width {
             flex: 1 0 100%;
         }
-        
+
         .form-group.two-thirds {
             flex: 2 0 400px;
         }
-        
+
         .form-group.one-third {
             flex: 1 0 200px;
         }
@@ -438,7 +488,7 @@
             font-size: 14px;
             font-weight: bold;
         }
-        
+
         .form-group input,
         .form-group textarea,
         .form-group select {
@@ -449,7 +499,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
-        
+
         .form-group input:focus,
         .form-group textarea:focus,
         .form-group select:focus {
@@ -457,7 +507,7 @@
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .form-group textarea {
             height: 180px;
             resize: vertical;
@@ -494,7 +544,8 @@
             margin-top: 20px;
         }
 
-        .save-btn, .view-records-btn {
+        .save-btn,
+        .view-records-btn {
             background-color: #005117;
             color: #fff;
             border: none;
@@ -550,7 +601,7 @@
             margin-top: 20px;
         }
 
-        .records-table th, 
+        .records-table th,
         .records-table td {
             padding: 12px 15px;
             text-align: left;
@@ -604,7 +655,7 @@
             .mobile-toggle {
                 display: block;
             }
-            
+
             /* Header Styles */
             header {
                 display: flex;
@@ -664,14 +715,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px; /* smaller width */
-            height: 40px; /* smaller height */
-            background: rgb(233, 255, 242); /* slightly brighter background */
-            border-radius: 12px; /* softer corners */
+            width: 40px;
+            /* smaller width */
+            height: 40px;
+            /* smaller height */
+            background: rgb(233, 255, 242);
+            /* slightly brighter background */
+            border-radius: 12px;
+            /* softer corners */
             cursor: pointer;
             transition: var(--transition);
-            color: black; /* changed icon color to black */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* subtle shadow for depth */
+            color: black;
+            /* changed icon color to black */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            /* subtle shadow for depth */
         }
 
         .nav-icon:hover {
@@ -681,7 +738,8 @@
         }
 
         .nav-icon i {
-            font-size: 1.3rem; /* smaller icon size */
+            font-size: 1.3rem;
+            /* smaller icon size */
             color: inherit;
             transition: color 0.3s ease;
         }
@@ -733,8 +791,10 @@
         }
 
         .mark-all-read:hover {
-            color: var(--primary-dark); /* Slightly darker color on hover */
-            transform: scale(1.1); /* Slightly bigger on hover */
+            color: var(--primary-dark);
+            /* Slightly darker color on hover */
+            transform: scale(1.1);
+            /* Slightly bigger on hover */
         }
 
         .notification-item {
@@ -876,9 +936,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle - Larger */
@@ -905,10 +973,10 @@
         .notification-link:hover {
             background-color: #f9f9f9;
         }
-     
+
         /* Main Content */
         .main-container {
-            margin-top:-0.5%;
+            margin-top: -0.5%;
             padding: 30px;
         }
 
@@ -1128,13 +1196,13 @@
         .form-footer {
             padding: 20px 30px;
             background: var(white);
-            
+
             display: flex;
             justify-content: flex-end;
             gap: 15px;
         }
 
-        
+
 
         /* Fee Information */
         .fee-info {
@@ -1164,11 +1232,11 @@
             background: #020c1b;
         }
 
-           .name-fields {
-            display: flex;
-            flex-wrap: wrap;
+        .name-fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 15px;
-            MARGIN-TOP:-1%;
+            MARGIN-TOP: -1%;
             margin-bottom: 10px;
             padding: 15px;
         }
@@ -1212,11 +1280,11 @@
                 width: auto;
                 padding: 10px;
             }
-            
+
             .notification-detail-title {
                 margin-top: 20px;
             }
-            
+
             .notification-detail-header {
                 padding: 20px;
                 font-size: 1.2rem;
@@ -1226,30 +1294,30 @@
                 align-items: center;
                 flex-direction: column;
             }
-            
+
             .notification-status {
                 margin-top: -20px;
                 right: 2px;
             }
-            
+
             .notification-detail-body {
                 padding: 20px;
             }
-            
+
             .notification-detail-message p {
                 font-size: 1rem;
             }
-            
+
             .meta-item {
                 flex-direction: column;
                 margin-bottom: 15px;
             }
-            
+
             .meta-label {
                 margin-bottom: 5px;
                 font-size: 0.9rem;
             }
-            
+
             .meta-value {
                 font-size: 0.9rem;
             }
@@ -1279,35 +1347,35 @@
         }
 
         @media (max-width: 576px) {
-           header {
+            header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -1321,21 +1389,66 @@
                 font-size: 1.3rem;
             }
         }
+
+        .name-field {
+            padding: 5px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            overflow: auto;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            border-radius: var(--border-radius);
+            position: relative;
+        }
+
+        .close-modal {
+            color: #aaa;
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-modal:hover {
+            color: black;
+        }
     </style>
 </head>
+
 <body>
-<header>
+
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -1343,16 +1456,16 @@
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-                
 
-                
-                       <div class="dropdown-menu center">
+
+
+                <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-                  
-                      <a href="useraddseed.php" class="dropdown-item active-page">
+
+                    <a href="useraddseed.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -1379,7 +1492,7 @@
 
                 </div>
             </div>
-                
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
@@ -1392,7 +1505,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -1405,13 +1518,13 @@
                             </div>
                         </a>
                     </div>
-                
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -1436,7 +1549,7 @@
             <a href="useraddseed.php" class="btn btn-outline">
                 <i class="fas fa-plus-circle"></i> Add
             </a>
-            <a href="usereditseed.php"  class="btn btn-primary">
+            <a href="usereditseed.php" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
             <a href="userviewseed.php" class="btn btn-outline">
@@ -1448,116 +1561,355 @@
             <div class="form-header">
                 <h2>Seedlings Request - Edit Requirement</h2>
             </div>
-            
-            <div class="form-body">
 
-              <div class="name-fields">
-                    <div class="name-field">
-                        <input type="text" placeholder="First Name" required>
-                    </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Middle Name">
-                    </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Last Name" required>
-                    </div>
-                </div>
-                <div class="requirements-list">
-                    <!-- Requirement 1 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">1</span>
-                                Letter of Request for Seedlings
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files">
-                                <!-- Example uploaded file -->
-                                <div class="file-item">
-                                    <div class="file-info">
-                                        <i class="fas fa-file-pdf file-icon"></i>
-                                        <span>application_form.pdf</span>
+            <div class="form-body">
+                <!-- Display Pending Records -->
+                <div class="pending-records" style="display: flex; flex-direction: column; gap: 10px;">
+                    <?php
+                    // Fetch pending records for the current user
+                    $userId = $_SESSION['user_id'];
+                    $stmt = $conn->prepare("SELECT * FROM seedling_requests WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC");
+                    $stmt->bind_param("i", $userId);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+
+                    if ($result->num_rows > 0) {
+                        while ($row = $result->fetch_assoc()) {
+                    ?>
+                            <div class="record-container" style="padding: 3px; background-color: rgba(0, 0, 0, 0.3); border-radius: 5px;" data-id="<?php echo $row['id']; ?>">
+                                <div class="name-fields">
+                                    <div class="name-field">
+                                        <label>First Name:</label>
+                                        <span class="view-mode"><?php echo htmlspecialchars($row['first_name']); ?></span>
+                                        <input type="text" class="edit-mode" value="<?php echo htmlspecialchars($row['first_name']); ?>" placeholder="First Name" style="display: none;">
                                     </div>
-                                    <div class="file-actions">
-                                        <button class="file-action-btn" title="Download">
-                                            <i class="fas fa-download"></i>
-                                        </button>
-                                        <button class="file-action-btn" title="Delete">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                    <div class="name-field">
+                                        <label>Middle Name:</label>
+                                        <span class="view-mode"><?php echo htmlspecialchars($row['middle_name']); ?></span>
+                                        <input type="text" class="edit-mode" value="<?php echo htmlspecialchars($row['middle_name']); ?>" placeholder="Middle Name" style="display: none;">
+                                    </div>
+                                    <div class="name-field">
+                                        <label>Last Name:</label>
+                                        <span class="view-mode"><?php echo htmlspecialchars($row['last_name']); ?></span>
+                                        <input type="text" class="edit-mode" value="<?php echo htmlspecialchars($row['last_name']); ?>" placeholder="Last Name" style="display: none;">
+                                    </div>
+                                    <div class="name-field">
+                                        <label>Seedling Name:</label>
+                                        <span class="view-mode"><?php echo htmlspecialchars($row['seedling_name']); ?></span>
+                                        <input type="text" class="edit-mode" value="<?php echo htmlspecialchars($row['seedling_name']); ?>" placeholder="Seedling Name" style="display: none;">
+                                    </div>
+                                    <div class="name-field">
+                                        <label>Quantity:</label>
+                                        <span class="view-mode"><?php echo htmlspecialchars($row['quantity']); ?></span>
+                                        <input type="number" class="edit-mode" value="<?php echo htmlspecialchars($row['quantity']); ?>" placeholder="Quantity" style="display: none;">
+                                    </div>
+                                </div>
+                                <div class="file-display" style="padding: 0px 20px;">
+                                    <label>Request Letter</label>
+                                    <div class="file-item">
+                                        <div class="file-info" style="display: flex; justify-content: space-between; width: 100%;">
+                                            <?php
+                                            $fileExt = pathinfo($row['request_letter'], PATHINFO_EXTENSION);
+                                            $iconClass = 'fa-file';
+                                            if ($fileExt === 'pdf') {
+                                                $iconClass = 'fa-file-pdf';
+                                            } elseif (in_array($fileExt, ['doc', 'docx'])) {
+                                                $iconClass = 'fa-file-word';
+                                            } elseif (in_array($fileExt, ['jpg', 'jpeg', 'png'])) {
+                                                $iconClass = 'fa-file-image';
+                                            }
+                                            ?>
+                                            <div class="view-mode">
+                                                <i class="fas <?php echo $iconClass; ?> file-icon"></i>
+                                                <a href="#" onclick="previewFile('<?php echo htmlspecialchars($row['request_letter']); ?>', '<?php echo $fileExt; ?>'); return false;" class="file-link" style="text-decoration: none; color: black;">
+                                                    <?php echo htmlspecialchars($row['request_letter']); ?>
+                                                </a>
+                                            </div>
+                                            <div class="edit-mode" style="display: none; align-items: center; gap: 10px;">
+                                                <input type="file" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                                <span class="new-file-name" style="display: none;"></span>
+                                            </div>
+                                            <div class="record-header view-mode">
+                                                <button class="edit-btn" onclick="toggleEditMode(this)" style="padding: 5px 15px; background-color: #006622; border: none; border-radius: 7px; color: white;">Edit</button>
+                                            </div>
+                                            <div class="record-actions edit-mode" style="display: none; gap: 3px;">
+                                                <button class="btn-primary save-btn" onclick="handleUpdateClick(this)" style="padding: 5px 11px; font-weight: 100; background-color: #006622; border: none; border-radius: 7px; color: white;">Update</button>
+                                                <button class="btn-outline cancel-btn" style="padding: 5px 11px; font-weight: 100; background-color: #888; border: none; border-radius: 7px; color: white;" onclick="cancelEdit(this)">Cancel</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    
-                   
-            <div class="form-footer">
-                <button id="saveBtn" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Save Changes
-                </button>
-                <a href="wfp_view.php" class="btn btn-outline">
-                    <i class="fas fa-times"></i> Cancel
-                </a>
+                    <?php
+                        }
+                    } else {
+                        echo '<p>No pending records found.</p>';
+                    }
+                    $stmt->close();
+                    ?>
+                </div>
             </div>
         </div>
-    </div>
 
-   
+        <!-- File Preview Modal -->
+        <div id="filePreviewModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); justify-content:center; align-items:center; z-index:9999;">
+            <div style="background:#fff; padding:20px; border-radius:10px; width:80%; height:90%; position:relative;">
+                <button onclick="closeModal()" style="position:absolute; top:10px; right:10px;">❌</button>
+                <div id="filePreviewContent" style="width:100%; height:100%; overflow-y: auto;"></div>
+            </div>
+        </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // Mobile menu toggle
-            const mobileToggle = document.querySelector('.mobile-toggle');
-            const navContainer = document.querySelector('.nav-container');
+        <!-- Confirmation Modal -->
+        <div id="confirmModal" class="modal">
+            <div class="modal-content" style="max-width:400px;text-align:center;">
+                <span id="closeConfirmModal" class="close-modal">&times;</span>
+                <h3>Confirm Update</h3>
+                <p>Are you sure you want to update this seedling request?</p>
+                <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Update</button>
+                <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
+            </div>
+        </div>
+        <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    const isActive = navContainer.classList.toggle('active');
-                    document.body.style.overflow = isActive ? 'hidden' : '';
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Mobile menu toggle
+                const mobileToggle = document.querySelector('.mobile-toggle');
+                const navContainer = document.querySelector('.nav-container');
+
+                if (mobileToggle) {
+                    mobileToggle.addEventListener('click', () => {
+                        const isActive = navContainer.classList.toggle('active');
+                        document.body.style.overflow = isActive ? 'hidden' : '';
+                    });
+                }
+
+                // Close menu when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
+                        navContainer.classList.remove('active');
+                        document.body.style.overflow = '';
+                    }
                 });
-            }
 
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-                    navContainer.classList.remove('active');
-                    document.body.style.overflow = '';
+                // File input change handler
+                document.querySelectorAll('.file-input').forEach(input => {
+                    input.addEventListener('change', function() {
+                        const fileName = this.files[0] ? this.files[0].name : 'No file chosen';
+                        this.parentElement.querySelector('.file-name').textContent = fileName;
+                    });
+                });
+
+                // File delete handler
+                document.querySelectorAll('.file-action-btn .fa-trash').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const fileItem = this.closest('.file-item');
+                        fileItem.remove();
+                    });
+                });
+
+                // Save changes
+                var saveBtn = document.getElementById('saveBtn');
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', () => {
+                        // Here you would typically send the updated files to the server
+                        alert('Changes saved successfully!');
+                        window.location.href = 'wfp_view.php';
+                    });
                 }
             });
 
-              // File input change handler
-            document.querySelectorAll('.file-input').forEach(input => {
-                input.addEventListener('change', function() {
-                    const fileName = this.files[0] ? this.files[0].name : 'No file chosen';
-                    this.parentElement.querySelector('.file-name').textContent = fileName;
+            function toggleEditMode(btn) {
+                const recordContainer = btn.closest('.record-container');
+
+                // Hide all "view-mode" elements
+                recordContainer.querySelectorAll('.view-mode').forEach(el => el.style.display = 'none');
+
+                // Show all "edit-mode" elements
+                recordContainer.querySelectorAll('.edit-mode').forEach(el => el.style.display = 'flex');
+
+                // Make sure file input is visible in edit mode
+                recordContainer.querySelectorAll('.edit-mode .file-input').forEach(input => {
+                    input.style.display = 'block';
                 });
+            }
+
+            function triggerFileUpload(btn) {
+                // Find the closest .edit-mode container
+                const editModeContainer = btn.closest('.edit-mode');
+                if (!editModeContainer) return;
+                // Find the file input inside this container
+                const fileInput = editModeContainer.querySelector('.file-input');
+                if (fileInput) {
+                    fileInput.click();
+                }
+            }
+
+            // When a new file is chosen, show its name
+            document.addEventListener('change', function(e) {
+                if (e.target.classList.contains('file-input')) {
+                    const fileNameSpan = e.target.closest('.record-container').querySelector('.new-file-name');
+                    if (e.target.files.length > 0) {
+                        fileNameSpan.textContent = e.target.files[0].name;
+                        fileNameSpan.style.display = 'inline';
+                    } else {
+                        fileNameSpan.style.display = 'none';
+                    }
+                }
             });
 
-            // File delete handler
-            document.querySelectorAll('.file-action-btn .fa-trash').forEach(btn => {
-                btn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    const fileItem = this.closest('.file-item');
-                    fileItem.remove();
-                });
+
+            function previewFile(fileName, ext) {
+                const filePath = `../upload/user/requestseed/${fileName}`;
+                const modal = document.getElementById('filePreviewModal');
+                const content = document.getElementById('filePreviewContent');
+
+                fetch(filePath, {
+                        method: 'HEAD'
+                    })
+                    .then(res => {
+                        if (!res.ok) {
+                            alert('File not found!');
+                            return;
+                        }
+
+                        content.innerHTML = ''; // Clear previous preview
+                        ext = ext.toLowerCase();
+
+                        if (ext === 'pdf') {
+                            content.innerHTML = `<embed src="${filePath}" type="application/pdf" width="100%" height="100%">`;
+                        } else if (['jpg', 'jpeg', 'png'].includes(ext)) {
+                            content.innerHTML = `<img src="${filePath}" alt="Preview" style="max-width:100%; max-height:100%;">`;
+                        } else if (ext === 'docx') {
+                            const container = document.createElement('div');
+                            content.appendChild(container);
+                            fetch(filePath)
+                                .then(r => r.arrayBuffer())
+                                .then(buffer => {
+                                    window.docx.renderAsync(buffer, container)
+                                        .catch(err => {
+                                            console.error(err);
+                                            container.innerHTML = '<p>Error loading document.</p>';
+                                        });
+                                })
+                                .catch(err => {
+                                    console.error(err);
+                                    alert('Error loading DOCX file.');
+                                });
+                        } else {
+                            content.innerHTML = `<p>Preview not supported. <a href="${filePath}" target="_blank">Download File</a></p>`;
+                        }
+
+                        modal.style.display = 'flex';
+                    })
+                    .catch(() => alert('Error loading file.'));
+            }
+
+            function cancelEdit(btn) {
+                const recordContainer = btn.closest('.record-container');
+
+                // Show all "view-mode" elements
+                recordContainer.querySelectorAll('.view-mode').forEach(el => el.style.display = '');
+
+                // Hide all "edit-mode" elements
+                recordContainer.querySelectorAll('.edit-mode').forEach(el => el.style.display = 'none');
+
+                // Reset any file input changes
+                const fileInput = recordContainer.querySelector('.file-input');
+                if (fileInput) {
+                    fileInput.value = ''; // Clear the file selection
+                }
+
+                // Hide any displayed new file name
+                const fileNameSpan = recordContainer.querySelector('.new-file-name');
+                if (fileNameSpan) {
+                    fileNameSpan.style.display = 'none';
+                    fileNameSpan.textContent = '';
+                }
+            }
+
+
+            function closeModal() {
+                document.getElementById('filePreviewModal').style.display = 'none';
+                document.getElementById('filePreviewContent').innerHTML = '';
+            }
+
+            let currentUpdateBtn = null;
+
+            function handleUpdateClick(btn) {
+                currentUpdateBtn = btn;
+                document.getElementById('confirmModal').style.display = 'block';
+            }
+
+            document.getElementById('closeConfirmModal').addEventListener('click', () => {
+                document.getElementById('confirmModal').style.display = 'none';
+            });
+            document.getElementById('cancelSubmitBtn').addEventListener('click', () => {
+                document.getElementById('confirmModal').style.display = 'none';
             });
 
-            // Save changes
-            document.getElementById('saveBtn').addEventListener('click', () => {
-                // Here you would typically send the updated files to the server
-                alert('Changes saved successfully!');
-                window.location.href = 'wfp_view.php';
+            document.getElementById('confirmSubmitBtn').addEventListener('click', () => {
+                if (!currentUpdateBtn) return;
+
+                const recordContainer = currentUpdateBtn.closest('.record-container');
+                const formData = new FormData();
+
+                // Add record ID
+                formData.append('id', recordContainer.dataset.id);
+
+                // Get all input values
+                const firstNameInput = recordContainer.querySelector('.name-field:nth-child(1) input.edit-mode');
+                const middleNameInput = recordContainer.querySelector('.name-field:nth-child(2) input.edit-mode');
+                const lastNameInput = recordContainer.querySelector('.name-field:nth-child(3) input.edit-mode');
+                const seedlingNameInput = recordContainer.querySelector('.name-field:nth-child(4) input.edit-mode');
+                const quantityInput = recordContainer.querySelector('.name-field:nth-child(5) input.edit-mode');
+
+                // Add to formData if changed
+                if (firstNameInput) formData.append('first_name', firstNameInput.value);
+                if (middleNameInput) formData.append('middle_name', middleNameInput.value);
+                if (lastNameInput) formData.append('last_name', lastNameInput.value);
+                if (seedlingNameInput) formData.append('seedling_name', seedlingNameInput.value);
+                if (quantityInput) formData.append('quantity', quantityInput.value);
+
+                // Handle file upload
+                const fileInput = recordContainer.querySelector('.file-input');
+                if (fileInput && fileInput.files.length > 0) {
+                    formData.append('request_letter', fileInput.files[0]);
+                }
+
+                fetch('../backend/users/editseed.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        document.getElementById('confirmModal').style.display = 'none';
+
+                        if (data.success) {
+                            showNotification('✅ ' + data.message);
+                            // Refresh the page to show updated data
+                            setTimeout(() => location.reload(), 1500);
+                        } else {
+                            showNotification('❌ ' + (data.errors ? data.errors.join(', ') : 'Update failed.'));
+                        }
+                    })
+                    .catch(err => {
+                        document.getElementById('confirmModal').style.display = 'none';
+                        showNotification('❌ An error occurred while updating.');
+                        console.error(err);
+                    });
             });
-        });
-    </script>
+
+            function showNotification(message) {
+                const notification = document.getElementById('profile-notification');
+                notification.textContent = message;
+                notification.style.display = 'block';
+                setTimeout(() => {
+                    notification.style.display = 'none';
+                }, 3000);
+            }
+        </script>
 </body>
+
 </html>
