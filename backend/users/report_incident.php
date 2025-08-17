@@ -109,7 +109,7 @@ try {
     $photos_json = json_encode($uploaded_files);
 
 
-    $stmt = $conn->prepare("INSERT INTO incident_reports 
+    $stmt = $conn->prepare("INSERT INTO incident_report 
         (user_id, who, what, `where`, `when`, why, contact_no, photos, category, description, status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')");
 

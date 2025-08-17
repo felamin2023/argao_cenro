@@ -9,7 +9,7 @@ include_once __DIR__ . '/../backend/connection.php';
 
 $user_id = $_SESSION['user_id'];
 $reports = [];
-$stmt = $conn->prepare("SELECT id, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY id DESC");
+$stmt = $conn->prepare("SELECT id, category, status FROM incident_report WHERE user_id = ? ORDER BY id DESC");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -257,7 +257,6 @@ $stmt->close();
                             <tr>
                                 <td><?= htmlspecialchars($report['id']) ?></td>
                                 <!-- <td><?= date('Y-m-d', strtotime($report['date_time'])) ?></td> -->
-                                <td><?= htmlspecialchars($report['location']) ?></td>
                                 <td><?= htmlspecialchars($report['category']) ?></td>
                                 <td class="status-<?= strtolower($report['status']) ?>">
                                     <?= htmlspecialchars($report['status']) ?>
