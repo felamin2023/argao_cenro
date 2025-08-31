@@ -880,3 +880,12 @@ tr td:last-child {
 .photo-thumbnail:hover {
   transform: scale(1.05);
 }
+#modal-photos img.photo-thumbnail {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  background: #fafafa;
+  cursor: pointer;
+}

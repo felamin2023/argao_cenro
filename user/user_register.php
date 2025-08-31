@@ -414,21 +414,26 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
     </div>
 
     <script>
-        // Password toggle logic
-        document.addEventListener('DOMContentLoaded', function() {
-            function togglePassword(inputId, btnId) {
-                const btn = document.getElementById(btnId);
-                const input = document.getElementById(inputId);
-                btn.addEventListener('click', function() {
-                    const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
-                    input.setAttribute('type', type);
-                    btn.innerHTML = type === 'password' ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
-                });
+        // Helper that shows raw server text if JSON parse fails
+        async function postForm(url, fd) {
+            const res = await fetch(url, {
+                method: 'POST',
+                body: fd
+            });
+            const text = await res.text(); // always read raw
+            let data;
+            try {
+                data = JSON.parse(text);
+            } // try to parse JSON
+            catch (e) {
+                console.error('Bad JSON from server:', text); // see real server output
+                throw new Error('Bad JSON'); // bubbles to catch() → "Network error"
             }
-            togglePassword('password', 'togglePassword');
-            togglePassword('confirm_password', 'toggleConfirmPassword');
+            return data;
+        }
 
-            // Email verification and OTP logic
+        document.addEventListener('DOMContentLoaded', function() {
+            // elements
             const verifyEmailBtn = document.getElementById('verifyEmailBtn');
             const emailInput = document.getElementById('email');
             const phoneInput = document.getElementById('phone');
@@ -444,208 +449,152 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
             const otpMessage = document.getElementById('otpMessage');
             const successMessage = document.getElementById('successMessage');
             const loadingScreen = document.getElementById('loadingScreen');
+
+            const showLoading = () => loadingScreen && (loadingScreen.style.display = 'flex');
+            const hideLoading = () => loadingScreen && (loadingScreen.style.display = 'none');
             let emailVerified = false;
 
-            function showLoading() {
-                loadingScreen.style.display = 'flex';
-            }
+            const isValidEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-            function hideLoading() {
-                loadingScreen.style.display = 'none';
-            }
-
-            // Email validation function
-            function isValidEmail(email) {
-                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-            }
-
-            verifyEmailBtn.addEventListener('click', function() {
+            // Verify Email → open OTP modal
+            verifyEmailBtn.addEventListener('click', async () => {
                 formError.textContent = '';
                 const email = emailInput.value.trim();
-
-                if (!email) {
-                    formError.textContent = 'Please enter your email.';
-                    return;
-                }
-
-                if (!isValidEmail(email)) {
-                    formError.textContent = 'Please enter a valid email address.';
-                    return;
-                }
-
+                if (!email) return formError.textContent = 'Please enter your email.';
+                if (!isValidEmail(email)) return formError.textContent = 'Please enter a valid email address.';
                 verifyEmailBtn.disabled = true;
                 showLoading();
 
-                const formData = new FormData();
-                formData.append('action', 'send_otp');
-                formData.append('email', email);
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'send_otp');
+                    fd.append('email', email);
 
-                fetch('../backend/users/register.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        hideLoading();
-                        verifyEmailBtn.disabled = false;
-                        if (data.success) {
-                            otpModal.style.display = 'block';
-                            // For testing only - remove in production
-                            console.log('OTP for testing:', data.otp);
-                        } else {
-                            formError.textContent = data.error || 'Email verification failed.';
-                        }
-                    })
-                    .catch(() => {
-                        hideLoading();
-                        verifyEmailBtn.disabled = false;
-                        formError.textContent = 'Network error.';
-                    });
+                    const data = await postForm('../backend/users/register.php', fd);
+                    hideLoading();
+                    verifyEmailBtn.disabled = false;
+
+                    if (!data.success) {
+                        formError.textContent = data.error || 'Email verification failed.';
+                        return;
+                    }
+                    // dev-only: remove in prod
+                    if (data.otp) console.log('OTP (testing):', data.otp);
+
+                    otpModal.style.display = 'block';
+                } catch (err) {
+                    hideLoading();
+                    verifyEmailBtn.disabled = false;
+                    formError.textContent = 'Network error';
+                }
             });
 
-            closeModal.addEventListener('click', function() {
-                otpModal.style.display = 'none';
-            });
+            // Close OTP modal
+            closeModal.addEventListener('click', () => otpModal.style.display = 'none');
 
-            sendOtpBtn.addEventListener('click', function() {
+            // Submit OTP
+            sendOtpBtn.addEventListener('click', async () => {
                 otpMessage.textContent = '';
-                const otp = otpInput.value.trim();
-
-                if (!otp || !/^\d{6}$/.test(otp)) {
+                const code = otpInput.value.trim();
+                if (!/^\d{6}$/.test(code)) {
                     otpMessage.textContent = 'Please enter a valid 6-digit OTP.';
                     return;
                 }
-
                 showLoading();
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'verify_otp');
+                    fd.append('otp', code);
 
-                const formData = new FormData();
-                formData.append('action', 'verify_otp');
-                formData.append('otp', otp);
+                    const data = await postForm('../backend/users/register.php', fd);
+                    hideLoading();
 
-                fetch('../backend/users/register.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        hideLoading();
-                        if (data.success) {
-                            otpModal.style.display = 'none';
-                            emailVerified = true;
-                            phoneInput.disabled = false;
-                            passwordInput.disabled = false;
-                            confirmPasswordInput.disabled = false;
-                            registerBtn.style.display = '';
-                            verifyEmailBtn.style.display = 'none';
-                            formError.textContent = '';
-                        } else {
-                            otpMessage.textContent = data.error || 'Incorrect OTP.';
-                        }
-                    })
-                    .catch(() => {
-                        hideLoading();
-                        otpMessage.textContent = 'Network error.';
-                    });
+                    if (data.success) {
+                        otpModal.style.display = 'none';
+                        emailVerified = true;
+                        phoneInput.disabled = false;
+                        passwordInput.disabled = false;
+                        confirmPasswordInput.disabled = false;
+                        registerBtn.style.display = '';
+                        verifyEmailBtn.style.display = 'none';
+                        formError.textContent = '';
+                    } else {
+                        otpMessage.textContent = data.error || 'Incorrect OTP.';
+                    }
+                } catch {
+                    hideLoading();
+                    otpMessage.textContent = 'Network error';
+                }
             });
 
-            resendOtpBtn.addEventListener('click', function() {
+            // Resend OTP
+            resendOtpBtn.addEventListener('click', async () => {
                 const email = emailInput.value.trim();
                 showLoading();
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'send_otp');
+                    fd.append('email', email);
 
-                const formData = new FormData();
-                formData.append('action', 'send_otp');
-                formData.append('email', email);
-
-                fetch('../backend/users/register.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        hideLoading();
-                        if (data.success) {
-                            otpMessage.textContent = 'OTP resent! Check your email.';
-                            // For testing only - remove in production
-                            console.log('New OTP for testing:', data.otp);
-                        } else {
-                            otpMessage.textContent = data.error || 'Failed to resend OTP.';
-                        }
-                    })
-                    .catch(() => {
-                        hideLoading();
-                        otpMessage.textContent = 'Network error.';
-                    });
+                    const data = await postForm('../backend/users/register.php', fd);
+                    hideLoading();
+                    if (data.success) {
+                        otpMessage.textContent = 'OTP resent! Check your email.';
+                        if (data.otp) console.log('Resent OTP (testing):', data.otp);
+                    } else {
+                        otpMessage.textContent = data.error || 'Failed to resend OTP.';
+                    }
+                } catch {
+                    hideLoading();
+                    otpMessage.textContent = 'Network error';
+                }
             });
 
-            // Registration submit
-            document.getElementById('registerForm').addEventListener('submit', function(e) {
+            // Final submit
+            document.getElementById('registerForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
+                formError.textContent = '';
 
                 if (!emailVerified) {
                     formError.textContent = 'Please verify your email first.';
                     return;
                 }
-
+                const email = emailInput.value.trim();
                 const phone = phoneInput.value.trim();
-                const password = passwordInput.value;
-                const confirmPassword = confirmPasswordInput.value;
+                const pass = passwordInput.value;
+                const cpass = confirmPasswordInput.value;
 
-                // Additional client-side validation
-                if (!phone) {
-                    formError.textContent = 'Phone number is required.';
-                    return;
-                }
-
-                if (!/^09\d{9}$/.test(phone)) {
-                    formError.textContent = 'Please enter a valid phone number (e.g., 09123456789).';
-                    return;
-                }
-
-                if (!password || !confirmPassword) {
-                    formError.textContent = 'Both password fields are required.';
-                    return;
-                }
-
-                if (password !== confirmPassword) {
-                    formError.textContent = 'Passwords do not match.';
-                    return;
-                }
-
-                if (password.length < 8) {
-                    formError.textContent = 'Password must be at least 8 characters.';
-                    return;
-                }
+                if (!/^09\d{9}$/.test(phone)) return formError.textContent = 'Please enter a valid phone number (e.g., 09123456789).';
+                if (pass !== cpass) return formError.textContent = 'Passwords do not match.';
+                if (pass.length < 8) return formError.textContent = 'Password must be at least 8 characters.';
 
                 showLoading();
+                try {
+                    const fd = new FormData(e.target);
+                    fd.append('action', 'register');
 
-                const formData = new FormData(this);
-                formData.append('action', 'register');
+                    const data = await postForm('../backend/users/register.php', fd);
+                    hideLoading();
 
-                fetch('../backend/users/register.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        hideLoading();
-                        if (data.success) {
-                            window.location.href = 'user_register.php?success=1';
+                    if (data.success) {
+                        // show success or redirect
+                        const ok = document.querySelector('.success-message');
+                        if (ok) {
+                            ok.style.display = 'flex';
                         } else {
-                            formError.textContent = data.error || 'Registration failed.';
+                            window.location.href = 'user_register.php?success=1';
                         }
-                    })
-                    .catch(() => {
-                        hideLoading();
-                        formError.textContent = 'Network error.';
-                    });
+                    } else {
+                        formError.textContent = data.error || 'Registration failed.';
+                    }
+                } catch {
+                    hideLoading();
+                    formError.textContent = 'Network error';
+                }
             });
-
-            // Success message logic (handled by backend redirect)
-            <?php if (isset($_GET['success']) && $_GET['success'] == 1): ?>
-                successMessage.style.display = 'flex';
-            <?php endif; ?>
         });
     </script>
+
 </body>
 
 </html>

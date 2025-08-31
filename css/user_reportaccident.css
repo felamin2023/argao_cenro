@@ -398,6 +398,7 @@ header {
   border: 2px solid #005117;
   border-radius: 4px;
   font-size: 14px;
+  text-align: start;
   transition: border-color 0.3s;
 }
 .form-row {
@@ -1056,4 +1057,33 @@ body {
   font-weight: bold;
   font-size: 16px;
   transition: all 0.3s;
+}
+#loadingScreen {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.1);
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-direction: row;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+#loadingScreen .loading-text {
+  font-size: 1.5rem;
+  color: #008031;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+#loadingLogo {
+  width: 60px;
+  height: 60px;
+  transition: width 0.5s, height 0.5s;
 }

@@ -1,41 +1,60 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * User-only gate for user_home.php
+ * - Requires a logged-in session
+ * - Role must be 'User'
+ * - Status must be 'Verified'
+ * - Verifies against DB on each hit (defense-in-depth)
+ */
+
 session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
-    header("Location: user_login.php");
+
+// Optional: extra safety headers (helps on back/forward caching)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Quick session check first
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'user') {
+    header('Location: user_login.php');
     exit();
 }
-include_once __DIR__ . '/../backend/connection.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
+// DB check to ensure the session still matches a User, Verified account
+require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO -> Supabase PG)
 
-    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $stmt->store_result();
+try {
+    $st = $pdo->prepare("
+        select role, status
+        from public.users
+        where user_id = :id
+        limit 1
+    ");
+    $st->execute([':id' => $_SESSION['user_id']]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
 
-    if ($stmt->num_rows === 1) {
-        $stmt->bind_result($id, $hashed_password, $role);
-        $stmt->fetch();
+    $roleOk   = $row && strtolower((string)$row['role']) === 'user';
+    $statusOk = $row && strtolower((string)$row['status']) === 'verified';
 
-        if (password_verify($password, $hashed_password)) {
-            $_SESSION['user_id'] = $id;
-            $_SESSION['role'] = $role;
-
-            header("Location: user_home.php");
-            exit();
-        } else {
-            $error = "Incorrect password.";
+    if (!$roleOk || !$statusOk) {
+        // Invalidate session if it no longer matches a real verified User
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
         }
-    } else {
-        $error = "User not found.";
+        session_destroy();
+        header('Location: user_login.php');
+        exit();
     }
-
-    $stmt->close();
+} catch (Throwable $e) {
+    error_log('[USER-HOME GUARD] ' . $e->getMessage());
+    header('Location: user_login.php');
+    exit();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 

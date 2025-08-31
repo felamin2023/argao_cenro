@@ -1,29 +1,44 @@
 <?php
+// marine page guard (top of file)
+declare(strict_types=1);
+
 session_start();
-if (!isset($_SESSION['user_id'])) {
+
+// Must be logged in and an Admin
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
     header('Location: ../superlogin.php');
     exit();
 }
-include_once __DIR__ . '/../backend/connection.php';
-$user_id = $_SESSION['user_id'];
-$stmt = $conn->prepare("SELECT department FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$stmt->bind_result($department);
-if ($stmt->fetch()) {
-    if (strtolower($department) !== 'marine') {
-        $stmt->close();
-        $conn->close();
+
+require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Postgres)
+
+// Current user (UUID)
+$user_id = (string)$_SESSION['user_id'];
+
+try {
+    $st = $pdo->prepare("
+        SELECT role, department, status
+        FROM public.users
+        WHERE user_id = :id
+        LIMIT 1
+    ");
+    $st->execute([':id' => $user_id]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+
+    $isAdmin  = $u && strtolower((string)$u['role']) === 'admin';
+    $isMarine = $u && strtolower((string)$u['department']) === 'marine';
+    // optionally require an approved/verified status:
+    // $statusOk = $u && in_array(strtolower((string)$u['status']), ['verified','approved'], true);
+
+    if (!$isAdmin || !$isMarine /* || !$statusOk */) {
         header('Location: ../superlogin.php');
         exit();
     }
-} else {
-    $stmt->close();
-    $conn->close();
+} catch (Throwable $e) {
+    error_log('[MARINE-GUARD] ' . $e->getMessage());
     header('Location: ../superlogin.php');
     exit();
 }
-$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

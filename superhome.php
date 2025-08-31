@@ -1,92 +1,97 @@
 <?php
+// superhome.php (top of file)
+declare(strict_types=1);
+
 session_start();
-if (!isset($_SESSION['user_id'])) {
+
+// Gate: must be logged in and an Admin
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
     header('Location: superlogin.php');
     exit();
 }
-include_once __DIR__ . '/backend/connection.php';
-$user_id = $_SESSION['user_id'];
-$stmt = $conn->prepare("SELECT department FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$stmt->bind_result($department);
-if ($stmt->fetch()) {
-    if (strtolower($department) !== 'cenro') {
-        $stmt->close();
-        $conn->close();
+
+// Use the PDO connection (Supabase/Postgres) from your backend
+require_once __DIR__ . '/backend/connection.php'; // must expose $pdo (PDO instance)
+
+// Current user (UUID string)
+$user_id = (string)$_SESSION['user_id'];
+
+try {
+    // Verify this admin belongs to CENRO
+    $st = $pdo->prepare("
+        SELECT department, role, status
+        FROM public.users
+        WHERE user_id = :id
+        LIMIT 1
+    ");
+    $st->execute([':id' => $user_id]);
+    $me = $st->fetch(PDO::FETCH_ASSOC);
+
+    $isAdmin = $me && strtolower((string)$me['role']) === 'admin';
+    $isCenro = $me && strtolower((string)$me['department']) === 'cenro';
+
+    if (!$isAdmin || !$isCenro) {
         header('Location: superlogin.php');
         exit();
     }
-} else {
-    $stmt->close();
-    $conn->close();
+} catch (Throwable $e) {
+    error_log('[SUPERHOME AUTH] ' . $e->getMessage());
     header('Location: superlogin.php');
     exit();
 }
-$stmt->close();
 
-$notif_query = "
-    SELECT pur.id, pur.user_id, pur.created_at, pur.is_read, pur.department, pur.status, 
-           pur.reviewed_at, pur.reviewed_by,
-           u.first_name, u.last_name
-    FROM profile_update_requests pur
-    JOIN users u ON pur.user_id = u.id
-    ORDER BY 
-        CASE WHEN pur.status = 'pending' THEN 0 ELSE 1 END ASC,
-        pur.is_read ASC,
-        CASE WHEN pur.status = 'pending' THEN pur.created_at ELSE pur.reviewed_at END DESC
-";
-
-$notif_result = $conn->query($notif_query);
+// =================== Notifications (PDO) ===================
 $notifications = [];
-while ($row = $notif_result->fetch_assoc()) {
-    $notifications[] = $row;
+try {
+    // If your table is public.profile_update_requests and it references users.user_id (uuid):
+    $notif_sql = "
+        SELECT
+            pur.id,
+            pur.user_id,
+            pur.created_at,
+            pur.is_read,
+            pur.department,
+            pur.status,
+            pur.reviewed_at,
+            pur.reviewed_by,
+            u.first_name,
+            u.last_name
+        FROM public.profile_update_requests pur
+        JOIN public.users u
+          ON pur.user_id = u.user_id
+        ORDER BY
+            CASE WHEN lower(pur.status) = 'pending' THEN 0 ELSE 1 END ASC,
+            pur.is_read ASC,
+            CASE WHEN lower(pur.status) = 'pending' THEN pur.created_at ELSE pur.reviewed_at END DESC
+    ";
+
+    $notifications = $pdo->query($notif_sql)->fetchAll(PDO::FETCH_ASSOC); // returns [] if none
+} catch (Throwable $e) {
+    error_log('[SUPERHOME NOTIFS] ' . $e->getMessage());
+    $notifications = [];
 }
 
-// Helper for "15 minutes ago"
+// =================== Helper ===================
 function time_elapsed_string($datetime, $full = false)
 {
     $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
     $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
     $diff = $now->diff($ago);
 
-    // Calculate weeks and remaining days
-    $weeks = floor($diff->d / 7);
-    $days = $diff->d % 7;
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
 
-    $string = [
-        'y' => 'year',
-        'm' => 'month',
-        'w' => 'week',
-        'd' => 'day',
-        'h' => 'hour',
-        'i' => 'minute',
-        's' => 'second'
-    ];
-
-    // Build the parts array with actual values
+    $map = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
     $parts = [];
-    foreach ($string as $unit => $text) {
-        if ($unit === 'w') {
-            $value = $weeks;
-        } elseif ($unit === 'd') {
-            $value = $days;
-        } else {
-            $value = $diff->$unit;
-        }
-
-        if ($value > 0) {
-            $parts[] = $value . ' ' . $text . ($value > 1 ? 's' : '');
-        }
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
     }
-
-    if (!$full) {
-        $parts = array_slice($parts, 0, 1);
-    }
-
+    if (!$full) $parts = array_slice($parts, 0, 1);
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 

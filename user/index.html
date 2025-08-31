@@ -1,0 +1,107 @@
+<!-- signature.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form with e-Signature</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      .sig-wrap {
+        margin: 12px 0;
+      }
+      #sig-canvas {
+        width: 100%;
+        height: 200px;
+        border: 2px dashed #9aa;
+        border-radius: 8px;
+        background: #fff;
+        touch-action: none; /* better mobile drawing */
+      }
+      .sig-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      button {
+        padding: 8px 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <form id="userForm" method="post" action="generate.php">
+      <label>
+        Full name<br />
+        <input type="text" name="full_name" required />
+      </label>
+      <br /><br />
+
+      <div class="sig-wrap">
+        <label>Signature (draw inside the box)</label>
+        <canvas id="sig-canvas"></canvas>
+        <div class="sig-actions">
+          <button type="button" id="clear-btn">Clear</button>
+          <button type="button" id="undo-btn">Undo</button>
+        </div>
+        <!-- This hidden field will carry the Base64 PNG to PHP -->
+        <input type="hidden" name="signature" id="signature" />
+      </div>
+
+      <label>
+        I agree to the terms
+        <input type="checkbox" name="consent" value="1" required />
+      </label>
+      <br /><br />
+
+      <button type="submit">Generate Document</button>
+    </form>
+
+    <!-- Signature Pad library -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.6/dist/signature_pad.umd.min.js"></script>
+    <script>
+      const canvas = document.getElementById("sig-canvas");
+      const signaturePad = new SignaturePad(canvas, {
+        // Use a white background so the PNG isn’t transparent in PDFs
+        backgroundColor: "rgb(255,255,255)",
+        penColor: "black",
+        minWidth: 0.8,
+        maxWidth: 2.2,
+      });
+
+      // Make the canvas crisp on HiDPI screens
+      function resizeCanvas() {
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        const { width } = canvas.getBoundingClientRect();
+        canvas.width = Math.floor(width * ratio);
+        canvas.height = Math.floor(200 * ratio); // match CSS height
+        canvas.getContext("2d").scale(ratio, ratio);
+        signaturePad.clear();
+      }
+      window.addEventListener("resize", resizeCanvas);
+      // Give canvas an initial width (after layout)
+      setTimeout(resizeCanvas, 0);
+
+      // Clear + Undo
+      document
+        .getElementById("clear-btn")
+        .addEventListener("click", () => signaturePad.clear());
+      document.getElementById("undo-btn").addEventListener("click", () => {
+        const data = signaturePad.toData();
+        if (data.length) {
+          data.pop(); // remove the last stroke
+          signaturePad.fromData(data);
+        }
+      });
+
+      // On submit, move PNG dataURL into the hidden input
+      document.getElementById("userForm").addEventListener("submit", (e) => {
+        if (signaturePad.isEmpty()) {
+          e.preventDefault();
+          alert("Please provide your signature.");
+          return;
+        }
+        document.getElementById("signature").value =
+          signaturePad.toDataURL("image/png");
+      });
+    </script>
+  </body>
+</html>

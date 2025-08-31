@@ -1,41 +1,60 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * User-only gate for user_home.php
+ * - Requires a logged-in session
+ * - Role must be 'User'
+ * - Status must be 'Verified'
+ * - Verifies against DB on each hit (defense-in-depth)
+ */
+
 session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
-    header("Location: user_login.php");
+
+// Optional: extra safety headers (helps on back/forward caching)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Quick session check first
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'user') {
+    header('Location: user_login.php');
     exit();
 }
-include_once __DIR__ . '/../backend/connection.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
+// DB check to ensure the session still matches a User, Verified account
+require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO -> Supabase PG)
 
-    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $stmt->store_result();
+try {
+    $st = $pdo->prepare("
+        select role, status
+        from public.users
+        where user_id = :id
+        limit 1
+    ");
+    $st->execute([':id' => $_SESSION['user_id']]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
 
-    if ($stmt->num_rows === 1) {
-        $stmt->bind_result($id, $hashed_password, $role);
-        $stmt->fetch();
+    $roleOk   = $row && strtolower((string)$row['role']) === 'user';
+    $statusOk = $row && strtolower((string)$row['status']) === 'verified';
 
-        if (password_verify($password, $hashed_password)) {
-            $_SESSION['user_id'] = $id;
-            $_SESSION['role'] = $role;
-
-            header("Location: user_home.php");
-            exit();
-        } else {
-            $error = "Incorrect password.";
+    if (!$roleOk || !$statusOk) {
+        // Invalidate session if it no longer matches a real verified User
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
         }
-    } else {
-        $error = "User not found.";
+        session_destroy();
+        header('Location: user_login.php');
+        exit();
     }
-
-    $stmt->close();
+} catch (Throwable $e) {
+    error_log('[USER-HOME GUARD] ' . $e->getMessage());
+    header('Location: user_login.php');
+    exit();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -442,6 +461,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .form-group input,
+
+        .form-group input[type="date"],
         .form-group textarea,
         .form-group input[type="file"],
         .form-group select {
@@ -1056,6 +1077,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .form-body {
             padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: start;
+            border: 1px solid black;
         }
 
         .requirements-list {
@@ -1231,7 +1257,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-color: #fefefe;
             margin: 5% auto;
             padding: 20px;
-            border: 1px solid #888;
             width: 80%;
             max-width: 800px;
             border-radius: var(--border-radius);
@@ -1292,7 +1317,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             gap: 15px;
             MARGIN-TOP: -1%;
             margin-bottom: 10px;
-            padding: 15px;
+
+            width: 100%;
         }
 
         .name-field {
@@ -1300,7 +1326,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             min-width: 200px;
         }
 
-        .name-field input {
+        .name-field input,
+        input,
+        textarea,
+        select {
             width: 100%;
             padding: 12px 15px;
             border: 1px solid #153415;
@@ -1320,6 +1349,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .name-field input::placeholder {
             color: #999;
         }
+
+
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -1399,11 +1430,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 font-size: 1.3rem;
             }
         }
+
+        /* === Seedling dropdown (native <select>) === */
+        .seedling-select {
+            /* reset native look */
+            -webkit-appearance: none;
+            appearance: none;
+
+            /* sizing + shape */
+            width: 100%;
+            height: 44px;
+            padding: 10px 42px 10px 14px;
+            /* room for the arrow on the right */
+            border: 2px solid var(--primary-color, #2b6625);
+            border-radius: 10px;
+
+            /* text + bg */
+            background-color: #fff;
+
+            /* custom arrow (inline SVG) */
+
+
+            /* polish */
+            font-size: 14px;
+            font-weight: 600;
+            transition: border-color .2s, box-shadow .2s, transform .02s ease-in-out;
+        }
+
+        .seedling-select:hover {
+            transform: translateY(-1px);
+        }
+
+        .seedling-select:focus {
+            outline: none;
+            border-color: var(--primary-dark, #1e4a1a);
+            box-shadow: 0 0 0 3px rgba(43, 102, 37, 0.18);
+        }
+
+        .seedling-select:disabled {
+            color: #8a8a8a;
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        /* Firefox adds a dotted outline on focus-visible; keep it tidy */
+        .seedling-select:-moz-focusring {
+            color: transparent;
+            text-shadow: 0 0 0 #000;
+        }
+
+        /* === Quantity number input === */
+        .seedling-qty {
+            width: 100%;
+            min-width: 150px;
+            height: 44px;
+            padding: 10px 12px;
+            border: 2px solid var(--primary-color, #2b6625);
+            border-radius: 10px;
+            background-color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            transition: border-color .2s, box-shadow .2s, transform .02s ease-in-out;
+        }
+
+        .seedling-qty::placeholder {
+            color: #6b6b6b;
+            font-weight: 500;
+            /* your “Stocks left: X” hint looks distinct */
+        }
+
+        .seedling-qty:hover {
+            transform: translateY(-1px);
+        }
+
+        .seedling-qty:focus {
+            outline: none;
+            border-color: var(--primary-dark, #1e4a1a);
+            box-shadow: 0 0 0 3px rgba(43, 102, 37, 0.18);
+        }
+
+        /* Optional: hide native spin buttons for a cleaner look */
+        .seedling-qty::-webkit-outer-spin-button,
+        .seedling-qty::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .seedling-qty[type="number"] {
+            -moz-appearance: textfield;
+            /* Firefox */
+        }
+
+        /* Row layout stays tidy on small screens */
+        .seedling-row {
+            align-items: center;
+        }
     </style>
 </head>
 
 <body>
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+
     <header>
         <div class="logo">
             <a href="user_home.php">
@@ -1423,7 +1550,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-
 
                 <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
@@ -1454,8 +1580,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
-
-
                 </div>
             </div>
 
@@ -1527,87 +1651,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h2>Seedling Request - Requirement</h2>
             </div>
 
-
             <div class="form-body">
+                <!-- Basic info -->
                 <div class="name-fields">
                     <div class="name-field">
-                        <input type="text" placeholder="First Name" required>
+                        <input type="text" placeholder="First Name" id="firstName" required>
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Middle Name">
+                        <input type="text" placeholder="Middle Name" id="middleName">
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Last Name" required>
-                    </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Seedling Name" required>
-                    </div>
-                    <div class="name-field">
-                        <input type="number" placeholder="Quantity" required>
+                        <input type="text" placeholder="Last Name" id="lastName" required>
                     </div>
                 </div>
 
-                <div class="sample-letter-btn">
-                    <button class="download-sample" id="downloadSample">
-                        <i class="fas fa-file-word"></i> Download Sample Letter (DOCS)
+                <!-- Purpose -->
+                <div style="width: 100%; display: flex; flex-direction: column;">
+                    <label style="font-weight:600">Purpose of the Request</label>
+                    <textarea id="purpose" placeholder="e.g., community tree-planting along the barangay road..." style="width:100%;height:80px"></textarea>
+                </div>
+
+                <!-- Address + org + date -->
+                <div style=" width: 100%; display:grid;grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:14px">
+                    <input type="text" id="organization" placeholder="Organization (optional)" style="width:100%;">
+                    <input type="text" id="sitioStreet" placeholder="Sitio / Street">
+
+                    <input list="barangayList" id="barangay" placeholder="Barangay">
+                    <datalist id="barangayList">
+                        <option value="Guadalupe">
+                        <option value="Lahug">
+                        <option value="Mabolo">
+                        <option value="Labangon">
+                        <option value="Talamban">
+                    </datalist>
+
+                    <select id="municipality">
+                        <option value="">Select Municipality (Cebu)</option>
+                        <option>Alcantara</option>
+                        <option>Alcoy</option>
+                        <option>Alegria</option>
+                        <option>Aloguinsan</option>
+                        <option>Argao</option>
+                        <option>Asturias</option>
+                        <option>Badian</option>
+                        <option>Balamban</option>
+                        <option>Bantayan</option>
+                        <option>Barili</option>
+                        <option>Boljoon</option>
+                        <option>Borbon</option>
+                        <option>Carmen</option>
+                        <option>Catmon</option>
+                        <option>Compostela</option>
+                        <option>Consolacion</option>
+                        <option>Cordova</option>
+                        <option>Daanbantayan</option>
+                        <option>Dalaguete</option>
+                        <option>Dumanjug</option>
+                        <option>Ginatilan</option>
+                        <option>Liloan</option>
+                        <option>Madridejos</option>
+                        <option>Malabuyoc</option>
+                        <option>Medellin</option>
+                        <option>Minglanilla</option>
+                        <option>Moalboal</option>
+                        <option>Oslob</option>
+                        <option>Pilar</option>
+                        <option>Pinamungajan</option>
+                        <option>Poro</option>
+                        <option>Ronda</option>
+                        <option>Samboan</option>
+                        <option>San Fernando</option>
+                        <option>San Francisco</option>
+                        <option>San Remigio</option>
+                        <option>Santa Fe</option>
+                        <option>Santander</option>
+                        <option>Sibonga</option>
+                        <option>Sogod</option>
+                        <option>Tabogon</option>
+                        <option>Tabuelan</option>
+                        <option>Tuburan</option>
+                        <option>Tudela</option>
+                    </select>
+
+                    <select id="city">
+                        <option value="">Select City (Cebu)</option>
+                        <option>Bogo City</option>
+                        <option>Carcar City</option>
+                        <option>Cebu City</option>
+                        <option>Danao City</option>
+                        <option>Lapu-Lapu City</option>
+                        <option>Mandaue City</option>
+                        <option>Naga City</option>
+                        <option>Talisay City</option>
+                        <option>Toledo City</option>
+                    </select>
+
+                    <input type="date" id="requestDate" required style="width:100%; height:40px; box-sizing:border-box;">
+                </div>
+                <small style="color:#666;display:block;margin-top:6px;">
+                    Tip: choose either a City <em>or</em> a Municipality. Province is assumed as Cebu.
+                </small>
+
+                <!-- Seedlings dynamic list -->
+                <div style="margin-top:18px">
+                    <label style="font-weight:600;display:block;margin-bottom:8px">Seedlings Requested (add more rows as needed)</label>
+                    <div id="seedlingList" style="display:flex;flex-direction:column;gap:10px"></div>
+                    <button type="button" id="addSeedlingBtn" class="btn btn-outline" style="margin-top:6px">
+                        <i class="fas fa-plus-circle"></i> Add another seedling
                     </button>
                 </div>
 
-                <div class="requirements-list">
-                    <!-- Single Requirement -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">1</span>
-                                Letter of Request for Seedlings (Download sample above)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload Request Letter
-                                </label>
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-1">
-                                <!-- Example uploaded file -->
-                                <div class="file-item">
-                                    <div class="file-info">
-                                        <i class="fas fa-file-word file-icon"></i>
-                                        <span>seedling_request_letter.docx</span>
-                                    </div>
-                                    <div class="file-actions">
-                                        <button class="file-action-btn view-file" data-file="seedling_request_letter.docx" title="View">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button class="file-action-btn" title="Download">
-                                            <i class="fas fa-download"></i>
-                                        </button>
-                                        <button class="file-action-btn" title="Delete">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <!-- Generate letter -->
+                <!-- <div class="sample-letter-btn" style="margin-top:18px">
+                    <button class="btn btn-primary" id="generateLetter">
+                        <i class="fas fa-file-word"></i> Generate Letter (DOC)
+                    </button>
+                </div> -->
 
-                    <!-- Information about the letter -->
-                    <div class="fee-info">
-                        <p><strong>Your request letter should include:</strong></p>
-                        <ul style="margin-left: 20px; margin-top: 10px;">
-                            <li>Your complete name and contact information</li>
-                            <li>Date of request</li>
-                            <li>Name of seedlings requested</li>
-                            <li>Quantity needed</li>
-                            <li>Purpose of the request</li>
-                            <li>Location where seedlings will be planted</li>
-                            <li>Your signature</li>
-                        </ul>
-                        <p style="margin-top: 15px;"><strong>Note:</strong> There is no fee for seedling requests.</p>
+                <!-- Signature pad -->
+                <div class="sig-wrap" style="margin-top:18px">
+                    <label style="font-weight:600;display:block;margin-bottom:6px">Signature (draw inside the box)</label>
+                    <canvas id="sigCanvas" style="width:400px;height:150px;border:2px dashed #9aa;border-radius:8px;background:#fff;touch-action:none"></canvas>
+                    <div class="sig-actions" style="display:flex;gap:8px;margin-top:8px">
+                        <button type="button" id="sigClear" class="btn btn-outline">Clear</button>
+                        <button type="button" id="sigUndo" class="btn btn-outline">Undo</button>
                     </div>
                 </div>
+
+                <!-- (Optional) Requirements box removed for brevity -->
             </div>
 
             <div class="form-footer">
@@ -1638,13 +1809,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Sample Letter Content (hidden) -->
-    <div id="sampleLetterContent" style="display: none;">
+    <!-- Sample Letter Content (EXACT FORMAT USED) -->
+    <div id="sampleLetterContent" style="display:none;">
         <p style="text-align: right;">[Your Address]<br>[City, Province]<br>[Date]</p>
 
         <p style="text-align: left; margin-top: 30px;">
-            <strong>CENRO Argao<br>
-
+            <strong>CENRO Argao</strong><br>
         </p>
 
         <p style="margin-top: 30px;"><strong>Subject: Request for Seedlings</strong></p>
@@ -1678,9 +1848,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </p>
     </div>
 
+    <!-- SignaturePad CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.6/dist/signature_pad.umd.min.js"></script>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
+            /* ───────── Toast (replaces all alert()) ───────── */
+            const noteEl = document.getElementById('profile-notification');
+
+            function toast(message, opts = {}) {
+                const {
+                    type = 'info', timeout = 3000, html = false
+                } = opts;
+                if (!noteEl) return;
+
+                noteEl.setAttribute('role', 'status');
+                noteEl.setAttribute('aria-live', 'polite');
+                noteEl.setAttribute('aria-atomic', 'true');
+                noteEl.style.transition = 'opacity .2s ease-in-out';
+
+                // Slight dark green for success
+                noteEl.style.background =
+                    type === 'error' ? '#c0392b' :
+                    type === 'success' ? '#2d8a34' : '#323232';
+
+                if (html) noteEl.innerHTML = message;
+                else noteEl.textContent = message;
+
+                noteEl.style.display = 'block';
+                noteEl.style.opacity = '1';
+                clearTimeout(noteEl._hideTimer);
+                noteEl._hideTimer = setTimeout(() => {
+                    noteEl.style.opacity = '0';
+                    setTimeout(() => {
+                        noteEl.style.display = 'none';
+                        noteEl.style.opacity = '1';
+                    }, 200);
+                }, timeout);
+            }
+
+            /* ───────── Mobile menu ───────── */
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
             if (mobileToggle) {
@@ -1690,344 +1897,321 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
-            // New file input and preview logic
-            const fileInput = document.getElementById('file-1');
-            const uploadedFilesContainer = document.getElementById('uploaded-files-1');
-            let selectedFile = null;
-            if (fileInput) {
-                fileInput.addEventListener('change', function() {
-                    uploadedFilesContainer.innerHTML = '';
-                    const file = this.files[0];
-                    this.parentElement.querySelector('.file-name').textContent = file ? file.name : 'No file chosen';
-                    if (file) {
-                        selectedFile = file;
-                        addUploadedFile(file);
-                    } else {
-                        selectedFile = null;
-                    }
-                });
+            /* ───────── Helpers ───────── */
+            function escapeHTML(str) {
+                return String(str ?? '').replace(/[&<>"']/g, c => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [c]));
             }
 
-            function addUploadedFile(file) {
-                uploadedFilesContainer.innerHTML = '';
-                let fileIcon;
-                if (file.type.includes('pdf')) {
-                    fileIcon = '<i class="fas fa-file-pdf file-icon"></i>';
-                } else if (file.type.includes('image')) {
-                    fileIcon = '<i class="fas fa-file-image file-icon"></i>';
-                } else if (file.type.includes('word') || file.type.includes('document')) {
-                    fileIcon = '<i class="fas fa-file-word file-icon"></i>';
-                } else {
-                    fileIcon = '<i class="fas fa-file file-icon"></i>';
-                }
-                const fileItem = document.createElement('div');
-                fileItem.className = 'file-item';
-                fileItem.innerHTML = `
-                    <div class="file-info">
-                        ${fileIcon}
-                        <span>${file.name}</span>
-                    </div>
-                    <div class="file-actions">
-                        <button class="file-action-btn view-file" title="View"><i class="fas fa-eye"></i></button>
-                        <button class="file-action-btn delete-file" title="Delete"><i class="fas fa-trash"></i></button>
-                    </div>
-                `;
-                uploadedFilesContainer.appendChild(fileItem);
-
-                // View file
-                fileItem.querySelector('.view-file').addEventListener('click', function() {
-                    previewFile(file);
-                });
-                // Delete file
-                fileItem.querySelector('.delete-file').addEventListener('click', function() {
-                    uploadedFilesContainer.innerHTML = '';
-                    fileInput.value = '';
-                    fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                    selectedFile = null;
-                });
+            function dataURLtoBase64(dataURL) {
+                return (dataURL.split(',')[1] || '').replace(/\s/g, '');
             }
 
-            // File preview functionality
-            const modal = document.getElementById('filePreviewModal');
-            const modalFrame = document.getElementById('filePreviewFrame');
-            const closeFilePreviewModal = document.getElementById('closeFilePreviewModal');
+            /* ───────── Signature Pad ───────── */
+            const canvas = document.getElementById('sigCanvas');
+            const sigPad = new SignaturePad(canvas, {
+                backgroundColor: '#fff',
+                penColor: 'black',
+                minWidth: 0.8,
+                maxWidth: 2.2
+            });
 
-            function previewFile(file) {
-                const modalFrame = document.getElementById('filePreviewFrame');
-                if (!modalFrame) return;
-                // Always clear both src and srcdoc before setting
-                modalFrame.removeAttribute('src');
-                modalFrame.removeAttribute('srcdoc');
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    if (file.type.startsWith('image/')) {
-                        modalFrame.srcdoc = `<img src='${e.target.result}' style='max-width:100%;max-height:80vh;'>`;
-                    } else if (file.type === 'application/pdf') {
-                        modalFrame.src = e.target.result;
-                    } else if (
-                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                        file.type === 'application/msword'
-                    ) {
-                        // For doc/docx, show a download link
-                        const url = URL.createObjectURL(file);
-                        modalFrame.srcdoc = `<div style='padding:20px;text-align:center;'>Cannot preview this file type.<br><a href='${url}' download='${file.name}' style='color:#2b6625;font-weight:bold;'>Download ${file.name}</a></div>`;
-                    } else {
-                        modalFrame.srcdoc = `<div style='padding:20px;'>Cannot preview this file type.</div>`;
-                    }
-                    modal.style.display = 'block';
-                };
-                if (file.type.startsWith('image/')) {
-                    reader.readAsDataURL(file);
-                } else if (file.type === 'application/pdf') {
-                    reader.readAsDataURL(file);
-                } else if (
-                    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                    file.type === 'application/msword'
-                ) {
-                    // For doc/docx, just show download link
-                    reader.onload();
-                } else {
-                    reader.onload();
-                }
+            function resizeCanvas() {
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = Math.floor(rect.width * ratio);
+                canvas.height = Math.floor(150 * ratio);
+                canvas.getContext('2d').scale(ratio, ratio);
+                sigPad.clear();
             }
-
-            if (closeFilePreviewModal) {
-                closeFilePreviewModal.addEventListener('click', function() {
-                    modal.style.display = 'none';
-                });
-            }
-            window.addEventListener('click', function(event) {
-                if (event.target == modal) {
-                    modal.style.display = 'none';
+            window.addEventListener('resize', resizeCanvas);
+            setTimeout(resizeCanvas, 0);
+            document.getElementById('sigClear').addEventListener('click', () => sigPad.clear());
+            document.getElementById('sigUndo').addEventListener('click', () => {
+                const data = sigPad.toData();
+                if (data.length) {
+                    data.pop();
+                    sigPad.fromData(data);
                 }
             });
 
-            // Confirmation modal logic
-            const confirmModal = document.getElementById('confirmModal');
-            const closeConfirmModal = document.getElementById('closeConfirmModal');
-            const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
-            const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
-            const successModal = document.getElementById('successModal');
-            const closeSuccessModal = document.getElementById('closeSuccessModal');
-            const okSuccessBtn = document.getElementById('okSuccessBtn');
+            /* ───────── Seedlings catalog (from backend) ───────── */
+            const seedlingList = document.getElementById('seedlingList');
+            const addSeedlingBtn = document.getElementById('addSeedlingBtn');
+            let seedlingsCatalog = []; // [{seedlings_id, seedling_name, stock}, ...]
 
-            const submitApplicationBtn = document.getElementById('submitApplication');
-            if (submitApplicationBtn) {
-                submitApplicationBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    // Validate fields
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
-                    const seedlingName = document.querySelector('.name-fields input[placeholder="Seedling Name"]').value.trim();
-                    const quantity = document.querySelector('.name-fields input[placeholder="Quantity"]').value.trim();
-
-                    if (!firstName || !lastName) {
-                        alert('First name and last name are required.');
-                        return;
-                    }
-                    if (!seedlingName) {
-                        alert('Seedling name is required.');
-                        return;
-                    }
-                    if (!quantity || isNaN(quantity) || parseInt(quantity) <= 0) {
-                        alert('Please enter a valid quantity (must be greater than 0).');
-                        return;
-                    }
-                    if (!selectedFile) {
-                        alert('Please upload your request letter.');
-                        return;
-                    }
-                    if (confirmModal) confirmModal.style.display = 'block';
-                });
+            async function loadSeedlings() {
+                try {
+                    const res = await fetch('../backend/users/seedlings/list.php', {
+                        credentials: 'same-origin'
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error('Failed to load seedlings');
+                    seedlingsCatalog = data.seedlings || [];
+                    seedlingList.innerHTML = '';
+                    seedlingList.style.width = '100%';
+                    addSeedlingRow();
+                } catch (e) {
+                    toast('Could not load seedlings list.', {
+                        type: 'error'
+                    });
+                }
             }
 
-            if (closeConfirmModal) {
-                closeConfirmModal.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
+            function buildSeedlingSelect() {
+                const sel = document.createElement('select');
+                sel.className = 'seedling-name';
+                sel.style.height = '40px';
+                sel.style.width = '100%';
+                sel.innerHTML = '<option value="">Select seedling</option>';
+                seedlingsCatalog.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.seedlings_id;
+                    opt.textContent = s.seedling_name + (Number(s.stock) <= 0 ? ' — out of stock' : '');
+                    opt.dataset.name = s.seedling_name || '';
+                    opt.dataset.stock = String(s.stock ?? 0);
+                    if (Number(s.stock) <= 0) opt.disabled = true;
+                    sel.appendChild(opt);
                 });
-            }
-            if (cancelSubmitBtn) {
-                cancelSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                });
+                return sel;
             }
 
-            if (confirmSubmitBtn) {
-                confirmSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                    // Prepare form data
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
-                    const seedlingName = document.querySelector('.name-fields input[placeholder="Seedling Name"]').value.trim();
-                    const quantity = document.querySelector('.name-fields input[placeholder="Quantity"]').value.trim();
+            // 🔒 Enforced quantity limiter with per-keystroke feedback
+            function addSeedlingRow() {
+                const row = document.createElement('div');
+                row.className = 'seedling-row';
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '2fr 1fr auto';
+                row.style.gap = '8px';
+                row.style.width = '700px';
 
-                    const formData = new FormData();
-                    formData.append('first_name', firstName);
-                    formData.append('middle_name', middleName);
-                    formData.append('last_name', lastName);
-                    formData.append('seedling_name', seedlingName);
-                    formData.append('quantity', quantity);
-                    formData.append('request_letter', selectedFile);
+                const sel = buildSeedlingSelect();
 
-                    fetch('../backend/users/requestseed.php', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.success) {
-                                // Clear all inputs
-                                document.querySelector('.name-fields input[placeholder="First Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Middle Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Last Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Seedling Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Quantity"]').value = '';
-                                if (fileInput) {
-                                    fileInput.value = '';
-                                    fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                                }
-                                uploadedFilesContainer.innerHTML = '';
-                                selectedFile = null;
-                                // Show notification using the provided bar
-                                showProfileNotification('Seedling request submitted successfully!');
-                            } else {
-                                alert(data.errors ? data.errors.join('\n') : 'Failed to submit request.');
-                            }
-                        })
-                        .catch(() => {
-                            alert('Network error.');
+                const qty = document.createElement('input');
+                qty.type = 'number';
+                qty.className = 'seedling-qty';
+                qty.placeholder = 'Qty';
+                qty.min = '1';
+                qty.step = '1';
+                qty.style.height = '40px';
+                qty.style.width = '100%';
+
+                function syncQtyMeta(showMsg = false) {
+                    const opt = sel.options[sel.selectedIndex];
+                    const name = opt?.dataset.name || '';
+                    const stock = Number(opt?.dataset.stock || 0);
+
+                    qty.placeholder = stock ? `Available: ${stock}` : 'Available: 0';
+                    qty.max = stock ? String(stock) : '';
+                    qty.disabled = stock <= 0 || !sel.value;
+
+                    if (qty.value && stock && Number(qty.value) > stock) {
+                        qty.value = String(stock);
+                        if (showMsg) toast(`Maximum available for "${name}" is ${stock}.`, {
+                            type: 'error',
+                            timeout: 2200
                         });
+                    }
+                }
+
+                function enforceMaxOnType() {
+                    const opt = sel.options[sel.selectedIndex];
+                    const name = opt?.dataset.name || '';
+                    const stock = Number(opt?.dataset.stock || 0);
+
+                    if (!sel.value || !stock) {
+                        qty.value = '';
+                        return;
+                    }
+
+                    const v = parseInt(qty.value || '0', 10);
+                    if (!Number.isFinite(v) || v < 1) return;
+
+                    if (v > stock) {
+                        qty.value = String(stock);
+                        toast(`Maximum available for "${name}" is ${stock}.`, {
+                            type: 'error',
+                            timeout: 2200
+                        });
+                    }
+                }
+
+                // Optional: prevent accidental scroll changing the number
+                qty.addEventListener('wheel', (e) => e.target.blur(), {
+                    passive: true
                 });
+
+                sel.addEventListener('change', () => syncQtyMeta(true));
+                qty.addEventListener('input', enforceMaxOnType);
+                syncQtyMeta(); // initialize
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'btn btn-outline remove-row';
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                removeBtn.addEventListener('click', () => {
+                    row.remove();
+                    if (!seedlingList.children.length) addSeedlingRow();
+                });
+
+                row.appendChild(sel);
+                row.appendChild(qty);
+                row.appendChild(removeBtn);
+                seedlingList.appendChild(row);
             }
+            addSeedlingBtn.addEventListener('click', addSeedlingRow);
 
+            // Load catalog now
+            loadSeedlings();
 
-            // Success notification logic using #profile-notification
-            function showProfileNotification(message) {
-                const notif = document.getElementById('profile-notification');
-                if (!notif) return;
-                notif.textContent = message;
-                notif.style.display = 'block';
-                notif.style.opacity = '1';
-                setTimeout(() => {
-                    notif.style.opacity = '0';
-                    setTimeout(() => {
-                        notif.style.display = 'none';
-                        notif.style.opacity = '1';
-                    }, 400);
-                }, 2200);
-            }
+            /* ───────── Submit flow (CONFIRM → POST) ───────── */
+            const confirmModal = document.getElementById('confirmModal');
+            document.getElementById('closeConfirmModal').addEventListener('click', () => confirmModal.style.display = 'none');
+            document.getElementById('cancelSubmitBtn').addEventListener('click', () => confirmModal.style.display = 'none');
 
-            // Download sample letter button
-            const downloadSampleBtn = document.getElementById('downloadSample');
-            if (downloadSampleBtn) {
-                downloadSampleBtn.addEventListener('click', function() {
-                    // Create a Blob with the sample letter content
-                    const sampleLetterContent = document.getElementById('sampleLetterContent').innerHTML;
-                    const blob = new Blob([`
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <meta charset="UTF-8">
-                            <title>Seedling Request Letter</title>
-                            <style>
-                                body {
-                                    font-family: Arial, sans-serif;
-                                    line-height: 1.6;
-                                    margin: 50px;
-                                }
-                            </style>
-                        </head>
-                        <body>
-                            ${sampleLetterContent}
-                        </body>
-                        </html>
-                    `], {
-                        type: 'text/html'
+            document.getElementById('submitApplication').addEventListener('click', (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('firstName').value.trim();
+                const lastName = document.getElementById('lastName').value.trim();
+                const purpose = document.getElementById('purpose').value.trim();
+                const reqDate = document.getElementById('requestDate').value;
+
+                if (!firstName || !lastName) {
+                    toast('First name and last name are required.', {
+                        type: 'error'
+                    });
+                    return;
+                }
+                if (!purpose) {
+                    toast('Please enter the purpose of your request.', {
+                        type: 'error'
+                    });
+                    return;
+                }
+                if (!reqDate) {
+                    toast('Please choose the date of request.', {
+                        type: 'error'
+                    });
+                    return;
+                }
+                if (sigPad.isEmpty()) {
+                    toast('Please provide your signature.', {
+                        type: 'error'
+                    });
+                    return;
+                }
+
+                const hasSeedling = Array.from(document.querySelectorAll('.seedling-row')).some(row => {
+                    const sel = row.querySelector('select.seedling-name');
+                    const qty = row.querySelector('.seedling-qty');
+                    return sel?.value && Number(qty?.value || 0) > 0;
+                });
+                if (!hasSeedling) {
+                    toast('Add at least one seedling with a valid quantity.', {
+                        type: 'error'
+                    });
+                    return;
+                }
+
+                confirmModal.style.display = 'block';
+            });
+
+            document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
+                confirmModal.style.display = 'none';
+
+                const payload = {
+                    first_name: document.getElementById('firstName').value.trim(),
+                    middle_name: document.getElementById('middleName').value.trim(),
+                    last_name: document.getElementById('lastName').value.trim(),
+                    organization: document.getElementById('organization').value.trim(),
+                    purpose: document.getElementById('purpose').value.trim(),
+                    sitio_street: document.getElementById('sitioStreet').value.trim(),
+                    barangay: document.getElementById('barangay').value.trim(),
+                    municipality: document.getElementById('municipality').value.trim(),
+                    city: document.getElementById('city').value.trim(),
+                    request_date: document.getElementById('requestDate').value,
+                    signature_b64: sigPad.toDataURL('image/png'),
+                    seedlings: Array.from(document.querySelectorAll('.seedling-row')).map(row => {
+                        const sel = row.querySelector('select.seedling-name');
+                        const qtyEl = row.querySelector('.seedling-qty');
+                        return {
+                            seedlings_id: sel?.value || '',
+                            qty: Number(qtyEl?.value || 0)
+                        };
+                    }).filter(s => s.seedlings_id && s.qty > 0)
+                };
+
+                try {
+                    const res = await fetch('../backend/users/seedlings/request_seedlings.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error || 'Request failed');
+
+                    toast('Request submitted successfully', {
+                        type: 'success',
+                        timeout: 4000
                     });
 
-                    // Create a download link
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'Seedling_Request_Letter_Template.doc';
-                    document.body.appendChild(a);
-                    a.click();
+                    // Reset form (keep catalog)
+                    try {
+                        document.getElementById('firstName').value = '';
+                        document.getElementById('middleName').value = '';
+                        document.getElementById('lastName').value = '';
+                        document.getElementById('organization').value = '';
+                        document.getElementById('purpose').value = '';
+                        document.getElementById('sitioStreet').value = '';
+                        document.getElementById('barangay').value = '';
+                        document.getElementById('municipality').value = '';
+                        document.getElementById('city').value = '';
+                        sigPad.clear();
+                        seedlingList.innerHTML = '';
+                        addSeedlingRow();
+                    } catch (_) {}
 
-                    // Clean up
-                    setTimeout(() => {
-                        document.body.removeChild(a);
-                        window.URL.revokeObjectURL(url);
-                    }, 100);
-                });
-            }
-
-            // Add files button (demo functionality)
-            const addFilesBtn = document.getElementById('addFilesBtn');
-            if (addFilesBtn) {
-                addFilesBtn.addEventListener('click', function() {
-                    // This would be more sophisticated in a real app
-                    alert('In a real application, this would open a dialog to add multiple files at once.');
-                });
-            }
-
-            // Initialize existing file items with event listeners
-            document.querySelectorAll('.file-item .view-file').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const fileName = this.getAttribute('data-file');
-                    // For demo purposes, we'll just show the file name
-                    document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
-                    modalFrame.srcdoc = `
-                        <html>
-                            <head>
-                                <style>
-                                    body { 
-                                        font-family: Arial, sans-serif; 
-                                        display: flex; 
-                                        justify-content: center; 
-                                        align-items: center; 
-                                        height: 100vh; 
-                                        margin: 0; 
-                                        background-color: #f5f5f5;
-                                    }
-                                    .preview-content {
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    .file-icon {
-                                        font-size: 48px;
-                                        color: #2b6625;
-                                        margin-bottom: 20px;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="preview-content">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file-word"></i>
-                                    </div>
-                                    <h2>${fileName}</h2>
-                                    <p>This is a preview of the uploaded file.</p>
-                                    <p>In a real application, the actual file content would be displayed here.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `;
-                    if (modal) modal.style.display = "block";
-                });
+                } catch (err) {
+                    console.error(err);
+                    toast('Submission failed: ' + (err?.message || err), {
+                        type: 'error',
+                        timeout: 7000
+                    });
+                }
             });
 
-            // Initialize existing file items with delete functionality
-            document.querySelectorAll('.file-item .fa-trash').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const fileItem = this.closest('.file-item');
-                    fileItem.remove();
-                    // In a real app, you would also need to clear the corresponding file input
-                    // and update the file name display
-                });
+            /* ───────── Default date = today ───────── */
+            const requestDate = document.getElementById('requestDate');
+            if (requestDate && !requestDate.value) {
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                requestDate.value = `${yyyy}-${mm}-${dd}`;
+            }
+
+            /* ───────── Demo: Add button (optional) ───────── */
+            const addFilesBtn = document.getElementById('addFilesBtn');
+            if (addFilesBtn) addFilesBtn.addEventListener('click', () => {
+                toast('In a real app, this opens a multi-file picker.');
             });
         });
     </script>
+
+
+
+
 </body>
+
+
+
 
 </html>

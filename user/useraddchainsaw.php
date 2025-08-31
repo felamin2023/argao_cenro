@@ -6,18 +6,34 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email'] ?? '';
+    $password = $_POST['password'] ?? '';
 
-$user_id = $_SESSION['user_id'];
-$reports = [];
-$stmt = $conn->prepare("SELECT id, location, category, status FROM incident_reports WHERE user_id = ? ORDER BY id DESC");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $stmt->store_result();
 
-while ($row = $result->fetch_assoc()) {
-    $reports[] = $row;
+    if ($stmt->num_rows === 1) {
+        $stmt->bind_result($id, $hashed_password, $role);
+        $stmt->fetch();
+
+        if (password_verify($password, $hashed_password)) {
+            $_SESSION['user_id'] = $id;
+            $_SESSION['role'] = $role;
+
+            header("Location: user_home.php");
+            exit();
+        } else {
+            $error = "Incorrect password.";
+        }
+    } else {
+        $error = "User not found.";
+    }
+
+    $stmt->close();
 }
-$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">

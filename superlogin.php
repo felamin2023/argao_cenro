@@ -1,66 +1,90 @@
 <?php
-// State variables for error display
+// superlogin.php (top of file)
+declare(strict_types=1);
+
+session_start();
+
+// State variables for UI
 $showPendingModal = false;
 $emailError = '';
 $passwordError = '';
 $emailValue = '';
-// Handle login POST for status check only
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
-  session_start();
-  include 'backend/connection.php';
-  $email = trim($_POST['email']);
-  $password = $_POST['password'] ?? '';
-  $emailValue = htmlspecialchars($email);
-  // Fetch id as well
-  $stmt = $conn->prepare("SELECT id, password, status, department FROM users WHERE email = ?");
-  $stmt->bind_param("s", $email);
-  $stmt->execute();
-  $stmt->store_result();
-  if ($stmt->num_rows > 0) {
-    $stmt->bind_result($user_id, $hashedPassword, $status, $department);
-    $stmt->fetch();
-    if (!password_verify($password, $hashedPassword)) {
-      $passwordError = 'Incorrect password';
+  require_once __DIR__ . '/backend/connection.php'; // must expose $pdo (PDO to Supabase PG)
+
+  $email    = trim((string)($_POST['email'] ?? ''));
+  $password = (string)($_POST['password'] ?? '');
+  $emailValue = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+
+  try {
+    // Look up admin by email (case-insensitive)
+    $st = $pdo->prepare("
+            SELECT user_id, password, status, department, role
+            FROM public.users
+            WHERE lower(email) = lower(:e)
+            LIMIT 1
+        ");
+    $st->execute([':e' => $email]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+
+    // Not found OR not an admin → generic message
+    if (!$row || strtolower((string)$row['role']) !== 'admin') {
+      $emailError = 'Email not found.';
     } else {
-      if (strtolower($status) === 'pending') {
-        $showPendingModal = 'pending';
-      } elseif (strtolower($status) === 'rejected') {
-        $showPendingModal = 'rejected';
-      } elseif (strtolower($status) === 'verified') {
-        // Set session user_id
-        $_SESSION['user_id'] = $user_id;
-        // Redirect based on department
-        switch (strtolower($department)) {
-          case 'wildlife':
-            header("Location: wildlife/wildhome.php");
-            exit();
-          case 'seedling':
-            header("Location: seedlings/seedlingshome.php");
-            exit();
-          case 'tree cutting':
-            header("Location: tree/treehome.php");
-            exit();
-          case 'marine':
-            header("Location: marine/marinehome.php");
-            exit();
-          case 'cenro':
-            header("Location: superhome.php");
-            exit();
-          default:
-            // fallback if department is not recognized
-            echo "<script>alert('Your account is approved, but your department is not recognized.'); window.location='superlogin.php';</script>";
-            exit();
+      // Verify password hash
+      if (!password_verify($password, (string)$row['password'])) {
+        $passwordError = 'Incorrect password.';
+      } else {
+        $status = strtolower((string)$row['status']);
+
+        if ($status === 'pending') {
+          $showPendingModal = 'pending';
+        } elseif ($status === 'rejected') {
+          $showPendingModal = 'rejected';
+        } elseif ($status === 'verified' || $status === 'approved') {
+          // Good to log in
+          session_regenerate_id(true); // prevent session fixation
+
+          $_SESSION['user_id']    = (string)$row['user_id'];   // UUID
+          $_SESSION['role']       = 'Admin';
+          $_SESSION['department'] = (string)$row['department'];
+
+          // Redirect by department
+          switch (strtolower((string)$row['department'])) {
+            case 'wildlife':
+              header('Location: wildlife/wildhome.php');
+              exit;
+            case 'seedling':
+            case 'seedlings':
+              header('Location: seedlings/seedlingshome.php');
+              exit;
+            case 'tree cutting':
+            case 'tree-cutting':
+            case 'treecutting':
+              header('Location: tree/treehome.php');
+              exit;
+            case 'marine':
+              header('Location: marine/marinehome.php');
+              exit;
+            case 'cenro':
+            default:
+              header('Location: superhome.php');
+              exit;
+          }
+        } else {
+          // Unknown/unhandled status
+          $emailError = 'Your account status does not allow login.';
         }
       }
     }
-  } else {
-    $emailError = 'Email not found';
-    $emailValue = '';
+  } catch (Throwable $e) {
+    error_log('[ADMIN-LOGIN] ' . $e->getMessage());
+    $emailError = 'System error.';
   }
-  $stmt->close();
-  $conn->close();
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 

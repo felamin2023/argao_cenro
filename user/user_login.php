@@ -1,42 +1,59 @@
 <?php
-session_start();
-include '../backend/connection.php'; // ✅ Correct path
 
-$email = ''; // Initialize safely
-$password = '';
+declare(strict_types=1);
+session_start();
+
 $error = '';
+$email = '';
+$password = '';
+
+// Use your Supabase Postgres PDO connection
+require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $email = strtolower(trim($_POST['email'] ?? ''));
+    $password = (string)($_POST['password'] ?? '');
 
-    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $res = $stmt->get_result();
-
-    if ($res->num_rows === 1) {
-        $user = $res->fetch_assoc();
-        if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['role'] = $user['role'];
-
-            header("Location: user_home.php");
-            exit();
-        } else {
-            $error = "Incorrect password.";
-        }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
+        $error = 'Please enter a valid email and password.';
     } else {
-        $error = "Email not found.";
-    }
+        try {
+            // Look up the account in your app table
+            $sql = "select user_id, email, password, role, status
+                    from public.users
+                    where lower(email) = lower(:e)
+                    limit 1";
+            $st = $pdo->prepare($sql);
+            $st->execute([':e' => $email]);
+            $user = $st->fetch(PDO::FETCH_ASSOC);
 
-    $stmt->close();
+            // Hide non-user roles (e.g., Admin) behind a generic message
+            if (!$user) {
+                $error = "Can't find account.";
+            } elseif (strtolower((string)$user['role']) !== 'user') {
+                $error = "Can't find account.";
+            } elseif (strtolower((string)$user['status']) !== 'verified') {
+                // You can keep this generic too if you want zero enumeration
+                $error = 'Your account is not active.';
+            } elseif (!password_verify($password, (string)$user['password'])) {
+                // Keep or make generic if you want stricter anti-enumeration
+                $error = 'Incorrect password.';
+            } else {
+                // Success
+                session_regenerate_id(true);
+                $_SESSION['user_id'] = $user['user_id'];     // UUID from auth.users
+                $_SESSION['role']    = $user['role'] ?? 'User';
+
+                header('Location: user_home.php');
+                exit();
+            }
+        } catch (Throwable $e) {
+            error_log('[USER-LOGIN] ' . $e->getMessage());
+            $error = 'System error. Please try again.';
+        }
+    }
 }
 ?>
-
-
-
-
 
 <!DOCTYPE html>
 <html lang="en">

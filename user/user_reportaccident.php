@@ -1,23 +1,59 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * User-only gate for user_home.php
+ * - Requires a logged-in session
+ * - Role must be 'User'
+ * - Status must be 'Verified'
+ * - Verifies against DB on each hit (defense-in-depth)
+ */
+
 session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
-    header("Location: user_login.php");
+
+// Optional: extra safety headers (helps on back/forward caching)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Quick session check first
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'user') {
+    header('Location: user_login.php');
     exit();
 }
-include_once __DIR__ . '/../backend/connection.php';
 
+// DB check to ensure the session still matches a User, Verified account
+require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO -> Supabase PG)
 
-$user_id = $_SESSION['user_id'];
-$reports = [];
-$stmt = $conn->prepare("SELECT id, category, status FROM incident_report WHERE user_id = ? ORDER BY id DESC");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
+try {
+    $st = $pdo->prepare("
+        select role, status
+        from public.users
+        where user_id = :id
+        limit 1
+    ");
+    $st->execute([':id' => $_SESSION['user_id']]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
 
-while ($row = $result->fetch_assoc()) {
-    $reports[] = $row;
+    $roleOk   = $row && strtolower((string)$row['role']) === 'user';
+    $statusOk = $row && strtolower((string)$row['status']) === 'verified';
+
+    if (!$roleOk || !$statusOk) {
+        // Invalidate session if it no longer matches a real verified User
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
+        session_destroy();
+        header('Location: user_login.php');
+        exit();
+    }
+} catch (Throwable $e) {
+    error_log('[USER-HOME GUARD] ' . $e->getMessage());
+    header('Location: user_login.php');
+    exit();
 }
-$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -32,6 +68,12 @@ $stmt->close();
 </head>
 
 <body>
+    <div id="loadingScreen" class="loading-overlay" aria-hidden="true">
+        <div class="loading-card">
+            <img id="loadingLogo" src="../denr.png" alt="Loading Logo" />
+            <div class="loading-text">Loading...</div>
+        </div>
+    </div>
     <header>
         <div class="logo">
             <a href="user_home.php">
@@ -166,10 +208,7 @@ $stmt->close();
                         <label for="who">WHO</label>
                         <input type="text" id="who" name="who" required>
                     </div>
-                    <div class="form-group">
-                        <label for="what">WHAT</label>
-                        <input type="text" id="what" name="what" required>
-                    </div>
+
                     <div class="form-group">
                         <label for="where">WHERE</label>
                         <input type="text" id="where" name="where" required>
@@ -216,7 +255,11 @@ $stmt->close();
 
                 <div class="form-row">
                     <div class="form-group full-width">
-                        <label for="description">DESCRIPTION OF INCIDENT:</label>
+                        <label for="what">WHAT</label>
+                        <textarea type="text" id="what" name="what" style="height: 100px; text-align: start;" required></textarea>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="description">MORE DESCRIPTION OF INCIDENT:</label>
                         <textarea id="description" name="description" style="height: 130px;" required></textarea>
                     </div>
                 </div>
@@ -271,28 +314,37 @@ $stmt->close();
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            /* ========= Elements ========= */
+            const form = document.getElementById("incidentForm");
+            const confirmationModal = document.getElementById("confirmationModal");
+            const confirmBtn = document.getElementById("confirmSubmit");
+            const cancelBtn = document.getElementById("cancelSubmit");
+            const notification = document.getElementById("profile-notification");
+
             const photoInput = document.getElementById('photos');
             const addPhotoBtn = document.getElementById('addPhotoBtn');
             const photoPreview = document.getElementById('photoPreview');
             const maxPhotos = 5;
             let selectedFiles = [];
 
-            addPhotoBtn.addEventListener('click', function() {
-                photoInput.click();
-            });
+            /* ========= Loading overlay ========= */
+            const loadingEl = document.getElementById('loadingScreen');
+            const showLoading = () => loadingEl && (loadingEl.style.display = 'flex');
+            const hideLoading = () => loadingEl && (loadingEl.style.display = 'none');
 
-            photoInput.addEventListener('change', function(e) {
-                // Add new files to selectedFiles, avoiding duplicates and max limit
+            /* ========= File picker / previews ========= */
+            addPhotoBtn.addEventListener('click', () => photoInput.click());
+
+            photoInput.addEventListener('change', function() {
                 const newFiles = Array.from(photoInput.files);
-                for (let file of newFiles) {
+                for (let f of newFiles) {
                     if (selectedFiles.length >= maxPhotos) break;
-                    // Avoid duplicates by name+size
-                    if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
-                        selectedFiles.push(file);
+                    // de-dupe: name+size
+                    if (!selectedFiles.some(x => x.name === f.name && x.size === f.size)) {
+                        selectedFiles.push(f);
                     }
                 }
                 renderPreviews();
-                // Reset input so user can select the same file again if needed
                 photoInput.value = '';
             });
 
@@ -300,38 +352,31 @@ $stmt->close();
                 photoPreview.innerHTML = '';
                 selectedFiles.forEach((file, idx) => {
                     const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const previewWrapper = document.createElement('div');
-                        previewWrapper.className = 'photo-preview-wrapper';
+                    reader.onload = e => {
+                        const wrap = document.createElement('div');
+                        wrap.className = 'photo-preview-wrapper';
 
                         const img = document.createElement('img');
                         img.src = e.target.result;
                         img.className = 'photo-preview';
 
-                        const removeBtn = document.createElement('span');
-                        removeBtn.className = 'remove-photo';
-                        removeBtn.innerHTML = '×';
-                        removeBtn.onclick = function() {
+                        const x = document.createElement('span');
+                        x.className = 'remove-photo';
+                        x.textContent = '×';
+                        x.onclick = () => {
                             selectedFiles.splice(idx, 1);
                             renderPreviews();
                         };
 
-                        previewWrapper.appendChild(img);
-                        previewWrapper.appendChild(removeBtn);
-                        photoPreview.appendChild(previewWrapper);
+                        wrap.appendChild(img);
+                        wrap.appendChild(x);
+                        photoPreview.appendChild(wrap);
                     };
                     reader.readAsDataURL(file);
                 });
             }
 
-            // Existing form submission code
-            const form = document.getElementById("incidentForm");
-            const confirmationModal = document.getElementById("confirmationModal");
-            const confirmBtn = document.getElementById("confirmSubmit");
-            const cancelBtn = document.getElementById("cancelSubmit");
-            const notification = document.getElementById("profile-notification");
-
-
+            /* ========= Confirm modal flow ========= */
             form.addEventListener("submit", function(e) {
                 e.preventDefault();
                 if (selectedFiles.length === 0) {
@@ -341,58 +386,96 @@ $stmt->close();
                 confirmationModal.classList.remove("hidden-modal");
             });
 
-            cancelBtn.addEventListener("click", function() {
-                confirmationModal.classList.add("hidden-modal");
-            });
+            cancelBtn.addEventListener("click", () => confirmationModal.classList.add("hidden-modal"));
 
-            confirmBtn.addEventListener("click", function() {
-                confirmationModal.classList.add("hidden-modal");
-                const formData = new FormData(form);
-                // Remove any existing photos[] from formData (in case browser adds empty)
-                formData.delete('photos[]');
-                // Append all selected files
-                selectedFiles.forEach(file => {
-                    formData.append('photos[]', file);
+            /* ========= Fetch helper (robust JSON parsing) ========= */
+            async function postJSON(url, body) {
+                const res = await fetch(url, {
+                    method: "POST",
+                    body
                 });
+                const text = await res.text(); // always read raw first
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error(`Non-JSON (${res.status}): ${text.slice(0, 500)}`);
+                }
+            }
 
-                fetch(form.action, {
-                        method: "POST",
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        notification.textContent = data.message;
-                        notification.style.backgroundColor = data.success ? "#28a745" : "#dc3545";
-                        notification.style.display = "block";
+            /* ========= Confirm -> show loading until response ========= */
+            confirmBtn.addEventListener("click", async function() {
+                confirmationModal.classList.add("hidden-modal");
 
-                        setTimeout(() => {
-                            notification.style.display = "none";
-                            if (data.success) {
-                                window.location.reload();
-                            }
-                        }, 3000);
-                    })
-                    .catch(error => {
-                        notification.textContent = "Error submitting form: " + error.message;
-                        notification.style.backgroundColor = "#dc3545";
-                        notification.style.display = "block";
-                        setTimeout(() => {
-                            notification.style.display = "none";
-                        }, 3000);
-                    });
+                // build payload
+                const fd = new FormData(form);
+                fd.delete('photos[]'); // ensure only our selected list gets sent
+                selectedFiles.forEach(f => fd.append('photos[]', f));
+
+                // helpful client-side log
+                const clientEcho = {
+                    who: form.who.value?.trim(),
+                    what: form.what.value?.trim(),
+                    where: form.where.value?.trim(),
+                    when: form.when.value?.trim(),
+                    why: form.why.value?.trim(),
+                    contact: form.contact.value?.trim(),
+                    categories: form.categories.value?.trim(),
+                    description: form.description.value?.trim(),
+                    files: selectedFiles.map(f => ({
+                        name: f.name,
+                        size: f.size,
+                        type: f.type
+                    }))
+                };
+                console.log('[CLIENT] inputs:', clientEcho);
+
+                // show overlay while waiting
+                showLoading();
+
+                try {
+                    const data = await postJSON(form.action, fd);
+
+                    // server echo (what PHP received)
+                    if (data && data.echo) {
+                        console.log('[SERVER] echo:', data.echo);
+                        const empties = Object.entries(data.echo)
+                            .filter(([k, v]) => ['who', 'what', 'where', 'when_raw', 'why', 'contact_no', 'category', 'description'].includes(k) &&
+                                (!v || (typeof v === 'string' && v.trim() === '')))
+                            .map(([k]) => k);
+                        if (empties.length) console.warn('[SERVER] empty fields:', empties);
+                    }
+
+                    // toast
+                    notification.textContent = data.message || 'Done.';
+                    notification.style.backgroundColor = data.success ? "#28a745" : "#dc3545";
+                    notification.style.display = "block";
+                    setTimeout(() => {
+                        notification.style.display = "none";
+                        if (data.success) window.location.reload();
+                    }, 2500);
+
+                } catch (err) {
+                    console.error('[NETWORK] error:', err);
+                    notification.textContent = "Server said: " + err.message;
+                    notification.style.backgroundColor = "#dc3545";
+                    notification.style.display = "block";
+                    setTimeout(() => {
+                        notification.style.display = "none";
+                    }, 3500);
+                } finally {
+                    hideLoading();
+                }
             });
-            // Mobile menu toggle
+
+            /* ========= Mobile menu toggle ========= */
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     const isActive = navContainer.classList.toggle('active');
                     document.body.style.overflow = isActive ? 'hidden' : '';
                 });
             }
-
-            // Close menu when clicking outside
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
                     navContainer.classList.remove('active');
@@ -400,10 +483,9 @@ $stmt->close();
                 }
             });
 
-            // View Records button functionality
+            /* ========= View Records toggle ========= */
             const viewRecordsBtn = document.getElementById('viewRecordsBtn');
             const recordsContainer = document.getElementById('recordsContainer');
-
             if (viewRecordsBtn && recordsContainer) {
                 viewRecordsBtn.addEventListener('click', function() {
                     if (recordsContainer.style.display === 'none' || recordsContainer.style.display === '') {
@@ -417,6 +499,9 @@ $stmt->close();
             }
         });
     </script>
+
+
+
 </body>
 
 </html>
