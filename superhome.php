@@ -1,5 +1,5 @@
 <?php
-// superhome.php (top of file)
+// superhome.php
 declare(strict_types=1);
 
 session_start();
@@ -40,7 +40,7 @@ try {
     exit();
 }
 
-// =================== Notifications (PDO) ===================
+// =================== Notifications (PDO) — UNCHANGED ===================
 $notifications = [];
 try {
     // If your table is public.profile_update_requests and it references users.user_id (uuid):
@@ -90,8 +90,52 @@ function time_elapsed_string($datetime, $full = false)
     if (!$full) $parts = array_slice($parts, 0, 1);
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
-?>
 
+// =================== Admin table: fetch with PDO/Postgres ===================
+$searchValue = isset($_GET['search']) ? trim((string)$_GET['search']) : '';
+$statusValue = isset($_GET['status']) ? trim((string)$_GET['status']) : '';
+
+$where = "lower(role) = 'admin' AND lower(department) <> 'cenro'";
+$params = [];
+
+if ($searchValue !== '') {
+    // Use ILIKE (case-insensitive) + cast non-text to text for pattern search
+    $like = '%' . $searchValue . '%';
+    $where .= " AND (
+        CAST(id AS text) ILIKE :s_id
+        OR first_name ILIKE :s_fn
+        OR last_name ILIKE :s_ln
+        OR CAST(age AS text) ILIKE :s_age
+        OR email ILIKE :s_em
+        OR department ILIKE :s_dep
+        OR status ILIKE :s_st
+    )";
+    $params[':s_id']  = $like;
+    $params[':s_fn']  = $like;
+    $params[':s_ln']  = $like;
+    $params[':s_age'] = $like;
+    $params[':s_em']  = $like;
+    $params[':s_dep'] = $like;
+    $params[':s_st']  = $like;
+}
+
+if ($statusValue !== '') {
+    // Normalize to lower for exact match
+    $where .= " AND lower(status) = :status_exact";
+    $params[':status_exact'] = strtolower($statusValue);
+}
+
+$sql = "
+    SELECT id, user_id, first_name, last_name, age, email, department, status
+    FROM public.users
+    WHERE $where
+    ORDER BY id DESC
+";
+
+$stmtAdmins = $pdo->prepare($sql);
+$stmtAdmins->execute($params);
+$admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -100,7 +144,6 @@ function time_elapsed_string($datetime, $full = false)
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Management</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
     <link rel="stylesheet" href="/denr/superadmin/css/superhome.css">
 </head>
 
@@ -118,7 +161,6 @@ function time_elapsed_string($datetime, $full = false)
             <i class="fas fa-bars"></i>
         </button>
 
-
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -127,17 +169,12 @@ function time_elapsed_string($datetime, $full = false)
                     <i class="fas fa-bars"></i>
                 </div>
                 <div class="dropdown-menu center">
-
                     <a href="superlogs.php" class="dropdown-item">
                         <i class="fas fa-user-shield" style="color: white;"></i>
                         <span>Admin Logs</span>
                     </a>
-
-
-
                 </div>
             </div>
-
 
             <!-- Messages Icon -->
             <div class="nav-item">
@@ -187,9 +224,7 @@ function time_elapsed_string($datetime, $full = false)
                                         <div class="notification-content">
                                             <div class="notification-title">
                                                 Profile Update <?= ucfirst($notif['status']) ?>
-                                                <span class="badge badge-<?=
-                                                                            $notif['status'] == 'pending' ? 'warning' : ($notif['status'] == 'approved' ? 'success' : 'danger')
-                                                                            ?>">
+                                                <span class="badge badge-<?= $notif['status'] == 'pending' ? 'warning' : ($notif['status'] == 'approved' ? 'success' : 'danger') ?>">
                                                     <?= ucfirst($notif['status']) ?>
                                                 </span>
                                             </div>
@@ -218,12 +253,9 @@ function time_elapsed_string($datetime, $full = false)
                 </div>
             </div>
 
-
-
-
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon <?php echo $current_page === 'treeprofile.php' ? 'active' : ''; ?>">
+                <div class="nav-icon <?php echo (isset($current_page) && $current_page === 'treeprofile.php') ? 'active' : ''; ?>">
                     <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
@@ -242,11 +274,12 @@ function time_elapsed_string($datetime, $full = false)
 
     <!-- Main Content Area -->
     <div class="main-content">
-        <div style="display:flex; align-items:center; justify-content: space-between; width: 100%; margin-bottom: 5px; ">
-
-            <h1 style="margin:0 0 0 24px; display:flex; align-items:center;"><i class="fas fa-users-cog" style="margin-right:10px;"></i>ADMIN MANAGEMENT</h1>
-            <form id="search-form" style="display:flex; align-items:center;  width: 50%; gap:10px;" autocomplete="off" onsubmit="return false;">
-                <input type="text" id="search-input" name="search" placeholder="Search by ID or Email" style="padding:13px 12px; width: 100%; border-radius:5px; border:1px solid #ccc; min-width:180px;">
+        <div style="display:flex; align-items:center; justify-content: space-between; width: 100%; margin-bottom: 5px;">
+            <h1 style="margin:0 0 0 24px; display:flex; align-items:center;">
+                <i class="fas fa-users-cog" style="margin-right:10px;"></i>ADMIN MANAGEMENT
+            </h1>
+            <form id="search-form" style="display:flex; align-items:center; width: 50%; gap:10px;" autocomplete="off" onsubmit="return false;">
+                <input type="text" id="search-input" name="search" placeholder="Search by ID, name, email, etc." style="padding:13px 12px; width: 100%; border-radius:5px; border:1px solid #ccc; min-width:180px;">
                 <select id="status-filter" name="status" style="padding:13px 12px; border-radius:5px; border:1px solid #ccc;">
                     <option value="">All Status</option>
                     <option value="pending">Pending</option>
@@ -257,31 +290,6 @@ function time_elapsed_string($datetime, $full = false)
         </div>
 
         <div class="admin-table">
-            <?php
-            include_once __DIR__ . '/backend/connection.php';
-            // Build query for admins only
-            $where = "role = 'Admin' AND department != 'Cenro'";
-            $params = [];
-            $searchValue = '';
-            if (isset($_GET['search']) && trim($_GET['search']) !== '') {
-                $searchValue = trim($_GET['search']);
-                $search = '%' . $searchValue . '%';
-                $where .= " AND (CAST(id AS CHAR) LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR age LIKE ? OR email LIKE ? OR department LIKE ? OR status LIKE ?)";
-                for ($i = 0; $i < 7; $i++) $params[] = $search;
-            }
-            if (isset($_GET['status']) && $_GET['status'] !== '') {
-                $where .= " AND status = ?";
-                $params[] = $_GET['status'];
-            }
-            $sql = "SELECT id, first_name, last_name, age, email, department, status FROM users WHERE $where ORDER BY id DESC";
-            $stmt = $conn->prepare($sql);
-            if (count($params) > 0) {
-                $types = str_repeat('s', count($params));
-                $stmt->bind_param($types, ...$params);
-            }
-            $stmt->execute();
-            $result = $stmt->get_result();
-            ?>
             <script>
                 // Keep search and filter values after reload
                 document.addEventListener('DOMContentLoaded', function() {
@@ -296,6 +304,7 @@ function time_elapsed_string($datetime, $full = false)
                     }
                 });
             </script>
+
             <table class="table-titles">
                 <thead>
                     <tr>
@@ -310,43 +319,37 @@ function time_elapsed_string($datetime, $full = false)
                     </tr>
                 </thead>
             </table>
+
             <table class="table-record">
                 <tbody id="admin-table-body">
-                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php foreach ($admins as $row): ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($row['id']); ?></td>
-                            <td><?php echo htmlspecialchars($row['first_name']); ?></td>
-                            <td><?php echo htmlspecialchars($row['last_name']); ?></td>
-                            <td><?php echo htmlspecialchars($row['age']); ?></td>
-                            <td><?php echo htmlspecialchars($row['email']); ?></td>
-                            <td><?php echo htmlspecialchars($row['department']); ?></td>
-                            <td><span class="status status-<?php echo strtolower($row['status']); ?>">
-                                    <?php
-                                    $status = strtolower($row['status']);
-                                    if ($status === 'pending') {
-                                        echo 'Pending';
-                                    } elseif ($status === 'verified') {
-                                        echo 'Verified';
-                                    } elseif ($status === 'rejected') {
-                                        echo 'Rejected';
-                                    } else {
-                                        echo htmlspecialchars($row['status']);
-                                    }
-                                    ?>
-                                </span></td>
+                            <td><?= htmlspecialchars((string)$row['id']) ?></td>
+                            <td><?= htmlspecialchars((string)$row['first_name']) ?></td>
+                            <td><?= htmlspecialchars((string)$row['last_name']) ?></td>
+                            <td><?= htmlspecialchars($row['age'] !== null ? (string)$row['age'] : '') ?></td>
+                            <td><?= htmlspecialchars((string)$row['email']) ?></td>
+                            <td><?= htmlspecialchars((string)$row['department']) ?></td>
                             <td>
-                                <?php if (strtolower($row['status']) === 'pending'): ?>
-                                    <button class="verify-btn" data-id="<?php echo $row['id']; ?>" style="background:#28a745;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;margin-right:6px;"><i class="fas fa-check"></i> Verify</button>
-                                    <button class="reject-btn" data-id="<?php echo $row['id']; ?>" style="background:#d9534f;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;"><i class="fas fa-times"></i> Reject</button>
-                                <?php elseif (strtolower($row['status']) === 'rejected'): ?>
-                                    <button class="delete-btn"><i class="fas fa-trash-alt"></i> Delete</button>
+                                <?php $st = strtolower((string)$row['status']); ?>
+                                <span class="status status-<?= $st ?>">
+                                    <?= $st === 'pending' ? 'Pending' : ($st === 'verified' ? 'Verified' : ($st === 'rejected' ? 'Rejected' : htmlspecialchars((string)$row['status']))) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <?php if ($st === 'pending'): ?>
+                                    <button class="verify-btn" data-id="<?= (int)$row['id'] ?>" style="background:#28a745;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;margin-right:6px;"> Verify</button>
+                                    <button class="reject-btn" data-id="<?= (int)$row['id'] ?>" style="background:#d9534f;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;">Reject</button>
+                                <?php elseif ($st === 'rejected'): ?>
+                                    <button class="delete-btn" style="background:#dc3545;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;"> Delete</button>
                                 <?php else: ?>
-                                    <button class="edit-btn"><i class="fas fa-edit"></i> Edit</button>
-                                    <button class="delete-btn"><i class="fas fa-trash-alt"></i> Delete</button>
+                                    <button class="edit-btn" style="background:#0d6efd;color:#fff;border:none;padding:7px 20px;border-radius:5px;cursor:pointer;margin-right:6px;"> Edit</button>
+                                    <button class="delete-btn" style="background:#dc3545;color:#fff;border:none;padding:7px 16px;border-radius:5px;cursor:pointer;"> Delete</button>
                                 <?php endif; ?>
                             </td>
                         </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
+
                     <!-- Status Confirmation Modal -->
                     <div id="status-confirm-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.25); z-index:10001; align-items:center; justify-content:center;">
                         <div style="background:#fff; padding:32px 24px; border-radius:10px; box-shadow:0 2px 16px rgba(0,0,0,0.18); min-width:320px; max-width:90vw; text-align:center;">
@@ -359,8 +362,6 @@ function time_elapsed_string($datetime, $full = false)
                     </div>
                 </tbody>
             </table>
-            <?php $stmt->close();
-            $conn->close(); ?>
         </div>
     </div>
 
@@ -519,8 +520,21 @@ function time_elapsed_string($datetime, $full = false)
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle and dropdowns (existing code)
-            // ...existing code...
+            // --- NOTIFICATION TOAST ---
+            const notification = document.getElementById('profile-notification');
+
+            function showNotification(msg) {
+                if (!notification) return;
+                notification.textContent = msg;
+                notification.style.display = 'block';
+                notification.style.opacity = '1';
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => {
+                        notification.style.display = 'none';
+                    }, 400);
+                }, 1500);
+            }
 
             // --- VERIFY/REJECT BUTTON FUNCTIONALITY ---
             let statusAction = null;
@@ -536,7 +550,6 @@ function time_elapsed_string($datetime, $full = false)
                         statusId = btn.getAttribute('data-id');
                         statusAction = 'Verified';
                         statusConfirmMessage.innerHTML = 'Are you sure you want to verify this admin?';
-                        // Remove reason input if present
                         const oldReason = document.getElementById('reject-reason-input');
                         if (oldReason) oldReason.remove();
                         statusConfirmModal.style.display = 'flex';
@@ -547,7 +560,6 @@ function time_elapsed_string($datetime, $full = false)
                         statusId = btn.getAttribute('data-id');
                         statusAction = 'Rejected';
                         statusConfirmMessage.innerHTML = `Are you sure you want to reject this admin?<br><span style="font-size:1rem;color:#b00;">If yes, please provide a reason below:</span><br>`;
-                        // Add reason input
                         setTimeout(() => {
                             if (!document.getElementById('reject-reason-input')) {
                                 const input = document.createElement('input');
@@ -578,7 +590,7 @@ function time_elapsed_string($datetime, $full = false)
                     const reasonInput = document.getElementById('reject-reason-input');
                     reason = reasonInput ? reasonInput.value.trim() : '';
                     if (!reason) {
-                        reasonInput.style.border = '1px solid #d9534f';
+                        if (reasonInput) reasonInput.style.border = '1px solid #d9534f';
                         confirmStatusBtn.disabled = false;
                         return;
                     }
@@ -592,7 +604,7 @@ function time_elapsed_string($datetime, $full = false)
                         body: new URLSearchParams({
                             id: statusId,
                             status: statusAction,
-                            reason: reason
+                            reason
                         })
                     })
                     .then(res => res.json())
@@ -600,11 +612,7 @@ function time_elapsed_string($datetime, $full = false)
                         confirmStatusBtn.disabled = false;
                         statusConfirmModal.style.display = 'none';
                         if (data.success) {
-                            showNotification(
-                                statusAction === 'Rejected' ?
-                                'Admin rejected and reason logged!' :
-                                'Admin status updated to ' + statusAction + '!'
-                            );
+                            showNotification(statusAction === 'Rejected' ? 'Admin rejected!' : 'Admin verified!');
                             doLiveSearch();
                         } else {
                             showNotification('Status update failed: ' + (data.error || 'Unknown error'));
@@ -651,11 +659,8 @@ function time_elapsed_string($datetime, $full = false)
             confirmAddBtn.onclick = function() {
                 if (!addFormData) return;
                 confirmAddBtn.disabled = true;
-                // Convert FormData to URLSearchParams
                 const params = new URLSearchParams();
-                for (const [key, value] of addFormData.entries()) {
-                    params.append(key, value);
-                }
+                for (const [k, v] of addFormData.entries()) params.append(k, v);
                 fetch('backend/admin/add_admin.php', {
                         method: 'POST',
                         headers: {
@@ -687,18 +692,13 @@ function time_elapsed_string($datetime, $full = false)
                     });
             };
 
-            // Keep search and filter values after reload
+            // --- URL state + Live search ---
             const urlParams = new URLSearchParams(window.location.search);
             const searchInput = document.getElementById('search-input');
             const statusFilter = document.getElementById('status-filter');
-            if (searchInput && urlParams.has('search')) {
-                searchInput.value = urlParams.get('search');
-            }
-            if (statusFilter && urlParams.has('status')) {
-                statusFilter.value = urlParams.get('status');
-            }
+            if (searchInput && urlParams.has('search')) searchInput.value = urlParams.get('search');
+            if (statusFilter && urlParams.has('status')) statusFilter.value = urlParams.get('status');
 
-            // Live search on input
             let searchTimeout;
 
             function doLiveSearch() {
@@ -709,7 +709,7 @@ function time_elapsed_string($datetime, $full = false)
                 if (status) params.push('status=' + encodeURIComponent(status));
                 let url = window.location.pathname;
                 if (params.length > 0) url += '?' + params.join('&');
-                // Use history.replaceState to update URL and reload table via AJAX, keeping focus
+
                 history.replaceState(null, '', url);
                 fetch(url, {
                         headers: {
@@ -718,7 +718,6 @@ function time_elapsed_string($datetime, $full = false)
                     })
                     .then(res => res.text())
                     .then(html => {
-                        // Extract only the table body from the response
                         const parser = new DOMParser();
                         const doc = parser.parseFromString(html, 'text/html');
                         const newTbody = doc.getElementById('admin-table-body');
@@ -730,39 +729,21 @@ function time_elapsed_string($datetime, $full = false)
                         attachEditListeners();
                     });
             }
-            if (searchInput) {
-                searchInput.addEventListener('input', function() {
-                    clearTimeout(searchTimeout);
-                    searchTimeout = setTimeout(doLiveSearch, 350);
-                });
-            }
-            if (statusFilter) {
-                statusFilter.addEventListener('change', doLiveSearch);
-            }
+            if (searchInput) searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(doLiveSearch, 350);
+            });
+            if (statusFilter) statusFilter.addEventListener('change', doLiveSearch);
 
             // --- DELETE BUTTON FUNCTIONALITY ---
             let deleteId = null;
             const deleteModal = document.getElementById('delete-modal');
             const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
             const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
-            const notification = document.getElementById('profile-notification');
-
-            function showNotification(msg) {
-                notification.textContent = msg;
-                notification.style.display = 'block';
-                notification.style.opacity = '1';
-                setTimeout(() => {
-                    notification.style.opacity = '0';
-                    setTimeout(() => {
-                        notification.style.display = 'none';
-                    }, 400);
-                }, 1500);
-            }
 
             function attachDeleteListeners() {
                 document.querySelectorAll('.delete-btn').forEach(btn => {
                     btn.onclick = function() {
-                        // Get the admin id from the row
                         const row = btn.closest('tr');
                         if (!row) return;
                         const idCell = row.querySelector('td');
@@ -781,7 +762,6 @@ function time_elapsed_string($datetime, $full = false)
                         const idCell = row.querySelector('td');
                         if (!idCell) return;
                         const editId = idCell.textContent.trim();
-                        // Fetch user details
                         fetch('backend/admin/get_admin.php', {
                                 method: 'POST',
                                 headers: {
@@ -803,7 +783,7 @@ function time_elapsed_string($datetime, $full = false)
                                     document.getElementById('edit-department').value = data.data.department || '';
                                     document.getElementById('edit-phone').value = data.data.phone || '';
                                     document.getElementById('edit-status').value = data.data.status || '';
-                                    editModal.style.display = 'flex';
+                                    document.getElementById('edit-modal').style.display = 'flex';
                                 } else {
                                     showNotification('Failed to fetch user details.');
                                 }
@@ -814,6 +794,7 @@ function time_elapsed_string($datetime, $full = false)
             }
             attachDeleteListeners();
             attachEditListeners();
+
             // --- EDIT MODAL FUNCTIONALITY ---
             const editModal = document.getElementById('edit-modal');
             const editForm = document.getElementById('edit-form');
@@ -831,7 +812,6 @@ function time_elapsed_string($datetime, $full = false)
 
             saveEditBtn.onclick = function(e) {
                 e.preventDefault();
-                // Gather form data
                 editFormData = new FormData(editForm);
                 saveModal.style.display = 'flex';
             };
@@ -844,11 +824,9 @@ function time_elapsed_string($datetime, $full = false)
             confirmSaveBtn.onclick = function() {
                 if (!editFormData) return;
                 confirmSaveBtn.disabled = true;
-                // Convert FormData to URLSearchParams
                 const params = new URLSearchParams();
-                for (const [key, value] of editFormData.entries()) {
-                    params.append(key, value);
-                }
+                for (const [key, value] of editFormData.entries()) params.append(key, value);
+
                 fetch('backend/admin/update_admin.php', {
                         method: 'POST',
                         headers: {
@@ -865,7 +843,6 @@ function time_elapsed_string($datetime, $full = false)
                         editForm.reset();
                         if (data.success) {
                             showNotification('Admin updated successfully!');
-                            // Optionally update the row in the table without reload
                             doLiveSearch();
                         } else {
                             showNotification('Update failed: ' + (data.error || 'Unknown error'));
@@ -892,7 +869,8 @@ function time_elapsed_string($datetime, $full = false)
                 fetch('backend/admin/delete_admin.php', {
                         method: 'POST',
                         headers: {
-                            'X-Requested-With': 'XMLHttpRequest'
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/x-www-form-urlencoded'
                         },
                         body: new URLSearchParams({
                             id: deleteId
