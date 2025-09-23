@@ -84,7 +84,11 @@ try {
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+<<<<<<< HEAD
             background: #f9f9f9 url('images/seedlings.jpg')center / cover no-repeat fixed;
+=======
+            background-color: #f9f9f9;
+>>>>>>> origin/main
             padding-top: 100px;
             color: #333;
             line-height: 1.6;
@@ -1533,6 +1537,7 @@ try {
 
     <header>
         <div class="logo">
+<<<<<<< HEAD
             <a href="user_home.php"><img src="seal.png" alt="Site Logo" /></a>
         </div>
 
@@ -1569,6 +1574,120 @@ try {
 
 
     <div class="main-container">
+=======
+            <a href="user_home.php">
+                <img src="seal.png" alt="Site Logo">
+            </a>
+        </div>
+
+        <!-- Mobile menu toggle -->
+        <button class="mobile-toggle">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Navigation on the right -->
+        <div class="nav-container">
+            <!-- Dashboard Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon active">
+                    <i class="fas fa-bars"></i>
+                </div>
+
+                <div class="dropdown-menu center">
+                    <a href="user_reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Report Incident</span>
+                    </a>
+                    <a href="useraddseed.php" class="dropdown-item active-page">
+                        <i class="fas fa-seedling"></i>
+                        <span>Request Seedlings</span>
+                    </a>
+                    <a href="useraddwild.php" class="dropdown-item">
+                        <i class="fas fa-paw"></i>
+                        <span>Wildlife Permit</span>
+                    </a>
+                    <a href="useraddtreecut.php" class="dropdown-item">
+                        <i class="fas fa-tree"></i>
+                        <span>Tree Cutting Permit</span>
+                    </a>
+                    <a href="useraddlumber.php" class="dropdown-item">
+                        <i class="fas fa-boxes"></i>
+                        <span>Lumber Dealers Permit</span>
+                    </a>
+                    <a href="useraddwood.php" class="dropdown-item">
+                        <i class="fas fa-industry"></i>
+                        <span>Wood Processing Permit</span>
+                    </a>
+                    <a href="useraddchainsaw.php" class="dropdown-item">
+                        <i class="fas fa-tools"></i>
+                        <span>Chainsaw Permit</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Notifications -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge">1</span>
+                </div>
+                <div class="dropdown-menu notifications-dropdown">
+                    <div class="notification-header">
+                        <h3>Notifications</h3>
+                        <a href="#" class="mark-all-read">Mark all as read</a>
+                    </div>
+
+                    <div class="notification-item unread">
+                        <a href="user_each.php?id=1" class="notification-link">
+                            <div class="notification-icon">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="notification-content">
+                                <div class="notification-title">Seedling Request Status</div>
+                                <div class="notification-message">Your seedling request has been approved.</div>
+                                <div class="notification-time">10 minutes ago</div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="notification-footer">
+                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="dropdown-menu">
+                    <a href="user_profile.php" class="dropdown-item">
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="user_login.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="action-buttons">
+            <button class="btn btn-primary" id="addFilesBtn">
+                <i class="fas fa-plus-circle"></i> Add
+            </button>
+            <a href="usereditseed.php" class="btn btn-outline">
+                <i class="fas fa-edit"></i> Edit
+            </a>
+            <a href="userviewseed.php" class="btn btn-outline">
+                <i class="fas fa-eye"></i> View
+            </a>
+        </div>
+>>>>>>> origin/main
 
         <div class="requirements-form">
             <div class="form-header">
@@ -2046,6 +2165,7 @@ try {
             });
 
             document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
+<<<<<<< HEAD
             confirmModal.style.display = 'none';
 
             const submitBtn = document.getElementById('submitApplication');
@@ -2126,6 +2246,74 @@ try {
             });
 
 
+=======
+                confirmModal.style.display = 'none';
+
+                const payload = {
+                    first_name: document.getElementById('firstName').value.trim(),
+                    middle_name: document.getElementById('middleName').value.trim(),
+                    last_name: document.getElementById('lastName').value.trim(),
+                    organization: document.getElementById('organization').value.trim(),
+                    purpose: document.getElementById('purpose').value.trim(),
+                    sitio_street: document.getElementById('sitioStreet').value.trim(),
+                    barangay: document.getElementById('barangay').value.trim(),
+                    municipality: document.getElementById('municipality').value.trim(),
+                    city: document.getElementById('city').value.trim(),
+                    request_date: document.getElementById('requestDate').value,
+                    signature_b64: sigPad.toDataURL('image/png'),
+                    seedlings: Array.from(document.querySelectorAll('.seedling-row')).map(row => {
+                        const sel = row.querySelector('select.seedling-name');
+                        const qtyEl = row.querySelector('.seedling-qty');
+                        return {
+                            seedlings_id: sel?.value || '',
+                            qty: Number(qtyEl?.value || 0)
+                        };
+                    }).filter(s => s.seedlings_id && s.qty > 0)
+                };
+
+                try {
+                    const res = await fetch('../backend/users/seedlings/request_seedlings.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error || 'Request failed');
+
+                    toast('Request submitted successfully', {
+                        type: 'success',
+                        timeout: 4000
+                    });
+
+                    // Reset form (keep catalog)
+                    try {
+                        document.getElementById('firstName').value = '';
+                        document.getElementById('middleName').value = '';
+                        document.getElementById('lastName').value = '';
+                        document.getElementById('organization').value = '';
+                        document.getElementById('purpose').value = '';
+                        document.getElementById('sitioStreet').value = '';
+                        document.getElementById('barangay').value = '';
+                        document.getElementById('municipality').value = '';
+                        document.getElementById('city').value = '';
+                        sigPad.clear();
+                        seedlingList.innerHTML = '';
+                        addSeedlingRow();
+                    } catch (_) {}
+
+                } catch (err) {
+                    console.error(err);
+                    toast('Submission failed: ' + (err?.message || err), {
+                        type: 'error',
+                        timeout: 7000
+                    });
+                }
+            });
+
+>>>>>>> origin/main
             /* ───────── Default date = today ───────── */
             const requestDate = document.getElementById('requestDate');
             if (requestDate && !requestDate.value) {

@@ -2,6 +2,7 @@
 // File: backend/users/seedlings/request_seedlings.php
 // Purpose: Generate letter -> upload to Supabase Storage bucket "requirements"
 //          -> save URL/path to requirements.application_form
+<<<<<<< HEAD
 //          -> insert client, seedling_requests, approval rows
 //          -> insert a summary notification linked to the first approval
 
@@ -29,6 +30,47 @@ register_shutdown_function(function () {
 });
 
 session_start();
+=======
+//          -> insert seedling_requests (one per seedling) and approval rows.
+
+declare(strict_types=1);
+
+session_start();
+header('Content-Type: application/json');
+
+/* ────────────────────────────────────────────────────────────────
+   Composer autoload + .env (same pattern as register.php)
+   ──────────────────────────────────────────────────────────────── */
+try {
+    require_once dirname(__DIR__, 3) . '/vendor/autoload.php'; // project root/vendor
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Autoload failed']);
+    exit;
+}
+
+$ENV_ROOT = dirname(__DIR__, 2); // -> backend/
+try {
+    if (class_exists(Dotenv\Dotenv::class) && is_file($ENV_ROOT . '/.env')) {
+        Dotenv\Dotenv::createUnsafeImmutable($ENV_ROOT)->safeLoad();
+    }
+} catch (Throwable $e) {
+    error_log('[SEED-REQ] Dotenv load error: ' . $e->getMessage());
+}
+if (!getenv('SUPABASE_URL') && is_readable($ENV_ROOT . '/.env')) {
+    foreach (file($ENV_ROOT . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        if ($line === '' || $line[0] === '#') continue;
+        if (strpos($line, '=') === false) continue;
+        [$k, $v] = array_map('trim', explode('=', $line, 2));
+        $v = trim($v, "\"'");
+        if ($k !== '') {
+            if (getenv($k) === false) putenv("$k=$v");
+            $_ENV[$k]    = $_ENV[$k]    ?? $v;
+            $_SERVER[$k] = $_SERVER[$k] ?? $v;
+        }
+    }
+}
+>>>>>>> origin/main
 
 /* ────────────────────────────────────────────────────────────────
    Helpers
@@ -45,11 +87,15 @@ function h(string $s): string
 }
 function out(bool $ok, string $err = '', array $extra = []): void
 {
+<<<<<<< HEAD
     $payload = ['success' => $ok] + ($err ? ['error' => $err] : []) + $extra;
     // drop any buffered echoes/notices to avoid corrupting JSON
     while (ob_get_level()) { ob_end_clean(); }
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($payload);
+=======
+    echo json_encode(['success' => $ok] + ($err ? ['error' => $err] : []) + $extra);
+>>>>>>> origin/main
     exit;
 }
 function get_json_body(): array
@@ -71,16 +117,22 @@ function b64_from_data_url(?string $s): string
 function env_get(string $k, ?string $def = null): ?string
 {
     $v = getenv($k);
+<<<<<<< HEAD
     if ($v === false || $v === null || $v === '') {
         $v = $_ENV[$k] ?? $_SERVER[$k] ?? null;
     }
     return ($v !== null && $v !== '') ? (string)$v : $def;
+=======
+    if ($v === false || $v === null || $v === '') $v = $_ENV[$k] ?? $_SERVER[$k] ?? null;
+    return $v !== null && $v !== '' ? (string)$v : $def;
+>>>>>>> origin/main
 }
 function encode_storage_path(string $path): string
 {
     $parts = array_map('rawurlencode', array_filter(explode('/', $path), fn($p) => $p !== ''));
     return implode('/', $parts);
 }
+<<<<<<< HEAD
 function load_env_file_if_needed(): void
 {
     // Try to load backend/.env if core vars are missing
@@ -104,6 +156,8 @@ function load_env_file_if_needed(): void
         $_SERVER[$k] = $_SERVER[$k] ?? $v;
     }
 }
+=======
+>>>>>>> origin/main
 
 /* ────────────────────────────────────────────────────────────────
    Auth + config
@@ -115,9 +169,12 @@ try {
     }
     $user_id = (string)$_SESSION['user_id'];
 
+<<<<<<< HEAD
     // Load env from backend/.env if needed (no Composer)
     load_env_file_if_needed();
 
+=======
+>>>>>>> origin/main
     $SUPABASE_URL = rtrim((string)env_get('SUPABASE_URL', ''), '/');
     $SUPABASE_SERVICE_ROLE_KEY = (string)env_get('SUPABASE_SERVICE_ROLE_KEY', '');
     if (!$SUPABASE_URL || !$SUPABASE_SERVICE_ROLE_KEY) {
@@ -127,12 +184,16 @@ try {
     $STORAGE_BUCKET   = env_get('SUPABASE_REQUIREMENTS_BUCKET', 'requirements');
     $BUCKET_IS_PUBLIC = strtolower(env_get('SUPABASE_REQUIREMENTS_PUBLIC', 'true')) === 'true';
 
+<<<<<<< HEAD
     require_once dirname(__DIR__, 2) . '/connection.php'; // must set $pdo (PDO to Supabase PG)
     if (isset($pdo) && $pdo instanceof PDO) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } else {
         throw new RuntimeException('Database connection not initialized.');
     }
+=======
+    require_once dirname(__DIR__, 2) . '/connection.php'; // -> $pdo
+>>>>>>> origin/main
 
     /* ────────────────────────────────────────────────────────────
        Input
@@ -169,7 +230,13 @@ try {
        ──────────────────────────────────────────────────────────── */
     $pdo->beginTransaction();
 
+<<<<<<< HEAD
     /* 1) ALWAYS create a fresh client row */
+=======
+    /* ────────────────────────────────────────────────────────────
+       1) ALWAYS create a fresh client row (no update/upsert)
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $stmt = $pdo->prepare('
         INSERT INTO public.client
             (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, city)
@@ -180,7 +247,11 @@ try {
     $stmt->execute([
         ':uid'   => $user_id,
         ':first' => $first,
+<<<<<<< HEAD
         ':middle'=> $middle ?: null,
+=======
+        ':middle' => $middle ?: null,
+>>>>>>> origin/main
         ':last'  => $last,
         ':sitio' => $sitio ?: null,
         ':brgy'  => $barangay ?: null,
@@ -189,7 +260,13 @@ try {
     ]);
     $client_id = (string)$stmt->fetchColumn();
 
+<<<<<<< HEAD
     /* 2) Validate seedlings exist */
+=======
+    /* ────────────────────────────────────────────────────────────
+       2) Validate seedlings exist
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $ids = array_map(fn($r) => $r['seedlings_id'], $seedlings);
     $ph  = implode(',', array_fill(0, count($ids), '?'));
     $stmt = $pdo->prepare("SELECT seedlings_id, seedling_name, stock FROM public.seedlings WHERE seedlings_id IN ($ph)");
@@ -204,7 +281,13 @@ try {
         }
     }
 
+<<<<<<< HEAD
     /* 3) Build letter HTML → MHTML */
+=======
+    /* ────────────────────────────────────────────────────────────
+       3) Build letter HTML → MHTML
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $lgu = $city ?: $municipality;
     $addr = [];
     if ($sitio)    $addr[] = $sitio;
@@ -265,7 +348,13 @@ try {
     $mhtml .= chunk_split($sig_b64, 76, "\r\n");
     $mhtml .= "\r\n--$boundary--";
 
+<<<<<<< HEAD
     /* 4) Upload to Supabase Storage (requirements/seedling/{client_id}/...) */
+=======
+    /* ────────────────────────────────────────────────────────────
+       4) Upload to Supabase Storage (requirements/seedling/{client_id}/...)
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $fname = sprintf(
         'Seedling_Request_%s_%s_%s.doc',
         preg_replace('/[^A-Za-z0-9]+/', '_', $last ?: 'Letter'),
@@ -295,9 +384,15 @@ try {
     }
     curl_close($ch);
 
+<<<<<<< HEAD
     $signedUrl = null;
     if ($BUCKET_IS_PUBLIC) {
         $fileUrl = $SUPABASE_URL . '/storage/v1/object/public/' . rawurlencode($STORAGE_BUCKET) . '/' . encode_storage_path($objectPath);
+=======
+    if ($BUCKET_IS_PUBLIC) {
+        $fileUrl   = $SUPABASE_URL . '/storage/v1/object/public/' . rawurlencode($STORAGE_BUCKET) . '/' . encode_storage_path($objectPath);
+        $signedUrl = null;
+>>>>>>> origin/main
     } else {
         $fileUrl = $STORAGE_BUCKET . '/' . $objectPath;
         $signEndpoint = $SUPABASE_URL . '/storage/v1/object/sign/' . rawurlencode($STORAGE_BUCKET);
@@ -316,6 +411,10 @@ try {
         $signResp = curl_exec($ch);
         $http2    = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+<<<<<<< HEAD
+=======
+        $signedUrl = null;
+>>>>>>> origin/main
         if ($http2 < 300 && $signResp) {
             $jr = json_decode($signResp, true);
             if (isset($jr['signedUrls'][0]['signedUrl'])) $signedUrl = $jr['signedUrls'][0]['signedUrl'];
@@ -323,12 +422,24 @@ try {
         }
     }
 
+<<<<<<< HEAD
     /* 5) requirements row */
+=======
+    /* ────────────────────────────────────────────────────────────
+       5) requirements row (only application_form set)
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $stmt = $pdo->prepare('INSERT INTO public.requirements (application_form) VALUES (:f) RETURNING requirement_id');
     $stmt->execute([':f' => $fileUrl]);
     $requirement_id = (string)$stmt->fetchColumn();
 
+<<<<<<< HEAD
     /* 6) seedling_requests rows (one per seedling) */
+=======
+    /* ────────────────────────────────────────────────────────────
+       6) seedling_requests rows (one per seedling)
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $insSeed = $pdo->prepare('
         INSERT INTO public.seedling_requests (client_id, seedlings_id, quantity)
         VALUES (:cid, :sid, :qty)
@@ -344,7 +455,13 @@ try {
         $seed_req_ids[] = (string)$insSeed->fetchColumn();
     }
 
+<<<<<<< HEAD
     /* 7) approval rows (one per seedling request) */
+=======
+    /* ────────────────────────────────────────────────────────────
+       7) approval rows (one per seedling request)
+       ──────────────────────────────────────────────────────────── */
+>>>>>>> origin/main
     $insAppr = $pdo->prepare('
         INSERT INTO public.approval (client_id, requirement_id, request_type, submitted_at, seedl_req_id)
         VALUES (:cid, :rid, :rtype, now(), :sreq)
@@ -361,6 +478,7 @@ try {
         $approval_ids[] = (string)$insAppr->fetchColumn();
     }
 
+<<<<<<< HEAD
     /* 8) one summary notification for the whole request */
     $summary = [];
     foreach ($seedlings as $r) {
@@ -385,13 +503,19 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->commit();
     }
+=======
+    $pdo->commit();
+>>>>>>> origin/main
 
     out(true, '', [
         'client_id'            => $client_id,
         'requirement_id'       => $requirement_id,
         'seedling_request_ids' => $seed_req_ids,
         'approval_ids'         => $approval_ids,
+<<<<<<< HEAD
         'notification_ids'     => $notif_ids,
+=======
+>>>>>>> origin/main
         'application_form_url' => $fileUrl,
         'signed_url_preview'   => $signedUrl,
     ]);

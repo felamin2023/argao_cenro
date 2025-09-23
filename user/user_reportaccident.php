@@ -76,6 +76,7 @@ try {
     </div>
     <header>
         <div class="logo">
+<<<<<<< HEAD
             <a href="user_home.php"><img src="seal.png" alt="Site Logo" /></a>
         </div>
 
@@ -110,6 +111,109 @@ try {
         </div>
         </header>
 
+=======
+            <a href="user_home.php">
+                <img src="seal.png" alt="Site Logo">
+            </a>
+        </div>
+
+        <!-- Mobile menu toggle -->
+        <button class="mobile-toggle">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Navigation on the right -->
+        <div class="nav-container">
+            <!-- Dashboard Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon active">
+                    <i class="fas fa-bars"></i>
+                </div>
+                <div class="dropdown-menu center">
+                    <a href="user_reportaccident.php" class="dropdown-item active-page">
+                        <i class="fas fa-file-invoice"></i>
+                        <span>Report Incident</span>
+                    </a>
+
+                    <a href="useraddseed.php" class="dropdown-item">
+                        <i class="fas fa-seedling"></i>
+                        <span>Request Seedlings</span>
+                    </a>
+                    <a href="useraddwild.php" class="dropdown-item">
+                        <i class="fas fa-paw"></i>
+                        <span>Wildlife Permit</span>
+                    </a>
+                    <a href="useraddtreecut.php" class="dropdown-item">
+                        <i class="fas fa-tree"></i>
+                        <span>Tree Cutting Permit</span>
+                    </a>
+                    <a href="useraddlumber.php" class="dropdown-item">
+                        <i class="fas fa-boxes"></i>
+                        <span>Lumber Dealers Permit</span>
+                    </a>
+                    <a href="useraddwood.php" class="dropdown-item">
+                        <i class="fas fa-industry"></i>
+                        <span>Wood Processing Permit</span>
+                    </a>
+                    <a href="useraddchainsaw.php" class="dropdown-item">
+                        <i class="fas fa-tools"></i>
+                        <span>Chainsaw Permit</span>
+                    </a>
+
+                </div>
+            </div>
+
+
+            <!-- Notifications -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge">1</span>
+                </div>
+                <div class="dropdown-menu notifications-dropdown">
+                    <div class="notification-header">
+                        <h3>Notifications</h3>
+                        <a href="#" class="mark-all-read">Mark all as read</a>
+                    </div>
+
+                    <div class="notification-item unread">
+                        <a href="user_each.php?id=1" class="notification-link">
+                            <div class="notification-icon">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="notification-content">
+                                <div class="notification-title">Chainsaw Renewal Status</div>
+                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
+                                <div class="notification-time">10 minutes ago</div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="notification-footer">
+                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="dropdown-menu">
+                    <a href="user_profile.php" class="dropdown-item">
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="user_login.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+>>>>>>> origin/main
 
     <div id="confirmationModal" class="hidden-modal">
         <div class="modal-content">

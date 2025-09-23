@@ -41,7 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
     <title>Chainsaw Permit Application</title>
+=======
+    <title>Wildlife Registration Application</title>
+>>>>>>> origin/main
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -65,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         body {
+<<<<<<< HEAD
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background: #f9f9f9 url('images/chainsaw.jpg') center / cover no-repeat fixed;
         padding-top: 100px;
@@ -73,6 +78,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
 
+=======
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            padding-top: 100px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+>>>>>>> origin/main
         /* Header Styles */
         header {
             display: flex;
@@ -412,7 +426,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .main-container {
             margin-top: -0.5%;
             padding: 30px;
+<<<<<<< HEAD
             
+=======
+>>>>>>> origin/main
         }
 
         /* Action Buttons */
@@ -450,7 +467,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-outline {
             border: 2px solid var(--primary-color);
             color: var(--primary-color);
+<<<<<<< HEAD
             background: white;
+=======
+            background: transparent;
+>>>>>>> origin/main
         }
 
         .btn-outline:hover {
@@ -1203,11 +1224,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
 
     <div class="main-container">
+<<<<<<< HEAD
         <!-- <div class="action-buttons">
             <button class="btn btn-primary" id="addFilesBtn"><i class="fas fa-plus-circle"></i> Add</button>
             <a href="usereditchainsaw.php" class="btn btn-outline"><i class="fas fa-edit"></i> Edit</a>
             <a href="userviewchainsaw.php" class="btn btn-outline"><i class="fas fa-eye"></i> View</a>
         </div> -->
+=======
+        <div class="action-buttons">
+            <button class="btn btn-primary" id="addFilesBtn"><i class="fas fa-plus-circle"></i> Add</button>
+            <a href="usereditchainsaw.php" class="btn btn-outline"><i class="fas fa-edit"></i> Edit</a>
+            <a href="userviewchainsaw.php" class="btn btn-outline"><i class="fas fa-eye"></i> View</a>
+        </div>
+>>>>>>> origin/main
 
         <div class="requirements-form">
             <div class="form-header">
@@ -1384,6 +1413,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
 
+<<<<<<< HEAD
+=======
+                        <div class="form-group">
+                            <label for="address-r" class="required">Address:</label>
+                            <input type="text" id="address-r" />
+                        </div>
+
+>>>>>>> origin/main
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="street-r" class="required">Street Name/Sitio:</label>
@@ -1398,6 +1435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="municipality-r" class="required">Municipality:</label>
+<<<<<<< HEAD
                                 <select id="municipality-r" name="municipality">
                                     <option value="">Select Municipality (Cebu)</option>
                                     <option>Alcantara</option>
@@ -1445,6 +1483,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <option>Tuburan</option>
                                     <option>Tudela</option>
                                 </select>
+=======
+                                <input type="text" id="municipality-r" />
+>>>>>>> origin/main
                             </div>
                             <div class="form-group">
                                 <label for="province-r" class="required">Province:</label>

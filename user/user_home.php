@@ -55,8 +55,11 @@ try {
     exit();
 }
 ?>
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> origin/main
 <!DOCTYPE html>
 <html lang="en">
 
@@ -66,9 +69,12 @@ try {
     <title>User</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<<<<<<< HEAD
     <link rel="stylesheet" href="/assets/css/notifications.css">
     <script src="/assets/js/notifications.js" defer></script>
 
+=======
+>>>>>>> origin/main
     <style>
         :root {
             --primary-color: #2b6625;
@@ -1065,7 +1071,10 @@ try {
 
 <body>
     <header>
+<<<<<<< HEAD
         
+=======
+>>>>>>> origin/main
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
