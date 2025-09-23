@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Downloader</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
+        height: 100vh;
+        padding: 20px;
+      }
+      .download-btn {
+        margin-top: 20px;
+        padding: 12px 24px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+      .download-btn:hover {
+        background-color: #0056b3;
+      }
+      .instructions {
+        margin-bottom: 20px;
+        text-align: center;
+        color: #333;
+        max-width: 600px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="instructions">
+      <h2>HTML to Document Downloader</h2>
+      <p>
+        Click the download button below to save the HTML content (starting from
+        the second div) as a document file.
+      </p>
+    </div>
+
+    <!-- This is the first div (will be excluded from download) -->
+    <div
+      style="
+        width: 75%;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #ccc;
+        background-color: #f9f9f9;
+      "
+    >
+      <p>
+        This is the first div element. This content will NOT be included in the
+        downloaded document.
+      </p>
+    </div>
+
+    <!-- This is the second div (download will start from here) -->
+    <div
+      style="width: 75%; padding: 70px; overflow: auto; border: 1px solid black"
+    >
+      <div
+        style="
+          width: 100%;
+          display: flex;
+          border: 1px solid black;
+          flex-direction: column;
+          height: fit-content;
+          text-align: center;
+          align-items: center;
+        "
+      >
+        <h4>Republic of the Philippines</h4>
+        <h4>Department of Environment and Natural Resources</h4>
+        <h4>REGION 7</h4>
+        <div
+          style="
+            display: flex;
+            flex-direction: column;
+            align-items: end;
+            width: 50%;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+            "
+          >
+            <input
+              type="text"
+              style="border: none; border-bottom: 1.5px solid black"
+            />
+            <label for="">Date</label>
+          </div>
+        </div>
+        <div>
+          <h3>APPLICATION FOR: CERTIFICATE OF WILDLIFE REGISTRATION</h3>
+          <div
+            style="display: flex; justify-content: space-around; padding: 15px"
+          >
+            <div><input type="checkbox" /> <label for="">Zoo</label></div>
+            <div>
+              <input type="checkbox" /> <label for="">Botanical Garden</label>
+            </div>
+            <div>
+              <input type="checkbox" />
+              <label for="">Private Collection</label>
+            </div>
+          </div>
+        </div>
+        <div
+          style="
+            width: 100%;
+            text-align: start;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+          "
+        >
+          <h3>The Regional Executive Director</h3>
+          <p>DENR Region 7</p>
+          <p>National Government Center,<br />Sudion, Lahug, Cebu City</p>
+        </div>
+        <div
+          style="
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 30px 0px;
+          "
+        >
+          <p style="text-align: center">(Submit in Duplicate)</p>
+          <p style="text-align: start">Sir/Madam:</p>
+        </div>
+        <div
+          style="
+            display: flex;
+            flex-direction: column;
+            text-align: start;
+            gap: 3px;
+          "
+        >
+          <p style="margin-left: 70px">
+            I
+            <input
+              type="text"
+              style="border: none; border-bottom: 1.5px solid black"
+            />
+            with address at
+            <input
+              type="text"
+              style="border: none; border-bottom: 1.5px solid black"
+            />
+          </p>
+          <p style="margin-left: 70px">
+            <span style="margin-right: 120px">(Name of Applicant)</span>
+            <span>(Residence Address)</span>
+          </p>
+          <p>
+            and Tel. no.
+            <input
+              type="text"
+              style="border: none; border-bottom: 1.5px solid black"
+            />
+            have the honor to apply for the registration of
+          </p>
+          <p>
+            <input
+              type="text"
+              style="border: none; width: 43%; border-bottom: 1.5px solid black"
+            />
+            located at
+            <input
+              type="text"
+              style="border: none; width: 43%; border-bottom: 1.5px solid black"
+            />
+          </p>
+          <p>
+            <span style="margin-right: 120px">(Name of Establishment)</span>
+            <span>(Address of Establishment) with Tel. no.</span>
+          </p>
+          <p>
+            <input
+              type="text"
+              style="border: none; width: 43%; border-bottom: 1.5px solid black"
+            />and registration of animals/stocks maintained
+          </p>
+          <p>there at which are as follows:</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0">
+          <colgroup>
+            <col style="width: 50%" />
+            <col style="width: 35%" />
+            <col style="width: 15%" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th
+                style="
+                  border: 2px solid #000;
+                  text-align: left;
+                  padding: 12px;
+                  font-weight: 700;
+                "
+              >
+                Common Name
+              </th>
+              <th
+                style="
+                  border: 2px solid #000;
+                  text-align: left;
+                  padding: 12px;
+                  font-weight: 700;
+                "
+              >
+                Scientific name
+              </th>
+              <th
+                style="
+                  border: 2px solid #000;
+                  text-align: center;
+                  padding: 12px;
+                  font-weight: 700;
+                "
+              >
+                Quantity
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border: 2px solid #000; height: 64px"></td>
+              <td style="border: 2px solid #000"></td>
+              <td style="border: 2px solid #000"></td>
+            </tr>
+            <tr>
+              <td style="border: 2px solid #000; height: 64px"></td>
+              <td style="border: 2px solid #000"></td>
+              <td style="border: 2px solid #000"></td>
+            </tr>
+            <tr>
+              <td style="border: 2px solid #000; height: 64px"></td>
+              <td style="border: 2px solid #000"></td>
+              <td style="border: 2px solid #000"></td>
+            </tr>
+            <tr>
+              <td style="border: 2px solid #000; height: 64px"></td>
+              <td style="border: 2px solid #000"></td>
+              <td style="border: 2px solid #000"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <button class="download-btn" id="downloadButton">Download File</button>
+
+    <script>
+      (function () {
+        var btn = document.getElementById("downloadButton");
+        if (!btn) return;
+
+        btn.addEventListener("click", function () {
+          // Get all top-level DIVs in <body>
+          var divs = document.querySelectorAll("body > div");
+          if (divs.length < 2) {
+            alert("Not enough div elements to download");
+            return;
+          }
+
+          // Build the new HTML document as parts to avoid weird token issues
+          var parts = [];
+          parts.push(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Downloaded Document</title>'
+          );
+
+          // Include inline <style> tags from the original page
+          var styles = document.getElementsByTagName("style");
+          for (var i = 0; i < styles.length; i++) {
+            parts.push(styles[i].outerHTML);
+          }
+
+          parts.push("</head><body>");
+
+          // Append all <div>s starting from the SECOND one (index 1)
+          for (var j = 1; j < divs.length; j++) {
+            parts.push(divs[j].outerHTML);
+          }
+
+          parts.push("</body></html>");
+
+          // Create a Blob and trigger download
+          var blob = new Blob(parts, { type: "text/html;charset=utf-8" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "document.html"; // change to 'document.doc' if you prefer .doc
+          document.body.appendChild(a);
+          a.click();
+
+          setTimeout(function () {
+            URL.revokeObjectURL(a.href);
+            a.parentNode.removeChild(a);
+          }, 100);
+        });
+      })();
+    </script>
+  </body>
+</html>

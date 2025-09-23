@@ -1,0 +1,299 @@
+
+        @import url("https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.min.css");
+        @import url("https://fonts.googleapis.com/css?family=Inter:500|Inknut+Antiqua:400|Inria+Serif:400|Inika:700");
+
+        * {
+            -webkit-font-smoothing: antialiased;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        button:focus-visible {
+            outline: 2px solid #4a90e2 !important;
+            outline: -webkit-focus-ring-color auto 5px !important;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        @font-face {
+            font-family: "Dhyana-Bold";
+            src: url("https://anima-uploads.s3.amazonaws.com/projects/637cdfec5604f1d40be3592f/fonts/dhyana-bold.ttf") format("truetype");
+        }
+
+
+        .CHAINSAW-RECORDS {
+    background-color: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    margin-top: -2.6%;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    width: 100%; /* Full width for maximum space */
+    background-color: #ffffff;
+    border: 2px solid #005117;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    margin-top: 3%;
+}
+
+
+.logo-container {
+display: inline-block;
+padding: 5px;
+border-radius: 10px;
+transition: background-color 0.3s ease;
+}
+
+
+
+.logo-container:hover {
+background-color: rgb(37, 202, 37);
+}
+
+
+
+.header {
+    background-color: #005117;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #ffffff;
+}
+
+.title {
+    flex-grow: 1;
+    text-align: center;
+    font-family: "calibri";
+    font-weight: bold;
+    font-size: 40px;
+    margin: 0;
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 10px;
+    background-color: #e6f4ea;
+}
+
+.filter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 30%;
+}
+
+.filter-input {
+    width: 70%;
+    padding: 8px;
+    border: 2px solid #005117;
+    border-radius: 5px;
+}
+
+.filter-button {
+    background-color: #005117;
+    width: 35px;
+    height: 33px;
+    border: none;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    right: 12%;
+}
+
+.filter-icon {
+    width: 30px;
+    height: 25px;
+}
+
+.search {
+    position: relative;
+    width: 30%;
+}
+
+.search-input {
+    width: 68.8%;
+    padding: 8px;
+    padding-right: 35px;
+    border: 2px solid #005117;
+    border-radius: 5px;
+}
+
+.search-icon {
+    width: 65px;
+    height: 44px;
+    position: absolute;
+    right: 27%;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.export {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .export-label {
+        font-family: tahoma;
+        
+        font-size: 16px;
+        color: #04460f;
+        vertical-align: middle;
+    }
+.export-button {
+    background-color: #f6faf7;
+    color: #04460f;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 8px;
+}
+
+.table-container {
+    margin: 50px;
+    overflow-x: auto;
+    margin-top: 1%;
+     
+}
+
+.accident-table {
+    table-layout: auto; /* Allows table to adjust based on content */
+    width: 100%;
+    border-collapse: collapse;
+    font-family: tahoma;
+}
+
+.accident-table th:nth-child(6), 
+.accident-table td:nth-child(6)
+ { 
+    min-width: 200px; /* Adjust width based on content */
+    max-width: 600px; 
+}
+
+
+.accident-table th:nth-child(17), 
+.accident-table td:nth-child(18)
+ { 
+    min-width: 200px; /* Adjust width based on content */
+    max-width: 600px; 
+}
+
+
+.accident-table th:nth-child(24), 
+.accident-table td:nth-child(24)
+ { 
+    min-width: 200px; /* Adjust width based on content */
+    max-width: 600px; 
+}
+
+.accident-table th:nth-child(25), 
+.accident-table td:nth-child(25)
+ { 
+    min-width: 200px; /* Adjust width based on content */
+    max-width: 600px; 
+}
+
+
+.accident-table th, .accident-table td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: center;
+    min-width: 200px; /* Adjust width based on content */
+    max-width: 600px; 
+}
+
+.accident-table td{
+    font-family: tahoma;
+    font-size: 16px;
+}
+
+.accident-table th {
+    background-color: #005117;
+    color: #ffffff;
+    font-weight: 600;
+    text-align: center;  /* Centers text horizontally */
+    vertical-align: middle; /* Centers text vertically */
+    padding: 16px;
+    white-space: nowrap; /* Prevents text from wrapping */
+    font-family: tahoma;
+}
+
+.accident-table tbody tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.accident-table tbody tr:hover {
+    background-color: #e0f2e9;
+}
+
+/* Edit and Delete Buttons */
+.edit-btn, .delete-btn {
+    background-color: #2b6625;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin: 0 3px;
+}
+
+.delete-btn {
+    background-color: #d9534f;
+}
+
+.edit-btn:hover {
+    background-color: #24581e;
+}
+
+.delete-btn:hover {
+    background-color: #c9302c;
+}
+
+/* Save Button */
+.actions {
+    display: flex;
+    justify-content: center;
+    padding: 15px 0;
+}
+
+.add-record {
+    background-color: #2b6625;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 80px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.add-record:hover {
+    background-color:rgb(61, 161, 50);
+}
+
+.vector-4 {
+    width: 45px;  /* Reduced from original size */
+    height: 45px; /* Reduced from original size */
+    margin: 10px; /* Add some spacing */
+    object-fit: contain;
+}
