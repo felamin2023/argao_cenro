@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -112,7 +113,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -155,7 +156,7 @@
             border-left: 4px solid var(--primary-color);
         }
 
-       
+
         .dropdown-item:hover {
             background: var(--light-gray);
             padding-left: 30px;
@@ -333,9 +334,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -370,7 +379,7 @@
             align-items: center;
             margin-top: -1%;
             padding: 0 20px;
-            margin-bottom:2%;
+            margin-bottom: 2%;
         }
 
         .page-title {
@@ -406,6 +415,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
+
         .form-row {
             display: flex;
             flex-wrap: wrap;
@@ -422,11 +432,11 @@
         .form-group.full-width {
             flex: 1 0 100%;
         }
-        
+
         .form-group.two-thirds {
             flex: 2 0 400px;
         }
-        
+
         .form-group.one-third {
             flex: 1 0 200px;
         }
@@ -438,7 +448,7 @@
             font-size: 14px;
             font-weight: bold;
         }
-        
+
         .form-group input,
         .form-group textarea,
         .form-group select {
@@ -449,7 +459,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
-        
+
         .form-group input:focus,
         .form-group textarea:focus,
         .form-group select:focus {
@@ -457,7 +467,7 @@
             border-color: #2b6625;
             box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
         }
-        
+
         .form-group textarea {
             height: 180px;
             resize: vertical;
@@ -494,7 +504,8 @@
             margin-top: 20px;
         }
 
-        .save-btn, .view-records-btn {
+        .save-btn,
+        .view-records-btn {
             background-color: #005117;
             color: #fff;
             border: none;
@@ -550,7 +561,7 @@
             margin-top: 20px;
         }
 
-        .records-table th, 
+        .records-table th,
         .records-table td {
             padding: 12px 15px;
             text-align: left;
@@ -604,7 +615,7 @@
             .mobile-toggle {
                 display: block;
             }
-            
+
             /* Header Styles */
             header {
                 display: flex;
@@ -664,14 +675,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px; /* smaller width */
-            height: 40px; /* smaller height */
-            background: rgb(233, 255, 242); /* slightly brighter background */
-            border-radius: 12px; /* softer corners */
+            width: 40px;
+            /* smaller width */
+            height: 40px;
+            /* smaller height */
+            background: rgb(233, 255, 242);
+            /* slightly brighter background */
+            border-radius: 12px;
+            /* softer corners */
             cursor: pointer;
             transition: var(--transition);
-            color: black; /* changed icon color to black */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* subtle shadow for depth */
+            color: black;
+            /* changed icon color to black */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            /* subtle shadow for depth */
         }
 
         .nav-icon:hover {
@@ -681,7 +698,8 @@
         }
 
         .nav-icon i {
-            font-size: 1.3rem; /* smaller icon size */
+            font-size: 1.3rem;
+            /* smaller icon size */
             color: inherit;
             transition: color 0.3s ease;
         }
@@ -733,8 +751,10 @@
         }
 
         .mark-all-read:hover {
-            color: var(--primary-dark); /* Slightly darker color on hover */
-            transform: scale(1.1); /* Slightly bigger on hover */
+            color: var(--primary-dark);
+            /* Slightly darker color on hover */
+            transform: scale(1.1);
+            /* Slightly bigger on hover */
         }
 
         .notification-item {
@@ -876,9 +896,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle - Larger */
@@ -905,10 +933,10 @@
         .notification-link:hover {
             background-color: #f9f9f9;
         }
-     
+
         /* Main Content */
         .main-container {
-            margin-top:-0.5%;
+            margin-top: -0.5%;
             padding: 30px;
         }
 
@@ -1193,38 +1221,39 @@
 
 
         /* Name fields styling */
-.name-fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-bottom: 20px;
-}
+        .name-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
 
-.name-field {
-    flex: 1;
-    min-width: 200px;
-}
+        .name-field {
+            flex: 1;
+            min-width: 200px;
+        }
 
-.name-field input {
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid #153415;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: border-color 0.3s;
-    height: 40px;
-    box-sizing: border-box;
-}
+        .name-field input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #153415;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            height: 40px;
+            box-sizing: border-box;
+        }
 
-.name-field input:focus {
-    outline: none;
-    border-color: #2b6625;
-    box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
-}
+        .name-field input:focus {
+            outline: none;
+            border-color: #2b6625;
+            box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
+        }
 
-.name-field input::placeholder {
-    color: #999;
-}
+        .name-field input::placeholder {
+            color: #999;
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .notifications-dropdown {
@@ -1238,11 +1267,11 @@
                 width: auto;
                 padding: 10px;
             }
-            
+
             .notification-detail-title {
                 margin-top: 20px;
             }
-            
+
             .notification-detail-header {
                 padding: 20px;
                 font-size: 1.2rem;
@@ -1252,30 +1281,30 @@
                 align-items: center;
                 flex-direction: column;
             }
-            
+
             .notification-status {
                 margin-top: -20px;
                 right: 2px;
             }
-            
+
             .notification-detail-body {
                 padding: 20px;
             }
-            
+
             .notification-detail-message p {
                 font-size: 1rem;
             }
-            
+
             .meta-item {
                 flex-direction: column;
                 margin-bottom: 15px;
             }
-            
+
             .meta-label {
                 margin-bottom: 5px;
                 font-size: 0.9rem;
             }
-            
+
             .meta-value {
                 font-size: 0.9rem;
             }
@@ -1318,35 +1347,35 @@
         }
 
         @media (max-width: 576px) {
-           header {
+            header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -1367,19 +1396,20 @@
         }
     </style>
 </head>
+
 <body>
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -1387,16 +1417,16 @@
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-                
 
-                
-                       <div class="dropdown-menu center">
+
+
+                <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-                 
-                      <a href="useraddseed.php" class="dropdown-item">
+
+                    <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -1421,10 +1451,10 @@
                         <span>Chainsaw Permit</span>
                     </a>
 
-                    
+
                 </div>
             </div>
-                
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
@@ -1437,7 +1467,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -1450,13 +1480,13 @@
                             </div>
                         </a>
                     </div>
-                
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -1481,7 +1511,7 @@
             <a href="useraddlumber.php" class="btn btn-outline">
                 <i class="fas fa-plus-circle"></i> Add
             </a>
-            <a href="usereditlumber.php"  class="btn btn-primary">
+            <a href="usereditlumber.php" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
             <a href="userviewlumber.php" class="btn btn-outline">
@@ -1493,29 +1523,29 @@
             <div class="form-header">
                 <h2>Lumber Dealers (New/ Renewal) Permit - Edit Requirements</h2>
             </div>
-            
+
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
                     <button class="permit-type-btn active" data-type="new">New Permit</button>
                     <button class="permit-type-btn" data-type="renewal">Renewal</button>
                 </div>
-                
+
                 <!-- Name fields -->
-<div class="name-fields">
-    <div class="name-field">
-        <input type="text" placeholder="First Name" required>
-    </div>
-    <div class="name-field">
-        <input type="text" placeholder="Middle Name">
-    </div>
-    <div class="name-field">
-        <input type="text" placeholder="Last Name" required>
-    </div>
-</div>
+                <div class="name-fields">
+                    <div class="name-field">
+                        <input type="text" placeholder="First Name" required>
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Middle Name">
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Last Name" required>
+                    </div>
+                </div>
                 <div class="requirements-list" id="requirements-list-new">
-                  
-              <!-- Requirement 1 -->
+
+                    <!-- Requirement 1 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -1552,12 +1582,12 @@
                     </div>
 
 
-                      <!-- Requirement 2 -->
+                    <!-- Requirement 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">2</span>
-                                  Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
+                                Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1587,13 +1617,13 @@
                             </div>
                         </div>
                     </div>
-                    
-                  <!-- Requirement 3 -->
+
+                    <!-- Requirement 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">3</span>
-                                   Application form duly accomplished (3 copies)
+                                Application form duly accomplished (3 copies)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1630,7 +1660,7 @@
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">4</span>
-                                 Log/Lumber Supply Contract (approved by RED) - 3 copies
+                                Log/Lumber Supply Contract (approved by RED) - 3 copies
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1660,13 +1690,13 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">5</span>
-                                   Business Management Plan (3 copies)
+                                Business Management Plan (3 copies)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1697,12 +1727,12 @@
                         </div>
                     </div>
 
-                       <!-- Requirement 6 -->
+                    <!-- Requirement 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">6</span>
-                                     Mayor's Permit - 3 copies
+                                Mayor's Permit - 3 copies
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1732,14 +1762,14 @@
                             </div>
                         </div>
                     </div>
-                    
 
-                       <!-- Requirement 7 -->
+
+                    <!-- Requirement 7 -->
                     <div class="requirement-item" id="requirement-5">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">7</span>
-                                  Certificate of Registration by DTI/SEC - 3 copies
+                                Certificate of Registration by DTI/SEC - 3 copies
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1769,14 +1799,14 @@
                             </div>
                         </div>
                     </div>
-                  
-                    
-                        <!-- Requirement 8-->
+
+
+                    <!-- Requirement 8-->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">8</span>
-                                     Latest Annual Income Tax Return - 3 copies
+                                Latest Annual Income Tax Return - 3 copies
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1808,13 +1838,13 @@
                     </div>
 
 
-                      <!-- Requirement 9 (Common) -->
+                    <!-- Requirement 9 (Common) -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">9</span>
-                               
-                                Regulatory Fees 
+
+                                Regulatory Fees
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1850,14 +1880,14 @@
                 <!-- Renewal Requirements (hidden by default) -->
                 <div class="requirements-list" id="requirements-list-renewal" style="display:none;">
                     <!-- 1. Complete Staff Work (CSW) by the inspecting officer -->
-                   
+
                     <!-- 2. Geo-tagged pictures of the business establishment -->
-                   
-                     <div class="requirement-item">
+
+                    <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">1</span>
-                                 Complete Staff Work (CSW) by the inspecting officer- 3 copies from inspecting officer for signature of RPS chief
+                                Complete Staff Work (CSW) by the inspecting officer- 3 copies from inspecting officer for signature of RPS chief
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1873,12 +1903,12 @@
                     </div>
 
 
-                    
-                     <div class="requirement-item">
+
+                    <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">2</span>
-                                  Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
+                                Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2025,8 +2055,8 @@
                     </div>
                 </div>
             </div>
-                  
-            
+
+
             <div class="form-footer">
                 <button id="saveBtn" class="btn btn-primary">
                     <i class="fas fa-save"></i> Save Changes
@@ -2039,7 +2069,7 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
@@ -2076,7 +2106,7 @@
                     }
                 });
             });
-            
+
             // Initialize with New selected
             document.querySelector('.permit-type-btn[data-type="new"]').click();
 
@@ -2106,4 +2136,5 @@
         });
     </script>
 </body>
+
 </html>

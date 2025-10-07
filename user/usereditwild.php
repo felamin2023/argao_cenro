@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -112,7 +113,7 @@
             color: inherit;
             transition: color 0.3s ease;
         }
-        
+
         .nav-icon.active {
             position: relative;
         }
@@ -330,9 +331,17 @@
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle */
@@ -420,8 +429,9 @@
         }
 
         .edit-mode .file-input-label {
-    background: #0a192f;
-}
+            background: #0a192f;
+        }
+
         /* Requirements Form */
         .requirements-form {
             margin-top: -1%;
@@ -675,11 +685,11 @@
             margin-top: 10px;
             transition: all 0.3s;
         }
-        
+
         .download-btn:hover {
             background-color: #006622;
         }
-        
+
         .download-btn i {
             margin-right: 8px;
         }
@@ -714,38 +724,38 @@
         }
 
         /* Name fields styling */
-.name-fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-bottom: 20px;
-}
+        .name-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
 
-.name-field {
-    flex: 1;
-    min-width: 200px;
-}
+        .name-field {
+            flex: 1;
+            min-width: 200px;
+        }
 
-.name-field input {
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid #153415;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: border-color 0.3s;
-    height: 40px;
-    box-sizing: border-box;
-}
+        .name-field input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #153415;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            height: 40px;
+            box-sizing: border-box;
+        }
 
-.name-field input:focus {
-    outline: none;
-    border-color: #2b6625;
-    box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
-}
+        .name-field input:focus {
+            outline: none;
+            border-color: #2b6625;
+            box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
+        }
 
-.name-field input::placeholder {
-    color: #999;
-}
+        .name-field input::placeholder {
+            color: #999;
+        }
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -760,11 +770,11 @@
                 width: auto;
                 padding: 10px;
             }
-            
+
             .notification-detail-title {
                 margin-top: 20px;
             }
-            
+
             .notification-detail-header {
                 padding: 20px;
                 font-size: 1.2rem;
@@ -774,30 +784,30 @@
                 align-items: center;
                 flex-direction: column;
             }
-            
+
             .notification-status {
                 margin-top: -20px;
                 right: 2px;
             }
-            
+
             .notification-detail-body {
                 padding: 20px;
             }
-            
+
             .notification-detail-message p {
                 font-size: 1rem;
             }
-            
+
             .meta-item {
                 flex-direction: column;
                 margin-bottom: 15px;
             }
-            
+
             .meta-label {
                 margin-bottom: 5px;
                 font-size: 0.9rem;
             }
-            
+
             .meta-value {
                 font-size: 0.9rem;
             }
@@ -827,35 +837,35 @@
         }
 
         @media (max-width: 576px) {
-           header {
+            header {
                 padding: 0 15px;
             }
-            
+
             .nav-container {
                 gap: 15px;
             }
-            
+
             .notifications-dropdown {
                 width: 280px;
                 right: -50px;
             }
-            
+
             .notifications-dropdown:before {
                 right: 65px;
             }
-            
+
             .action-buttons {
                 margin-top: -6%;
                 gap: 8px;
                 padding-bottom: 5px;
             }
-            
+
             .btn {
                 padding: 10px 10px;
                 font-size: 0.85rem;
                 min-width: 80px;
             }
-            
+
             .btn i {
                 font-size: 0.85rem;
                 margin-right: 5px;
@@ -868,7 +878,7 @@
             .form-header h2 {
                 font-size: 1.3rem;
             }
-            
+
             .permit-type-selector {
                 flex-wrap: nowrap;
                 overflow-x: auto;
@@ -884,19 +894,20 @@
         }
     </style>
 </head>
+
 <body>
-<header>
+    <header>
         <div class="logo">
             <a href="user_home.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -904,13 +915,13 @@
                 <div class="nav-icon active">
                     <i class="fas fa-bars"></i>
                 </div>
-                
+
                 <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-                   
+
                     <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
@@ -937,7 +948,7 @@
                     </a>
                 </div>
             </div>
-                
+
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
@@ -950,7 +961,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -963,13 +974,13 @@
                             </div>
                         </a>
                     </div>
-                
+
                     <div class="notification-footer">
                         <a href="user_notification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -1006,26 +1017,26 @@
             <div class="form-header">
                 <h2>Wildlife Farm Permit - Edit Requirements</h2>
             </div>
-            
+
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
                     <button class="permit-type-btn active" data-type="new">New Permit</button>
                     <button class="permit-type-btn" data-type="renewal">Renewal</button>
                 </div>
-                
+
                 <!-- Name fields -->
-<div class="name-fields">
-    <div class="name-field">
-        <input type="text" placeholder="First Name" required>
-    </div>
-    <div class="name-field">
-        <input type="text" placeholder="Middle Name">
-    </div>
-    <div class="name-field">
-        <input type="text" placeholder="Last Name" required>
-    </div>
-</div>
+                <div class="name-fields">
+                    <div class="name-field">
+                        <input type="text" placeholder="First Name" required>
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Middle Name">
+                    </div>
+                    <div class="name-field">
+                        <input type="text" placeholder="Last Name" required>
+                    </div>
+                </div>
                 <div class="requirements-list" id="new-requirements">
                     <!-- New Requirements -->
                     <div class="requirement-item">
@@ -1046,7 +1057,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1066,7 +1077,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1086,7 +1097,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 4 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1106,7 +1117,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1126,7 +1137,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1146,7 +1157,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 7 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1166,7 +1177,7 @@
                             <div class="uploaded-files"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 8 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1200,7 +1211,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 9 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1248,7 +1259,7 @@
                             <div class="uploaded-files" id="renewal-uploaded-files-1"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1268,7 +1279,7 @@
                             <div class="uploaded-files" id="renewal-uploaded-files-2"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1288,7 +1299,7 @@
                             <div class="uploaded-files" id="renewal-uploaded-files-3"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 4 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1344,7 +1355,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1389,7 +1400,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Requirement 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -1418,7 +1429,7 @@
                     <p><strong>Total Fee:</strong> ₱3,000.00</p>
                 </div>
             </div>
-            
+
             <div class="form-footer">
                 <button id="saveBtn" class="btn btn-primary">
                     <i class="fas fa-save"></i> Save Changes
@@ -1444,12 +1455,12 @@
             // Mobile menu toggle
             const menuToggle = document.querySelector('.mobile-toggle');
             const mobileMenu = document.querySelector('.nav-container');
-            
+
             if (menuToggle && mobileMenu) {
                 menuToggle.addEventListener('click', () => {
                     mobileMenu.classList.toggle('active');
                 });
-                
+
                 // Close menu when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!mobileMenu.contains(e.target) && !menuToggle.contains(e.target)) {
@@ -1561,4 +1572,5 @@
         });
     </script>
 </body>
+
 </html>

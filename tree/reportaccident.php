@@ -344,6 +344,82 @@ try {
 
     <script>
         document.addEventListener("DOMContentLoaded", () => {
+            // ====== Mobile nav toggle ======
+            const mobileToggleBtn = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
+            if (mobileToggleBtn && navContainer) {
+                mobileToggleBtn.addEventListener('click', () => {
+                    navContainer.classList.toggle('open'); // ensure CSS shows .nav-container.open
+                });
+            }
+
+            // ====== Bell dropdown (mobile-friendly toggle) ======
+            const bellIcon = document.querySelector('.nav-item .fa-bell');
+            const notifDropdown = document.querySelector('.notifications-dropdown');
+            if (bellIcon && notifDropdown) {
+                bellIcon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    notifDropdown.classList.toggle('open'); // ensure CSS handles .notifications-dropdown.open
+                });
+                document.addEventListener('click', () => notifDropdown.classList.remove('open'));
+            }
+
+            // ====== Wire notifications: dynamic unread badge + Mark all as read ======
+            (async function wireNotifications() {
+                const badge = document.querySelector('.nav-item .fa-bell + .badge') || document.querySelector('.badge');
+                const markAll = document.querySelector('.notifications-dropdown .mark-all-read');
+
+                async function refreshUnread() {
+                    try {
+                        const r = await fetch('../backend/admins/notifications/get_unread_count.php?to=' + encodeURIComponent('Tree Cutting'));
+                        const j = await r.json();
+                        const n = Number(j?.count || 0);
+                        if (badge) {
+                            badge.textContent = String(n);
+                            badge.style.display = n > 0 ? 'inline-block' : 'none';
+                        }
+                    } catch (e) {
+                        /* silent */ }
+                }
+
+                if (markAll) {
+                    markAll.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        try {
+                            const r = await fetch('../backend/admins/notifications/mark_all_read.php', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    to: 'Tree Cutting'
+                                })
+                            });
+                            const j = await r.json();
+                            if (j?.success) {
+                                document.querySelectorAll('.notifications-dropdown .notification-item.unread')
+                                    .forEach(el => el.classList.remove('unread'));
+                                await refreshUnread();
+                            }
+                        } catch (err) {
+                            /* silent */ }
+                    });
+                }
+
+                await refreshUnread();
+            })();
+
+            // ====== Utils ======
+            function fmtWhen(s) {
+                const d = new Date(s);
+                if (!isNaN(d.getTime())) {
+                    const pad = (n) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                }
+                return s || '';
+            }
+
+            // ===== Modals & shared UI =====
             const viewModal = document.getElementById("viewModal");
             const confirmStatusModal = document.getElementById("confirmStatusModal");
             const rejectReasonModal = document.getElementById("rejectReasonModal");
@@ -372,7 +448,7 @@ try {
                 setTimeout(() => (notificationEl.style.display = "none"), 3000);
             }
 
-            // View details
+            // ===== View button → open details modal =====
             document.addEventListener("click", async (e) => {
                 if (!e.target.classList.contains("view-btn")) return;
 
@@ -380,7 +456,6 @@ try {
                 currentReportId = reportId;
 
                 try {
-                    // Using the shared, working endpoint that returns Supabase-ready photo URLs
                     const res = await fetch(`../backend/admins/incidentReport/get_incident_report.php?id=${encodeURIComponent(reportId)}`);
                     let report = null;
                     try {
@@ -405,7 +480,7 @@ try {
                     document.getElementById("modal-who").textContent = report.who ?? "";
                     document.getElementById("modal-what").textContent = report.what ?? "";
                     document.getElementById("modal-where").textContent = report.where ?? "";
-                    document.getElementById("modal-when").textContent = report.when ?? "";
+                    document.getElementById("modal-when").textContent = fmtWhen(report.when);
                     document.getElementById("modal-why").textContent = report.why ?? "";
                     document.getElementById("modal-contact").textContent = report.contact_no ?? "";
                     document.getElementById("modal-category").textContent = report.category ?? "";
@@ -442,6 +517,7 @@ try {
                         photosContainer.appendChild(img);
                     });
 
+                    // Show modal
                     viewModal.style.display = "block";
                     document.body.style.overflow = "hidden";
                 } catch (err) {
@@ -450,7 +526,7 @@ try {
                 }
             });
 
-            // Update status
+            // ===== Update Status flow =====
             updateStatusBtn.addEventListener("click", () => {
                 const newStatus = statusSelect.value;
                 if (newStatus === "rejected") {
@@ -466,7 +542,6 @@ try {
                 const newStatus = statusSelect.value;
 
                 try {
-                    // Reuse the working update endpoint
                     const res = await fetch("../backend/admins/incidentReport/update_incident_status.php", {
                         method: "POST",
                         headers: {
@@ -496,7 +571,7 @@ try {
                 }
             });
 
-            // Reject flow
+            // Reject flow (requires reason)
             confirmRejectBtn.addEventListener("click", async () => {
                 const rejectionReason = rejectionReasonInput.value.trim();
                 if (!rejectionReason) {
@@ -535,7 +610,7 @@ try {
                 }
             });
 
-            // Delete (table)
+            // ===== Delete from table (listener present; add button in table if you plan to use) =====
             document.addEventListener("click", async (e) => {
                 if (!e.target.classList.contains("delete-btn")) return;
                 const id = e.target.getAttribute("data-id");
@@ -567,7 +642,7 @@ try {
                 }
             });
 
-            // Close modals
+            // ===== Close modal handlers =====
             const closeModal = (el) => {
                 el.style.display = "none";
                 document.body.style.overflow = "auto";
@@ -576,6 +651,7 @@ try {
             closeConfirmStatusModal.addEventListener("click", () => (confirmStatusModal.style.display = "none"));
             closeRejectReasonModal.addEventListener("click", () => (rejectReasonModal.style.display = "none"));
             closeImageModal.addEventListener("click", () => closeModal(imageModal));
+
             window.addEventListener("click", (event) => {
                 if (event.target === viewModal) closeModal(viewModal);
                 if (event.target === confirmStatusModal) confirmStatusModal.style.display = "none";
@@ -583,11 +659,14 @@ try {
                 if (event.target === imageModal) closeModal(imageModal);
             });
 
-            // Status filter
+            // ===== Status filter + active state =====
             const statusButtons = document.querySelectorAll(".status-btn");
             const tableRows = document.querySelectorAll(".accident-table tbody tr");
             statusButtons.forEach((button) => {
                 button.addEventListener("click", () => {
+                    statusButtons.forEach(b => b.classList.remove('active'));
+                    button.classList.add('active');
+
                     const status = button.dataset.status || "all";
                     tableRows.forEach((row) => {
                         if (status === "all") {
@@ -600,7 +679,7 @@ try {
                 });
             });
 
-            // Search
+            // ===== Search (icon click or Enter) =====
             const searchInput = document.getElementById("search-input");
             const searchIcon = document.getElementById("search-icon");
 
@@ -618,11 +697,13 @@ try {
                 });
             }
             if (searchIcon) searchIcon.addEventListener("click", performSearch);
-            if (searchInput) searchInput.addEventListener("keypress", (e) => {
-                if (e.key === "Enter") performSearch();
-            });
+            if (searchInput) {
+                searchInput.addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") performSearch();
+                });
+            }
 
-            // Date filter
+            // ===== Date filter (month/year) =====
             const filterButton = document.querySelector(".filter-button");
             const filterMonth = document.querySelector(".filter-month");
             const filterYear = document.querySelector(".filter-year");
@@ -644,7 +725,7 @@ try {
                 });
             }
 
-            // Export CSV
+            // ===== Export CSV =====
             const exportButton = document.getElementById("export-button");
             if (exportButton) {
                 exportButton.addEventListener("click", () => {

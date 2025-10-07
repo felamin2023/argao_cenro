@@ -1453,6 +1453,257 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 padding: 8px 12px;
             }
         }
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+        .form-section h2 {
+            background-color: #2b6625;
+            color: white;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #2b6625;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            border-color: #2b6625;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
+        }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+
+        table th,
+        table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        table th {
+            background-color: #e9f5e8;
+            color: #2b6625;
+        }
+
+        .add-row {
+            background-color: #2b6625;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .add-row:hover {
+            background-color: #1e4a1a;
+        }
+
+        .declaration {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 4px;
+            border-left: 4px solid #2b6625;
+            margin-bottom: 25px;
+        }
+
+        .declaration p {
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .signature-date {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .signature-box {
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .signature-pad-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: white;
+        }
+
+        #signature-pad {
+            width: 100%;
+            height: 150px;
+            cursor: crosshair;
+        }
+
+        .signature-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .signature-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .clear-signature {
+            background-color: #ff4757;
+            color: white;
+        }
+
+        .save-signature {
+            background-color: #2b6625;
+            color: white;
+        }
+
+        .signature-preview {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        #signature-image {
+            max-width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .download-btn {
+            background-color: #2b6625;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 30px auto 0;
+            transition: background-color 0.3s;
+        }
+
+        .download-btn:hover {
+            background-color: #1e4a1a;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .declaration-input {
+            border: none;
+            border-bottom: 1px solid #999;
+            border-radius: 0;
+            padding: 0 5px;
+            width: auto;
+            display: inline-block;
+            background: transparent;
+        }
+
+        .declaration-input:focus {
+            border-bottom: 2px solid #2b6625;
+            outline: none;
+            box-shadow: none;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .signature-date {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .declaration-input {
+                width: 100%;
+                margin: 5px 0;
+            }
+        }
+
+        /* Loading indicator */
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #2b6625;
+        }
+
+        .loading i {
+            margin-right: 10px;
+        }
+
+        /* Print-specific styles */
+        @media print {
+
+            .download-btn,
+            .add-row,
+            .signature-actions,
+            .signature-pad-container {
+                display: none !important;
+            }
+
+            body {
+                background-color: white;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                border: none;
+                padding: 15px;
+            }
+        }
     </style>
 </head>
 
@@ -1510,10 +1761,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span>Chainsaw Permit</span>
                     </a>
 
-
                 </div>
             </div>
-
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
@@ -1565,40 +1814,168 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </header>
 
-
     <div class="main-container">
-        <div class="action-buttons">
-            <button class="btn btn-primary" id="addFilesBtn">
-                <i class="fas fa-plus-circle"></i> Add
-            </button>
-            <a href="useredittreecut.php" class="btn btn-outline">
-                <i class="fas fa-edit"></i> Edit
-            </a>
-            <a href="userviewtreecut.php" class="btn btn-outline">
-                <i class="fas fa-eye"></i> View
-            </a>
-        </div>
-
         <div class="requirements-form">
             <div class="form-header">
                 <h2>Tree Cutting Permit - Requirements</h2>
             </div>
 
             <div class="form-body">
+                <!-- ===================== APPLICATION FIELDS (UI only) ===================== -->
                 <div class="name-fields">
                     <div class="name-field">
-                        <input type="text" placeholder="First Name" required>
+                        <input type="text" id="first-name" placeholder="First Name" required>
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Middle Name">
+                        <input type="text" id="middle-name" placeholder="Middle Name">
                     </div>
                     <div class="name-field">
-                        <input type="text" placeholder="Last Name" required>
+                        <input type="text" id="last-name" placeholder="Last Name" required>
                     </div>
                 </div>
 
-                <div class="requirements-list">
-                    <!-- Requirement 1 -->
+                <!-- Address / Contact -->
+                <div class="form-row" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label for="street">Sitio/Street:</label>
+                        <input type="text" id="street">
+                    </div>
+                    <div class="form-group">
+                        <label for="barangay">Barangay:</label>
+                        <input type="text" id="barangay">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="municipality">Municipality:</label>
+                        <input type="text" id="municipality">
+                    </div>
+                    <div class="form-group">
+                        <label for="province">Province:</label>
+                        <input type="text" id="province">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="contact-number">Contact No.:</label>
+                        <input type="text" id="contact-number">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email Address:</label>
+                        <input type="email" id="email">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="registration-number">If Corporation: SEC/DTI Registration No.</label>
+                    <input type="text" id="registration-number">
+                </div>
+
+                <!-- Cutting details -->
+                <div class="form-group" style="margin-top:10px;">
+                    <label for="location">Location of Area/Trees to be Cut:</label>
+                    <input type="text" id="location">
+                </div>
+
+                <div class="form-group">
+                    <label>Ownership of Land:</label>
+                    <div style="display:flex;gap:20px;margin-top:10px;flex-wrap:wrap;">
+                        <label style="display:flex;align-items:center;gap:6px;">
+                            <input type="radio" name="ownership" value="Private"> Private
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;">
+                            <input type="radio" name="ownership" value="Government"> Government
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;">
+                            <input type="radio" name="ownership" value="Others"> Others:
+                            <input type="text" id="other-ownership" style="margin-left:5px;width:160px;">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Species table -->
+                <div class="form-group" style="margin-top:10px;">
+                    <label>Number and Species of Trees Applied for Cutting:</label>
+                    <table class="suppliers-table" id="species-table" style="margin-top:6px;">
+                        <thead>
+                            <tr>
+                                <th>Species</th>
+                                <th>No. of Trees</th>
+                                <th>Net Volume (cu.m)</th>
+                                <th style="width:60px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="species-table-body">
+                            <tr>
+                                <td><input type="text" class="species-name"></td>
+                                <td><input type="number" class="species-count" min="0"></td>
+                                <td><input type="number" class="species-volume" step="0.01" min="0"></td>
+                                <td><button type="button" class="remove-btn small">Remove</button></td>
+                            </tr>
+                            <tr>
+                                <td><input type="text" class="species-name"></td>
+                                <td><input type="number" class="species-count" min="0"></td>
+                                <td><input type="number" class="species-volume" step="0.01" min="0"></td>
+                                <td><button type="button" class="remove-btn small">Remove</button></td>
+                            </tr>
+                            <tr>
+                                <td><input type="text" class="species-name"></td>
+                                <td><input type="number" class="species-count" min="0"></td>
+                                <td><input type="number" class="species-volume" step="0.01" min="0"></td>
+                                <td><button type="button" class="remove-btn small">Remove</button></td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td style="text-align:right;"><strong>TOTAL</strong></td>
+                                <td><input type="number" id="total-count" readonly style="background:#f0f0f0;"></td>
+                                <td><input type="number" id="total-volume" readonly style="background:#f0f0f0;"></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <button type="button" class="add-row" id="add-row-btn"><i class="fas fa-plus"></i> Add Row</button>
+                </div>
+
+                <div class="form-group" style="margin-top:10px;">
+                    <label for="purpose">Purpose of Application for Tree Cutting Permit:</label>
+                    <textarea id="purpose" rows="4" placeholder="e.g., land development, safety hazard removal, construction, farming, etc."></textarea>
+                </div>
+
+                <!-- Declaration & signature -->
+                <div class="form-subsection" style="margin-top:12px;">
+                    <h4>Declaration</h4>
+                    <p>I hereby certify that the information provided in this application is true and correct. I understand that the approval of this application is subject to verification and evaluation by DENR, and that I shall comply with all terms and conditions of the Tree Cutting Permit once issued.</p>
+
+                    <div class="signature-date">
+                        <div class="signature-box">
+                            <label>Signature Over Printed Name:</label>
+                            <div class="signature-pad-container" style="border:1px solid #ccc;border-radius:8px;">
+                                <canvas id="signature-pad" style="width:100%;height:200px;display:block;"></canvas>
+                            </div>
+                            <div class="signature-actions" style="margin-top:8px;display:flex;gap:8px;">
+                                <button type="button" class="signature-btn clear-signature" id="clear-signature">Clear</button>
+                                <!-- <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button> -->
+                            </div>
+                            <div class="signature-preview" style="margin-top:8px;">
+                                <img id="signature-image" class="hidden" alt="Signature" style="max-width:240px;display:none;border:1px solid #ddd;padding:3px;border-radius:4px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Download (kept for user copy) -->
+                <!-- <div class="form-subsection" style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+                    <button type="button" class="download-btn" id="downloadBtn">
+                        <i class="fas fa-download"></i> Download Application as Word Document
+                    </button>
+                    <div class="loading" id="loadingIndicator" style="display:none;">
+                        <i class="fas fa-spinner fa-spin"></i> Generating document, please wait...
+                    </div>
+                </div> -->
+                <!-- ===================== /APPLICATION FIELDS ===================== -->
+
+                <div class="requirements-list" style="margin-top:18px;">
+                    <!-- 1 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -1618,31 +1995,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 2 -->
+                    <!-- 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">2</span>
-                                Order of Payment and Official Receipt
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-2" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-2"></div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 3 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">3</span>
                                 Memorandom Report (2 copies signed by inspecting officer subscribed by register forester)
                             </div>
                         </div>
@@ -1658,11 +2015,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 4 -->
+                    <!-- 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">4</span>
+                                <span class="requirement-number">3</span>
                                 Tally sheets (inventory sheet of forest product)- 2 copies signed by inspecting officer subscribed by registered forester
                             </div>
                         </div>
@@ -1678,11 +2035,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 5 -->
+                    <!-- 4 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">5</span>
+                                <span class="requirement-number">4</span>
                                 Geo-tagged photos of forest products (2 copies signed by inspecting officer subscribed by registered forester)
                             </div>
                         </div>
@@ -1698,11 +2055,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 6 -->
+                    <!-- 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">6</span>
+                                <span class="requirement-number">5</span>
                                 Sworn Statement (2 copies signed by inspecting officer subscribed by registered forester)
                             </div>
                         </div>
@@ -1718,11 +2075,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 7 -->
+                    <!-- 6 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">7</span>
+                                <span class="requirement-number">6</span>
                                 Certificate of Transport Agreement duly notarized (2 copies)
                             </div>
                         </div>
@@ -1752,11 +2109,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 8 -->
+                    <!-- 7 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">8</span>
+                                <span class="requirement-number">7</span>
                                 Purchase Order(Signed by the Consignee - 2 copies)
                             </div>
                         </div>
@@ -1772,31 +2129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 9 -->
+                    <!-- 8 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">9</span>
-                                Letter request with SPA (2 copies)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-9" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-9" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-9"></div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 10 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">10</span>
+                                <span class="requirement-number">8</span>
                                 Photocopy of approved TCP/ SPTLP/ PLTP/ STCP (2 copies)
                             </div>
                         </div>
@@ -1837,7 +2174,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+    <!-- Toast / Notifications -->
+    <div id="toast" aria-live="polite" aria-atomic="true" style="position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:9999; display:none;">
+        <div id="toast-content" style="background:#222; color:#fff; padding:14px 18px; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.25); font-weight:500; min-width:240px; text-align:center;"></div>
+    </div>
+
+    <!-- Old compact banner kept for backwards-compat (hidden by default) -->
+    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9998; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
     <!-- File Preview Modal -->
     <div id="filePreviewModal" class="modal">
@@ -1850,7 +2193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Confirmation Modal -->
     <div id="confirmModal" class="modal">
-        <div class="modal-content" style="max-width:400px;text-align:center;">
+        <div class="modal-content" style="max-width:420px;text-align:center;">
             <span id="closeConfirmModal" class="close-modal">&times;</span>
             <h3>Confirm Submission</h3>
             <p>Are you sure you want to submit this tree cutting permit request?</p>
@@ -1859,9 +2202,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- Result Modal (ERRORS ONLY) -->
+    <div id="resultModal" class="modal">
+        <div class="modal-content" style="max-width:520px;">
+            <span id="closeResultModal" class="close-modal">&times;</span>
+            <div id="resultIcon" style="font-size:30px; margin-bottom:6px;"></div>
+            <h3 id="resultTitle">Submission Result</h3>
+            <p id="resultMessage" style="margin-top:6px;"></p>
+            <div id="resultDetails" style="margin-top:10px; font-size:.95rem; color:#444;"></div>
+            <div style="margin-top:14px; text-align:right;">
+                <button class="btn btn-primary" id="resultOkBtn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Global Loader -->
+    <div id="globalLoader" style="display:none; position:fixed; inset:0; background:rgba(17,17,17,.45); z-index:10000; backdrop-filter: blur(2px);">
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; padding:22px 26px; border-radius:14px; box-shadow:0 16px 40px rgba(0,0,0,.20); min-width:280px; text-align:center;">
+            <div class="spinner" style="margin:2px auto 10px; width:28px; height:28px; border:3px solid #e5e7eb; border-top-color:#2563eb; border-radius:50%; animation:spin 1s linear infinite;"></div>
+            <div id="globalLoaderText" style="font-weight:600; color:#111;">Saving your request…</div>
+            <div id="globalLoaderSub" style="font-size:.92rem; color:#555; margin-top:4px;">Generating application, uploading files, and creating records.</div>
+        </div>
+    </div>
+
+    <!-- Small CSS hook for spinner animation -->
+    <style>
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.35);
+        }
+
+        .modal-content {
+            background: #fff;
+            margin: 8% auto;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+            width: 90%;
+            max-width: 700px;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            right: 12px;
+            top: 10px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .close-modal:hover {
+            color: #000;
+        }
+
+        .btn.btn-outline {
+            background: #fff;
+            border: 1px solid #ddd;
+        }
+    </style>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
+            /* ======================== Helpers ======================== */
+            const $ = (sel, root) => (root || document).querySelector(sel);
+            const $all = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+            const getVal = (id) => (document.getElementById(id)?.value ?? '').trim();
+
+            /* ======================== Mobile menu ======================== */
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
             if (mobileToggle) {
@@ -1871,14 +2292,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
-            // File input handling
+            /* ======================== Toast / Modal / Loader ======================== */
+            function showToast(message, duration = 2000) { // 2s default
+                const toast = $('#toast');
+                const content = $('#toast-content');
+                if (!toast || !content) return;
+                content.textContent = message;
+                toast.style.display = 'block';
+                toast.style.opacity = '1';
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    setTimeout(() => (toast.style.display = 'none'), 250);
+                }, duration);
+            }
+            const openModal = (el) => {
+                if (el) el.style.display = 'block';
+            };
+            const closeModal = (el) => {
+                if (el) el.style.display = 'none';
+            };
+
+            function showGlobalLoader(text = 'Saving your request…', sub = 'Generating application, uploading files, and creating records.') {
+                const gl = $('#globalLoader');
+                const t = $('#globalLoaderText');
+                const s = $('#globalLoaderSub');
+                if (t) t.textContent = text;
+                if (s) s.textContent = sub;
+                if (gl) gl.style.display = 'block';
+            }
+
+            function hideGlobalLoader() {
+                const gl = $('#globalLoader');
+                if (gl) gl.style.display = 'none';
+            }
+
+            /* ======================== File inputs ======================== */
             const fileInputs = [{
                     id: 'file-1',
                     uploaded: 'uploaded-files-1'
-                },
-                {
-                    id: 'file-2',
-                    uploaded: 'uploaded-files-2'
                 },
                 {
                     id: 'file-3',
@@ -1909,214 +2360,613 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     uploaded: 'uploaded-files-8'
                 },
                 {
-                    id: 'file-9',
-                    uploaded: 'uploaded-files-9'
-                },
-                {
                     id: 'file-10a',
                     uploaded: 'uploaded-files-10a'
                 },
                 {
                     id: 'file-10b',
                     uploaded: 'uploaded-files-10b'
-                }
+                },
             ];
-
             let selectedFiles = {};
-
-            fileInputs.forEach(input => {
-                const fileInput = document.getElementById(input.id);
-                const uploadedFilesContainer = document.getElementById(input.uploaded);
-                if (fileInput) {
-                    fileInput.addEventListener('change', function() {
-                        uploadedFilesContainer.innerHTML = '';
-                        const file = this.files[0];
-                        this.parentElement.querySelector('.file-name').textContent = file ? file.name : 'No file chosen';
-                        if (file) {
-                            selectedFiles[input.id] = file;
-                            addUploadedFileMulti(file, uploadedFilesContainer, fileInput, input.id);
-                        } else {
-                            selectedFiles[input.id] = null;
-                        }
-                    });
-                }
+            fileInputs.forEach(cfg => {
+                const inp = document.getElementById(cfg.id);
+                const target = document.getElementById(cfg.uploaded);
+                if (!inp) return;
+                inp.addEventListener('change', function() {
+                    if (target) target.innerHTML = '';
+                    const file = this.files[0];
+                    const nameEl = this.parentElement.querySelector('.file-name');
+                    if (nameEl) nameEl.textContent = file ? file.name : 'No file chosen';
+                    selectedFiles[cfg.id] = file || null;
+                });
             });
 
-            function addUploadedFileMulti(file, uploadedFilesContainer, fileInput, inputId) {
-                uploadedFilesContainer.innerHTML = '';
-            }
+            /* ======================== Species table ======================== */
+            const speciesTbody = $('#species-table-body');
+            const addRowBtn = $('#add-row-btn');
 
-            // File preview functionality
-            const modal = document.getElementById('filePreviewModal');
-            const modalFrame = document.getElementById('filePreviewFrame');
-            const closeFilePreviewModal = document.getElementById('closeFilePreviewModal');
-
-            function previewFile(file) {
-                const modalFrame = document.getElementById('filePreviewFrame');
-                if (!modalFrame) return;
-                modalFrame.removeAttribute('src');
-                modalFrame.removeAttribute('srcdoc');
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    if (file.type.startsWith('image/')) {
-                        modalFrame.srcdoc = `<img src='${e.target.result}' style='max-width:100%;max-height:80vh;'>`;
-                    } else if (file.type === 'application/pdf') {
-                        modalFrame.src = e.target.result;
-                    } else if (
-                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                        file.type === 'application/msword'
-                    ) {
-                        const url = URL.createObjectURL(file);
-                        modalFrame.srcdoc = `<div style='padding:20px;text-align:center;'>Cannot preview this file type.<br><a href='${url}' download='${file.name}' style='color:#2b6625;font-weight:bold;'>Download ${file.name}</a></div>`;
-                    } else {
-                        modalFrame.srcdoc = `<div style='padding:20px;'>Cannot preview this file type.</div>`;
-                    }
-                    modal.style.display = 'block';
-                };
-                if (file.type.startsWith('image/')) {
-                    reader.readAsDataURL(file);
-                } else if (file.type === 'application/pdf') {
-                    reader.readAsDataURL(file);
-                } else if (
-                    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                    file.type === 'application/msword'
-                ) {
-                    reader.onload();
-                } else {
-                    reader.onload();
-                }
-            }
-
-            if (closeFilePreviewModal) {
-                closeFilePreviewModal.addEventListener('click', function() {
-                    modal.style.display = 'none';
+            function hookRemoveButtons() {
+                $all('#species-table-body .remove-btn').forEach(btn => {
+                    btn.onclick = function() {
+                        const tr = btn.closest('tr');
+                        if (speciesTbody && speciesTbody.rows.length > 1 && tr) {
+                            tr.parentNode.removeChild(tr);
+                            calculateTotals();
+                        }
+                    };
                 });
             }
-            window.addEventListener('click', function(event) {
-                if (event.target == modal) {
-                    modal.style.display = 'none';
+            hookRemoveButtons();
+
+            function addSpeciesRow(name, count, vol) {
+                if (!speciesTbody) return;
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td><input type="text" class="species-name" value="' + (name || '') + '"></td>' +
+                    '<td><input type="number" class="species-count" min="0" value="' + (count || '') + '"></td>' +
+                    '<td><input type="number" class="species-volume" step="0.01" min="0" value="' + (vol || '') + '"></td>' +
+                    '<td><button type="button" class="remove-btn small">Remove</button></td>';
+                speciesTbody.appendChild(tr);
+                hookRemoveButtons();
+            }
+            if (addRowBtn) addRowBtn.addEventListener('click', () => addSpeciesRow('', '', ''));
+
+            function calculateTotals() {
+                let totalCount = 0,
+                    totalVolume = 0;
+                $all('.species-count').forEach(inp => totalCount += Number(inp.value) || 0);
+                $all('.species-volume').forEach(inp => totalVolume += Number(inp.value) || 0);
+                const tc = $('#total-count'),
+                    tv = $('#total-volume');
+                if (tc) tc.value = totalCount;
+                if (tv) tv.value = Number.isFinite(totalVolume) ? totalVolume.toFixed(2) : '0.00';
+            }
+            document.addEventListener('input', function(e) {
+                if (e.target.classList.contains('species-count') || e.target.classList.contains('species-volume')) {
+                    calculateTotals();
                 }
             });
+            calculateTotals();
 
-            // Confirmation modal logic
+            function readSpeciesRows() {
+                const rows = [];
+                $all('#species-table-body tr').forEach(row => {
+                    const name = (row.querySelector('.species-name')?.value || '').trim();
+                    const count = (row.querySelector('.species-count')?.value || '').trim();
+                    const volume = (row.querySelector('.species-volume')?.value || '').trim();
+                    if (name || count || volume) rows.push({
+                        name,
+                        count,
+                        volume
+                    });
+                });
+                return rows;
+            }
+
+            /* ======================== Signature pad ======================== */
+            const sigCanvas = document.getElementById('signature-pad');
+            const clearSigBtn = document.getElementById('clear-signature');
+            const saveSigBtn = document.getElementById('save-signature');
+            const sigPreview = document.getElementById('signature-image');
+
+            let drawing = false,
+                last = {
+                    x: 0,
+                    y: 0
+                },
+                strokes = [],
+                currentStroke = [];
+
+            function sigCtxStyle(ctx) {
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+            }
+
+            function repaintSignature(fillBg) {
+                if (!sigCanvas) return;
+                const ctx = sigCanvas.getContext('2d');
+                const ratio = window.devicePixelRatio || 1;
+                const cssW = sigCanvas.width / ratio,
+                    cssH = sigCanvas.height / ratio;
+                if (fillBg) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, cssW, cssH);
+                }
+                sigCtxStyle(ctx);
+                for (let s of strokes) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x, s[0].y);
+                    for (let i = 1; i < s.length; i++) ctx.lineTo(s[i].x, s[i].y);
+                    ctx.stroke();
+                }
+            }
+
+            function resizeSigCanvas() {
+                if (!sigCanvas) return;
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                const cssWidth = sigCanvas.clientWidth || 600;
+                const cssHeight = sigCanvas.clientHeight || 200;
+                sigCanvas.width = Math.floor(cssWidth * ratio);
+                sigCanvas.height = Math.floor(cssHeight * ratio);
+                const ctx = sigCanvas.getContext('2d');
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                repaintSignature(true);
+            }
+            resizeSigCanvas();
+            window.addEventListener('resize', resizeSigCanvas);
+
+            function getCanvasPos(e) {
+                const rect = sigCanvas.getBoundingClientRect();
+                const t = e.touches ? e.touches[0] : null;
+                const cx = t ? t.clientX : e.clientX;
+                const cy = t ? t.clientY : e.clientY;
+                return {
+                    x: cx - rect.left,
+                    y: cy - rect.top
+                };
+            }
+
+            function startSig(e) {
+                drawing = true;
+                currentStroke = [];
+                const p = getCanvasPos(e);
+                last = {
+                    x: p.x,
+                    y: p.y
+                };
+                currentStroke.push(last);
+                e.preventDefault?.();
+            }
+
+            function drawSig(e) {
+                if (!drawing) return;
+                const p = getCanvasPos(e);
+                const ctx = sigCanvas.getContext('2d');
+                ctx.beginPath();
+                ctx.moveTo(last.x, last.y);
+                ctx.lineTo(p.x, p.y);
+                sigCtxStyle(ctx);
+                ctx.stroke();
+                last = {
+                    x: p.x,
+                    y: p.y
+                };
+                currentStroke.push(last);
+                e.preventDefault?.();
+            }
+
+            function endSig() {
+                if (!drawing) return;
+                drawing = false;
+                if (currentStroke.length > 1) strokes.push(currentStroke);
+                currentStroke = [];
+            }
+            if (sigCanvas) {
+                sigCanvas.addEventListener('mousedown', startSig);
+                sigCanvas.addEventListener('mousemove', drawSig);
+                window.addEventListener('mouseup', endSig);
+                sigCanvas.addEventListener('touchstart', startSig, {
+                    passive: false
+                });
+                sigCanvas.addEventListener('touchmove', drawSig, {
+                    passive: false
+                });
+                window.addEventListener('touchend', endSig);
+            }
+
+            function hasSignature() {
+                return strokes.some(s => s && s.length > 1);
+            }
+
+            function getSignatureDataURLScaled(targetW = 240, targetH = 80) {
+                if (!hasSignature()) return {
+                    dataURL: '',
+                    w: 0,
+                    h: 0
+                };
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                const srcW = sigCanvas.width / ratio,
+                    srcH = sigCanvas.height / ratio;
+                if (!targetW && !targetH) {
+                    targetW = 240;
+                    targetH = 80;
+                }
+                if (!targetW) targetW = Math.round(srcW * (targetH / srcH));
+                if (!targetH) targetH = Math.round(srcH * (targetW / srcW));
+                const off = document.createElement('canvas');
+                off.width = Math.max(1, Math.floor(targetW * ratio));
+                off.height = Math.max(1, Math.floor(targetH * ratio));
+                const ctx = off.getContext('2d');
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, targetW, targetH);
+                const sx = targetW / srcW,
+                    sy = targetH / srcH;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 2 * Math.min(sx, sy);
+                for (let s of strokes) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x * sx, s[0].y * sy);
+                    for (let i = 1; i < s.length; i++) ctx.lineTo(s[i].x * sx, s[i].y * sy);
+                    ctx.stroke();
+                }
+                return {
+                    dataURL: off.toDataURL('image/png'),
+                    w: targetW,
+                    h: targetH
+                };
+            }
+            clearSigBtn?.addEventListener('click', () => {
+                strokes = [];
+                repaintSignature(true);
+                if (sigPreview) {
+                    sigPreview.src = '';
+                    sigPreview.style.display = 'none';
+                }
+            });
+            saveSigBtn?.addEventListener('click', () => {
+                if (!hasSignature()) return showToast('Please provide a signature first.');
+                const s = getSignatureDataURLScaled(240, 80);
+                if (sigPreview) {
+                    sigPreview.src = s.dataURL;
+                    sigPreview.style.display = 'inline-block';
+                }
+                showToast('Signature saved.');
+            });
+
+            /* ======================== Word document generation ======================== */
+            function buildOwnershipString() {
+                const radios = document.getElementsByName('ownership');
+                let out = [];
+                ['Private', 'Government', 'Others'].forEach(v => {
+                    let checked = false;
+                    for (const r of radios) {
+                        if (r.value === v && r.checked) {
+                            checked = true;
+                            break;
+                        }
+                    }
+                    if (v === 'Others') {
+                        const t = getVal('other-ownership');
+                        out.push((checked ? '☒ ' : '☐ ') + 'Others' + (t ? (': ' + t) : ':'));
+                    } else {
+                        out.push((checked ? '☒ ' : '☐ ') + v);
+                    }
+                });
+                return out.join(' ');
+            }
+
+            function buildTreeCutDocHTML(sigLocation, includeSignature, sigW, sigH) {
+                const first = getVal('first-name'),
+                    middle = getVal('middle-name'),
+                    last = getVal('last-name');
+                const applicantName = [first, middle, last].filter(Boolean).join(' ');
+                const street = getVal('street'),
+                    barangay = getVal('barangay'),
+                    municipality = getVal('municipality'),
+                    province = getVal('province');
+                const contact = getVal('contact-number'),
+                    email = getVal('email'),
+                    regno = getVal('registration-number');
+                const location = getVal('location'),
+                    purpose = getVal('purpose');
+                const ownershipValue = buildOwnershipString();
+                const speciesRows = readSpeciesRows();
+                const totCount = $('#total-count')?.value || '0';
+                const totVol = $('#total-volume')?.value || '0.00';
+                const sigBlock = includeSignature ?
+                    ('<img src="' + sigLocation + '" width="' + sigW + '" height="' + sigH + '" style="display:block;margin:8px 0 6px 0;border:1px solid #000;" alt="Signature">') :
+                    '';
+
+                return '<!DOCTYPE html>' +
+                    '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+                    '<head><meta charset="UTF-8"><title>Application for Tree Cutting Permit</title>' +
+                    '<style>body,div,p,td{font-family:Arial,sans-serif;font-size:11pt;margin:0;line-height:1.5;padding:0;}' +
+                    '.underline{text-decoration:underline;} table{border-collapse:collapse;width:100%;}' +
+                    'table.bordered-table{border:1px solid #000;} table.bordered-table td,table.bordered-table th{border:1px solid #000;padding:5px;vertical-align:top;}' +
+                    '.text-center{text-align:center;} .section-title{margin:15pt 0 6pt 0;font-weight:bold;} .signature-line{margin-top:24pt;border-top:1px solid #000;width:50%;padding-top:3pt;}' +
+                    '</style><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]></head>' +
+                    '<body>' +
+                    '<div class="text-center"><p>Republic of the Philippines</p><p>Department of Environment and Natural Resources (DENR)</p>' +
+                    '<p>Community Environment and Natural Resources Office (CENRO)</p><p>Lamacan, Argao, Cebu, Philippines 6021</p>' +
+                    '<p>Tel. Nos. (+6332) 4600-711 | E-mail: <span class="underline">cenroargao@denr.gov.ph</span></p></div>' +
+                    '<h3 class="text-center">APPLICATION FOR TREE CUTTING PERMIT</h3>' +
+                    '<p class="section-title">PART I. APPLICANT\'S INFORMATION</p>' +
+                    '<p>1. Applicant: ' + applicantName + '</p>' +
+                    '<p>2. Address:</p>' +
+                    '<p>&nbsp;&nbsp;&nbsp;&nbsp;Sitio/Street: ' + street + '</p>' +
+                    '<p>&nbsp;&nbsp;&nbsp;&nbsp;Barangay: ' + barangay + '</p>' +
+                    '<p>&nbsp;&nbsp;&nbsp;&nbsp;Municipality: ' + municipality + '</p>' +
+                    '<p>&nbsp;&nbsp;&nbsp;&nbsp;Province: ' + province + '</p>' +
+                    '<p>3. Contact No.: ' + contact + '</p>' +
+                    '<p>4. Email Address: ' + email + '</p>' +
+                    '<p>5. If Corporation: SEC/DTI Registration No. ' + regno + '</p>' +
+                    '<p class="section-title">PART II. TREE CUTTING DETAILS</p>' +
+                    '<p>1. Location of Area/Trees to be Cut: ' + location + '</p>' +
+                    '<p>2. Ownership of Land: ' + ownershipValue + '</p>' +
+                    '<p>3. Number and Species of Trees Applied for Cutting:</p>' +
+                    '<table class="bordered-table"><tr><th>Species</th><th>No. of Trees</th><th>Net Volume (cu.m)</th></tr>' +
+                    (speciesRows.length ? speciesRows.map(s => '<tr><td>' + (s.name || '') + '</td><td>' + (s.count || '') + '</td><td>' + (s.volume || '') + '</td></tr>').join('') : '') +
+                    '<tr><td><strong>TOTAL</strong></td><td><strong>' + totCount + '</strong></td><td><strong>' + totVol + '</strong></td></tr></table>' +
+                    '<p>4. Purpose of Application for Tree Cutting Permit:</p><p>' + purpose + '</p>' +
+                    '<p class="section-title">PART III. DECLARATION OF APPLICANT</p>' +
+                    '<p>I hereby certify that the information provided in this application is true and correct. I understand that the approval of this application is subject to verification and evaluation by DENR, and that I shall comply with all terms and conditions of the Tree Cutting Permit once issued.</p>' +
+                    sigBlock +
+                    '<div class="signature-line">Signature Over Printed Name</div>' +
+                    '</body></html>';
+            }
+
+            function makeMHTML(html, parts) {
+                parts = parts || [];
+                const boundary = '----=_NextPart_' + Date.now().toString(16);
+                const header = [
+                    'MIME-Version: 1.0',
+                    'Content-Type: multipart/related; type="text/html"; boundary="' + boundary + '"',
+                    '',
+                    '--' + boundary,
+                    'Content-Type: text/html; charset="utf-8"',
+                    'Content-Transfer-Encoding: 8bit',
+                    '',
+                    html
+                ].join('\r\n');
+                const bodyParts = parts.map(p => {
+                    const wrapped = (p.base64 || '').replace(/.{1,76}/g, '$&\r\n');
+                    return [
+                        '',
+                        '--' + boundary,
+                        'Content-Location: ' + p.location,
+                        'Content-Transfer-Encoding: base64',
+                        'Content-Type: ' + p.contentType,
+                        '',
+                        wrapped
+                    ].join('\r\n');
+                }).join('');
+                return header + bodyParts + '\r\n--' + boundary + '--';
+            }
+
+            function dataURLtoBlob(dataURL, mime = 'image/png') {
+                const base64 = dataURL.split(',')[1] || '';
+                const byteChars = atob(base64);
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+                return new Blob([new Uint8Array(byteNumbers)], {
+                    type: mime
+                });
+            }
+
+            function downloadMHTML(filename, mhtmlString) {
+                const blob = new Blob([mhtmlString], {
+                    type: 'application/msword'
+                });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            /* ======================== Download (user copy) ======================== */
+            const downloadBtn = document.getElementById('downloadBtn');
+            const loading = document.getElementById('loadingIndicator');
+
+            function showInlineLoader(on) {
+                if (loading) loading.style.display = on ? 'block' : 'none';
+            }
+
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', function() {
+                    showInlineLoader(true);
+                    try {
+                        const first = getVal('first-name'),
+                            last = getVal('last-name');
+                        if (!first || !last) {
+                            showToast('First and last name are required.');
+                            return;
+                        }
+                        calculateTotals();
+
+                        const hasSig = hasSignature();
+                        const TARGET_W = 160,
+                            TARGET_H = 70;
+                        const sigObj = hasSig ? getSignatureDataURLScaled(TARGET_W, TARGET_H) : null;
+
+                        const html = buildTreeCutDocHTML('signature.png', !!sigObj, sigObj ? sigObj.w : TARGET_W, sigObj ? sigObj.h : TARGET_H);
+                        const parts = sigObj ? [{
+                            location: 'signature.png',
+                            contentType: 'image/png',
+                            base64: (sigObj.dataURL.split(',')[1] || '')
+                        }] : [];
+                        const mhtml = makeMHTML(html, parts);
+                        downloadMHTML('Tree_Cutting_Permit_Application.doc', mhtml);
+                    } finally {
+                        setTimeout(() => showInlineLoader(false), 400);
+                    }
+                });
+            }
+
+            /* ======================== Submit flow ======================== */
             const confirmModal = document.getElementById('confirmModal');
             const closeConfirmModal = document.getElementById('closeConfirmModal');
             const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
             const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
-
             const submitApplicationBtn = document.getElementById('submitApplication');
+
+            const resultModal = document.getElementById('resultModal');
+            const closeResultModal = document.getElementById('closeResultModal');
+            const resultOkBtn = document.getElementById('resultOkBtn');
+            const resultIcon = document.getElementById('resultIcon');
+            const resultTitle = document.getElementById('resultTitle');
+            const resultMessage = document.getElementById('resultMessage');
+            const resultDetails = document.getElementById('resultDetails');
+
             if (submitApplicationBtn) {
                 submitApplicationBtn.addEventListener('click', function(e) {
                     e.preventDefault();
-                    // Validate fields
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+                    const firstName = getVal('first-name'),
+                        lastName = getVal('last-name');
                     if (!firstName || !lastName) {
-                        alert('First name and last name are required.');
+                        showToast('First name and last name are required.');
                         return;
                     }
-                    if (!selectedFiles["file-1"]) {
-                        alert('Please upload your Certificate of Verification.');
+                    if (!selectedFiles['file-1']) {
+                        showToast('Please upload your Certificate of Verification.');
                         return;
                     }
-                    if (confirmModal) confirmModal.style.display = 'block';
+                    openModal(confirmModal);
                 });
             }
+            if (closeConfirmModal) closeConfirmModal.addEventListener('click', () => closeModal(confirmModal));
+            if (cancelSubmitBtn) cancelSubmitBtn.addEventListener('click', () => closeModal(confirmModal));
 
-            if (closeConfirmModal) {
-                closeConfirmModal.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                });
-            }
-            if (cancelSubmitBtn) {
-                cancelSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                });
+            function ownershipPicked() {
+                const radios = document.getElementsByName('ownership');
+                for (const r of radios)
+                    if (r.checked) return r.value;
+                return '';
             }
 
-            if (confirmSubmitBtn) {
-                confirmSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                    // Prepare form data
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
+            async function handleSubmit() {
+                closeModal(confirmModal);
+                showGlobalLoader('Submitting your request…', 'Preparing documents and uploading to server.');
 
+                try {
+                    /* Build FormData with fields */
                     const formData = new FormData();
-                    formData.append('first_name', firstName);
-                    formData.append('middle_name', middleName);
-                    formData.append('last_name', lastName);
+                    // Required identity
+                    formData.append('first_name', getVal('first-name'));
+                    formData.append('middle_name', getVal('middle-name'));
+                    formData.append('last_name', getVal('last-name'));
 
-                    // Append all files
-                    for (let i = 1; i <= 10; i++) {
-                        if (i === 7) {
-                            if (selectedFiles[`file-${i}a`]) formData.append(`file_${i}a`, selectedFiles[`file-${i}a`]);
-                            if (selectedFiles[`file-${i}b`]) formData.append(`file_${i}b`, selectedFiles[`file-${i}b`]);
-                        } else if (i === 10) {
-                            if (selectedFiles[`file-${i}a`]) formData.append(`file_${i}a`, selectedFiles[`file-${i}a`]);
-                            if (selectedFiles[`file-${i}b`]) formData.append(`file_${i}b`, selectedFiles[`file-${i}b`]);
-                        } else {
-                            if (selectedFiles[`file-${i}`]) formData.append(`file_${i}`, selectedFiles[`file-${i}`]);
-                        }
+                    // Contact & location
+                    formData.append('street', getVal('street'));
+                    formData.append('barangay', getVal('barangay'));
+                    formData.append('municipality', getVal('municipality'));
+                    formData.append('province', getVal('province'));
+                    formData.append('contact_number', getVal('contact-number'));
+                    formData.append('email', getVal('email'));
+                    formData.append('registration_number', getVal('registration-number'));
+
+                    // Tree cutting
+                    formData.append('location', getVal('location'));
+                    formData.append('ownership', ownershipPicked());
+                    formData.append('other_ownership', getVal('other-ownership'));
+                    formData.append('purpose', getVal('purpose'));
+
+                    // Species rows JSON
+                    formData.append('species_rows_json', JSON.stringify(readSpeciesRows()));
+
+                    // Always none for treecut (no renewal)
+                    formData.append('permit_type', 'none');
+
+                    /* Generate signature (optional) */
+                    if (hasSignature()) {
+                        const sigObj = getSignatureDataURLScaled(240, 80);
+                        const sigBlob = dataURLtoBlob(sigObj.dataURL, 'image/png');
+                        formData.append('signature_file', sigBlob, 'signature.png');
                     }
 
-                    fetch('../backend/users/addtreecut.php', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.success) {
-                                // Clear all inputs
-                                document.querySelector('.name-fields input[placeholder="First Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Middle Name"]').value = '';
-                                document.querySelector('.name-fields input[placeholder="Last Name"]').value = '';
-                                fileInputs.forEach(input => {
-                                    const fileInput = document.getElementById(input.id);
-                                    const uploadedFilesContainer = document.getElementById(input.uploaded);
-                                    if (fileInput) {
-                                        fileInput.value = '';
-                                        fileInput.parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                                    }
-                                    if (uploadedFilesContainer) uploadedFilesContainer.innerHTML = '';
-                                });
-                                selectedFiles = {};
-                                // Show notification
-                                showProfileNotification('Tree cutting permit application submitted successfully!');
-                            } else {
-                                alert(data.errors ? data.errors.join('\n') : 'Failed to submit request.');
-                            }
-                        })
-                        .catch(() => {
-                            alert('Network error.');
-                        });
-                });
+                    /* Generate Application .doc (MHTML) and attach */
+                    const TARGET_W = 160,
+                        TARGET_H = 70;
+                    const sigObj2 = hasSignature() ? getSignatureDataURLScaled(TARGET_W, TARGET_H) : null;
+                    const html = buildTreeCutDocHTML('signature.png', !!sigObj2, sigObj2 ? sigObj2.w : TARGET_W, sigObj2 ? sigObj2.h : TARGET_H);
+                    const parts = sigObj2 ? [{
+                        location: 'signature.png',
+                        contentType: 'image/png',
+                        base64: (sigObj2.dataURL.split(',')[1] || '')
+                    }] : [];
+                    const mhtml = makeMHTML(html, parts);
+                    const appBlob = new Blob([mhtml], {
+                        type: 'application/msword'
+                    });
+                    formData.append('application_doc', appBlob, 'Tree_Cutting_Permit_Application.doc');
+
+                    /* Attach selected requirement files */
+                    ['file-1', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7a', 'file-7b', 'file-8', 'file-10a', 'file-10b']
+                    .forEach(id => {
+                        if (selectedFiles[id]) formData.append(id.replace('-', '_'), selectedFiles[id]);
+                    });
+
+                    /* Submit */
+                    const endpoint = '../backend/users/treecut/addtreecut.php';
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (!res.ok || !data || data.success !== true) {
+                        const errMsg = (data && data.errors && data.errors.join('\n')) || 'Failed to submit request.';
+                        throw new Error(errMsg);
+                    }
+
+                    /* Success UI (NO SUCCESS MODAL) */
+                    // Clear inputs
+                    ['first-name', 'middle-name', 'last-name', 'street', 'barangay', 'municipality', 'province', 'contact-number', 'email', 'registration-number', 'location', 'other-ownership', 'purpose']
+                    .forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.value = '';
+                    });
+
+                    // Reset species rows to 3 blank
+                    while (speciesTbody && speciesTbody.rows.length > 0) speciesTbody.deleteRow(0);
+                    addSpeciesRow('', '', '');
+                    addSpeciesRow('', '', '');
+                    addSpeciesRow('', '', '');
+                    calculateTotals();
+
+                    // Reset files
+                    fileInputs.forEach(cfg => {
+                        const fileInput = document.getElementById(cfg.id);
+                        const uploadedFilesContainer = document.getElementById(cfg.uploaded);
+                        if (fileInput) {
+                            fileInput.value = '';
+                            const nameEl = fileInput.parentElement.querySelector('.file-name');
+                            if (nameEl) nameEl.textContent = 'No file chosen';
+                        }
+                        if (uploadedFilesContainer) uploadedFilesContainer.innerHTML = '';
+                    });
+                    selectedFiles = {};
+
+                    // Clear signature
+                    strokes = [];
+                    repaintSignature(true);
+                    const sigPreviewImg = document.getElementById('signature-image');
+                    if (sigPreviewImg) {
+                        sigPreviewImg.src = '';
+                        sigPreviewImg.style.display = 'none';
+                    }
+
+                    // Only a short toast
+                    showToast('Application submitted!', 2000);
+
+                } catch (err) {
+                    // Error path: show modal
+                    if (resultIcon) resultIcon.innerHTML = '<i class="fas fa-times-circle" style="color:#dc2626;"></i>';
+                    if (resultTitle) resultTitle.textContent = 'Submission failed';
+                    if (resultMessage) resultMessage.textContent = (err && err.message) ? err.message : 'Unexpected error occurred.';
+                    if (resultDetails) resultDetails.innerHTML = '';
+                    openModal(resultModal);
+                } finally {
+                    hideGlobalLoader();
+                }
             }
 
-            function showProfileNotification(message) {
-                const notif = document.getElementById('profile-notification');
-                if (!notif) return;
-                notif.textContent = message;
-                notif.style.display = 'block';
-                notif.style.opacity = '1';
-                setTimeout(() => {
-                    notif.style.opacity = '0';
-                    setTimeout(() => {
-                        notif.style.display = 'none';
-                        notif.style.opacity = '1';
-                    }, 400);
-                }, 2200);
-            }
-
-            // Add files button (demo functionality)
-            const addFilesBtn = document.getElementById('addFilesBtn');
-            if (addFilesBtn) {
-                addFilesBtn.addEventListener('click', function() {
-                    alert('In a real application, this would open a dialog to add multiple files at once.');
-                });
-            }
+            if (confirmSubmitBtn) confirmSubmitBtn.addEventListener('click', handleSubmit);
+            if (closeResultModal) closeResultModal.addEventListener('click', () => closeModal(resultModal));
+            if (resultOkBtn) resultOkBtn.addEventListener('click', () => closeModal(resultModal));
         });
     </script>
 </body>
+
+
+
+
 
 </html>

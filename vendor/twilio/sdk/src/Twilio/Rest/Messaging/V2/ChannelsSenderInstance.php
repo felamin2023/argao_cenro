@@ -32,6 +32,7 @@ use Twilio\Version;
  * @property string|null $profile
  * @property string|null $properties
  * @property string[]|null $offlineReasons
+ * @property string|null $compliance
  * @property string|null $url
  */
 class ChannelsSenderInstance extends InstanceResource
@@ -41,7 +42,7 @@ class ChannelsSenderInstance extends InstanceResource
      *
      * @param Version $version Version that contains the resource
      * @param mixed[] $payload The response payload
-     * @param string $sid A 34 character string that uniquely identifies this Sender.
+     * @param string $sid The SID of the sender.
      */
     public function __construct(Version $version, array $payload, ?string $sid = null)
     {
@@ -57,6 +58,7 @@ class ChannelsSenderInstance extends InstanceResource
             'profile' => Values::array_get($payload, 'profile'),
             'properties' => Values::array_get($payload, 'properties'),
             'offlineReasons' => Values::array_get($payload, 'offline_reasons'),
+            'compliance' => Values::array_get($payload, 'compliance'),
             'url' => Values::array_get($payload, 'url'),
         ];
 

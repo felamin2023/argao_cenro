@@ -1,5 +1,11 @@
 <?php
-// Handle logout if requested
+// incoming.php — Seedlings Received (autocomplete + confirm modal + toasts + loading overlay)
+// Inserts ONE ROW PER ITEM into seedling_intakes, filling seedlings_id when the name exists.
+// For brand-new names, seedlings_id stays NULL.
+
+// -------------------------
+// Logout
+// -------------------------
 if (isset($_GET['logout'])) {
     session_start();
     session_destroy();
@@ -7,24 +13,316 @@ if (isset($_GET['logout'])) {
     exit();
 }
 
-// Get the current page name
-$current_page = basename($_SERVER['PHP_SELF']);
+// -------------------------
+// DB
+// -------------------------
+$pdo = null;
+try {
+    require_once __DIR__ . '/../backend/connection.php'; // must define $pdo
+} catch (Throwable $e) {
+    // keep $pdo = null so page still renders
+}
 
-// Sample quantities (replace with your database values)
+// -------------------------
+// Detect tables + seedlings_id column type
+// -------------------------
+$hasIntakes = false;
+$intakesSeedlingsIdType = null;
+try {
+    if ($pdo) {
+        $hasIntakes = (bool)$pdo->query("SELECT to_regclass('public.seedling_intakes')")->fetchColumn();
+        if ($hasIntakes) {
+            $q = $pdo->prepare("
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='seedling_intakes' AND column_name='seedlings_id'
+                LIMIT 1
+            ");
+            $q->execute();
+            $intakesSeedlingsIdType = $q->fetchColumn() ?: null; // should be 'text' after migration
+        }
+    }
+} catch (Throwable $e) {
+    // ignore
+}
+
+// -------------------------
+// AJAX: mark all notifications as read (Seedling + Tree Cutting incidents)
+// -------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'notifications_mark_all_seedling_read') {
+    header('Content-Type: application/json');
+    if (!$pdo) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'DB connection not available']);
+        exit;
+    }
+    try {
+        $pdo->beginTransaction();
+
+        // Mark all notifications addressed to Seedling as read
+        $st1 = $pdo->prepare('UPDATE public.notifications SET is_read = TRUE WHERE lower("to") = :to AND is_read = FALSE');
+        $st1->execute([':to' => 'seedling']);
+
+        // Mark all incident reports with category Tree Cutting as read
+        $st2 = $pdo->prepare('UPDATE public.incident_report SET is_read = TRUE WHERE lower(category) = :cat AND is_read = FALSE');
+        $st2->execute([':cat' => 'tree cutting']);
+
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Could not update notifications']);
+    }
+    exit;
+}
+
+// -------------------------
+// AJAX: save seedling intakes
+// -------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'seedlings_intake_create') {
+    header('Content-Type: application/json');
+    if (!$pdo) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'DB connection not available']);
+        exit;
+    }
+
+    try {
+        if (!$hasIntakes) throw new Exception('Table public.seedling_intakes not found.');
+
+        $agency_name   = trim((string)($_POST['agency_name'] ?? ''));
+        $received_by   = trim((string)($_POST['received_by'] ?? ''));
+        $date_received = trim((string)($_POST['date_received'] ?? ''));
+        $species       = $_POST['species'] ?? [];
+        $qtys          = $_POST['seedlings_delivered'] ?? [];
+
+        if ($agency_name === '' || $received_by === '' || $date_received === '') {
+            throw new Exception('Agency, Receiver, and Date Received are required.');
+        }
+        if (!is_array($species) || !is_array($qtys) || count($species) !== count($qtys)) {
+            throw new Exception('Invalid items payload.');
+        }
+
+        // Clean list
+        $items = [];
+        for ($i = 0; $i < count($species); $i++) {
+            $n = trim((string)$species[$i]);
+            $q = (int)$qtys[$i];
+            if ($n !== '' && $q > 0) $items[] = [$n, $q];
+        }
+        if (!$items) throw new Exception('No valid seedlings to add.');
+
+        // Lookup prepared
+        $selSeedId = $pdo->prepare("SELECT seedlings_id FROM public.seedlings WHERE lower(seedling_name)=lower(:name) LIMIT 1");
+
+        // Insert
+        $stmt = $pdo->prepare("
+            INSERT INTO public.seedling_intakes
+                (agency_name, seedlings_name, seedlings_id, quantity, date_received, received_by)
+            VALUES (:agency_name, :seedlings_name, :seedlings_id, :quantity, :date_received, :received_by)
+        ");
+
+        // If column is still UUID (old), warn early (we’ll still try best-effort)
+        $isUuidCol = (strtolower((string)$intakesSeedlingsIdType) === 'uuid');
+        $isUuid = function ($v) {
+            return is_string($v) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $v);
+        };
+
+        $pdo->beginTransaction();
+        foreach ($items as [$n, $q]) {
+            // default NULL for brand-new names
+            $sid = null;
+
+            // find matching seedlings_id (text like "seed_001")
+            $selSeedId->execute([':name' => $n]);
+            $found = $selSeedId->fetchColumn();
+
+            if ($found !== false && $found !== null && $found !== '') {
+                if ($isUuidCol) {
+                    if ($isUuid($found)) $sid = $found;  // else stays NULL due to type mismatch
+                } else {
+                    $sid = $found;
+                }
+            }
+
+            $stmt->execute([
+                ':agency_name'    => $agency_name,
+                ':seedlings_name' => $n,
+                ':seedlings_id'   => $sid,
+                ':quantity'       => $q,
+                ':date_received'  => $date_received,
+                ':received_by'    => $received_by
+            ]);
+        }
+        $pdo->commit();
+
+        if ($isUuidCol) {
+            echo json_encode([
+                'success' => true,
+                'inserted' => count($items),
+                'message' => 'Saved, but seedlings_id column is UUID. Convert it to TEXT to store IDs like "seed_001".'
+            ]);
+        } else {
+            echo json_encode(['success' => true, 'inserted' => count($items)]);
+        }
+    } catch (Throwable $e) {
+        if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// -------------------------
+// Real counters for nav badges
+// -------------------------
+$current_page = basename($_SERVER['PHP_SELF']);
 $quantities = [
-    'total_received' => 1250,
-    'plantable_seedlings' => 980,
-    'total_released' => 720,
-    'total_discarded' => 150,
-    'total_balance' => 380,
-    'all_records' => 2150
+    'total_received'   => 0,
+    'total_released'   => 0,
+    'total_discarded'  => 0,
+    'total_balance'    => 0,
+    'plantable_seedlings' => 0,
+    'all_records' => 0
 ];
+
+if ($pdo) {
+    try {
+        $quantities['total_received']  = (int)($pdo->query("SELECT COALESCE(SUM(quantity),0) FROM public.seedling_intakes")->fetchColumn());
+        $quantities['total_released']  = (int)($pdo->query("SELECT COALESCE(SUM(released_qty),0) FROM public.seedling_releases")->fetchColumn());
+        $quantities['total_discarded'] = (int)($pdo->query("SELECT COALESCE(SUM(discard_qty),0) FROM public.seedling_discards")->fetchColumn());
+        $quantities['total_balance']   = (int)($pdo->query("SELECT COALESCE(SUM(stock),0) FROM public.seedlings")->fetchColumn());
+    } catch (Throwable $e) {
+        // leave defaults if a table is missing
+    }
+}
+
+// -------------------------
+// Seedling options
+// -------------------------
+$seedlingOptions = [];
+if ($pdo) {
+    try {
+        $q = $pdo->query("SELECT seedling_name FROM public.seedlings ORDER BY seedling_name ASC");
+        $seedlingOptions = array_values(array_filter($q->fetchAll(PDO::FETCH_COLUMN) ?: [], fn($s) => $s !== ''));
+    } catch (Throwable $e) {
+        $seedlingOptions = [];
+    }
+}
+
+// -------------------------
+// Header notifications (merge: Seedling + Tree Cutting incidents)
+// -------------------------
+$seedlingNotifs = [];
+$unreadSeedlingCount = 0;
+
+$treeIncidents = [];
+$unreadIncidentsCount = 0;
+
+if ($pdo) {
+    // Seedling notifications (public.notifications WHERE to='Seedling')
+    try {
+        $st = $pdo->prepare('
+            SELECT notif_id, message, is_read, created_at
+            FROM public.notifications
+            WHERE lower("to") = :to
+            ORDER BY created_at DESC
+            LIMIT 20
+        ');
+        $st->execute([':to' => 'seedling']);
+        $seedlingNotifs = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM public.notifications WHERE lower("to") = :to AND is_read = FALSE');
+        $cntStmt->execute([':to' => 'seedling']);
+        $unreadSeedlingCount = (int)$cntStmt->fetchColumn();
+    } catch (Throwable $e) {
+        $seedlingNotifs = [];
+        $unreadSeedlingCount = 0;
+    }
+
+    // Incident reports (public.incident_report WHERE category='Tree Cutting')
+    try {
+        $st2 = $pdo->prepare('
+            SELECT incident_id, what, more_description, is_read, created_at, status
+            FROM public.incident_report
+            WHERE lower(category) = :cat
+            ORDER BY created_at DESC
+            LIMIT 20
+        ');
+        $st2->execute([':cat' => 'tree cutting']);
+        $treeIncidents = $st2->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $cnt2 = $pdo->prepare('SELECT COUNT(*) FROM public.incident_report WHERE lower(category) = :cat AND is_read = FALSE');
+        $cnt2->execute([':cat' => 'tree cutting']);
+        $unreadIncidentsCount = (int)$cnt2->fetchColumn();
+    } catch (Throwable $e) {
+        $treeIncidents = [];
+        $unreadIncidentsCount = 0;
+    }
+}
+
+// Merge & sort (newest first)
+$allNotifs = [];
+
+// map seedling notifications
+foreach ($seedlingNotifs as $n) {
+    $allNotifs[] = [
+        'source'     => 'seedling',
+        'id'         => $n['notif_id'],
+        'title'      => 'Notification',
+        'message'    => (string)$n['message'],
+        'is_read'    => (bool)$n['is_read'],
+        'created_at' => (string)$n['created_at'],
+    ];
+}
+
+// map incident reports
+foreach ($treeIncidents as $r) {
+    $msg = $r['what'] ?: $r['more_description'] ?: 'New Tree Cutting incident.';
+    $status = $r['status'] ? (' [' . strtoupper((string)$r['status']) . ']') : '';
+    $allNotifs[] = [
+        'source'     => 'incident',
+        'id'         => $r['incident_id'],
+        'title'      => 'Incident Report',
+        'message'    => (string)$msg . $status,
+        'is_read'    => (bool)$r['is_read'],
+        'created_at' => (string)$r['created_at'],
+    ];
+}
+
+// sort by created_at desc
+usort($allNotifs, function ($a, $b) {
+    return strtotime($b['created_at'] ?? '') <=> strtotime($a['created_at'] ?? '');
+});
+
+$unreadTotal = $unreadSeedlingCount + $unreadIncidentsCount;
+
+// -------------------------
+// helpers
+// -------------------------
+function e($s)
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function fmt_dt($ts)
+{
+    if (!$ts) return '';
+    try {
+        $d = new DateTime($ts);
+        return $d->format('M d, Y g:i A');
+    } catch (Throwable $e) {
+        return (string)$ts;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SEEDLINGS RECEIVED</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="/denr/superadmin/css/incoming.css">
@@ -32,78 +330,54 @@ $quantities = [
         :root {
             --primary-color: #2b6625;
             --primary-dark: #1e4a1a;
-            --white: #ffffff;
+            --white: #fff;
             --light-gray: #f5f5f5;
             --border-radius: 8px;
-            --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            --transition: all 0.2s ease;
+            --box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --transition: .2s ease
         }
 
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            color: #000; /* Added to make all text black by default */
+            color: #000
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f9f9f9;
-            padding-top: 100px;
+            background: #f9f9f9;
+            padding-top: 100px
         }
 
-        /* Header Styles */
+        /* Header (kept local; do NOT import seedlingshome.css here) */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background-color: var(--primary-color);
-            color: var(--white);
+            background: var(--primary-color);
+            color: #fff;
             padding: 0 30px;
             height: 58px;
             position: fixed;
-            top: 0;
             left: 0;
             right: 0;
-            z-index: 1000;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Logo */
-        .logo {
-            height: 45px;
-            display: flex;
-            margin-top: -1px;
-            align-items: center;
-            position: relative;
-        }
-
-        .logo a {
-            display: flex;
-            align-items: center;
-            height: 90%;
+            top: 0;
+            z-index: 1000
         }
 
         .logo img {
-            height: 98%;
-            width: auto;
-            transition: var(--transition);
+            height: 45px
         }
 
-        .logo:hover img {
-            transform: scale(1.05);
-        }
-
-        /* Navigation Container */
         .nav-container {
             display: flex;
-            align-items: center;
             gap: 20px;
+            align-items: center
         }
 
-        /* Navigation Items - Larger Icons */
         .nav-item {
-            position: relative;
+            position: relative
         }
 
         .nav-icon {
@@ -114,202 +388,68 @@ $quantities = [
             height: 40px;
             background: rgb(233, 255, 242);
             border-radius: 12px;
-            cursor: pointer;
-            transition: var(--transition);
-            color: black;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            cursor: pointer
         }
 
-        .nav-icon:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: scale(1.15);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-        }
-
-        .nav-icon i {
-            font-size: 1.3rem;
-            color: inherit;
-            transition: color 0.3s ease;
-        }
-
-        /* Updated active styles for nav-icon */
-        .nav-icon.active {
-            position: relative;
-        }
-
-        .nav-icon.active::after {
-            content: '';
-            position: absolute;
-            bottom: -6px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 40px;
-            height: 2px;
-            background-color: var(--white);
-            border-radius: 2px;
-        }
-
-        /* Dropdown Menu */
         .dropdown-menu {
             position: absolute;
             top: calc(100% + 10px);
             right: 0;
-            background: var(--white);
+            background: #fff;
             min-width: 300px;
-            border-radius: var(--border-radius);
+            border-radius: 8px;
             box-shadow: var(--box-shadow);
-            z-index: 1000;
             opacity: 0;
             visibility: hidden;
             transform: translateY(10px);
-            transition: var(--transition);
-            padding: 0;
-        }
-
-        .dropdown-item.active-page {
-            background-color: rgb(225, 255, 220);
-            color: var(--primary-dark);
-            font-weight: bold;
-            border-left: 4px solid var(--primary-color);
-        }
-
-        .dropdown-item:hover {
-            background: var(--light-gray);
-            padding-left: 30px;
-        }
-
-        /* Notification-specific dropdown styles */
-        .notifications-dropdown {
-            min-width: 350px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        .notification-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .notification-header h3 {
-            margin: 0;
-            color: var(--primary-color);
-            font-size: 1.2rem;
-        }
-
-        .mark-all-read {
-            color: var(--primary-color);
-            cursor: pointer;
-            font-size: 0.9rem;
-            text-decoration: none;
-            transition: var(--transition), transform 0.2s ease;
-        }
-
-        .mark-all-read:hover {
-            color: var(--primary-dark);
-            transform: scale(1.1);
-        }
-
-        .notification-item {
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            transition: var(--transition);
-            display: flex;
-            align-items: flex-start;
-        }
-
-        .notification-item.unread {
-            background-color: rgba(43, 102, 37, 0.05);
-        }
-
-        .notification-item:hover {
-            background-color: #f9f9f9;
-        }
-
-        .notification-icon {
-            margin-right: 15px;
-            color: var(--primary-color);
-            font-size: 1.2rem;
-        }
-
-        .notification-content {
-            flex: 1;
-        }
-
-        .notification-title {
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: var(--primary-color);
-        }
-
-        .notification-message {
-            color: var(--primary-color);
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-
-        .notification-time {
-            color: #999;
-            font-size: 0.8rem;
-            margin-top: 5px;
-        }
-
-        .notification-footer {
-            padding: 10px 20px;
-            text-align: center;
-            border-top: 1px solid #eee;
-        }
-
-        .view-all {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.9rem;
-            transition: var(--transition);
-            display: inline-block;
-            padding: 5px 0;
-        }
-
-        .view-all:hover {
-            text-decoration: underline;
-        }
-
-        .dropdown-menu.center {
-            left: 50%;
-            transform: translateX(-50%) translateY(10px);
+            transition: .2s
         }
 
         .dropdown:hover .dropdown-menu,
         .dropdown-menu:hover {
             opacity: 1;
             visibility: visible;
-            transform: translateY(0);
+            transform: translateY(0)
+        }
+
+        .dropdown-menu.center {
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%) translateY(10px)
         }
 
         .dropdown-menu.center:hover,
         .dropdown:hover .dropdown-menu.center {
-            transform: translateX(-50%) translateY(0);
+            transform: translateX(-50%) translateY(0)
         }
 
-        .dropdown-menu:before {
-            content: '';
-            position: absolute;
-            bottom: 100%;
-            right: 20px;
-            border-width: 10px;
-            border-style: solid;
-            border-color: transparent transparent var(--white) transparent;
+        .dropdown-item {
+            padding: 15px 25px;
+            display: flex;
+            gap: 10px;
+            text-decoration: none;
+            color: #333
         }
 
-        /* Notification Badge - Larger */
+        .dropdown-item.active-page {
+            background: rgb(225, 255, 220);
+            font-weight: 700;
+            border-left: 4px solid var(--primary-color)
+        }
+
+        .quantity-badge {
+            margin-left: auto;
+            font-weight: 700;
+            color: var(--primary-color)
+        }
+
         .badge {
             position: absolute;
             top: 2px;
             right: 8px;
             background: #ff4757;
-            color: white;
+            color: #fff;
             border-radius: 50%;
             width: 14px;
             height: 12px;
@@ -318,188 +458,68 @@ $quantities = [
             justify-content: center;
             font-size: 13px;
             font-weight: bold;
-            animation: pulse 2s infinite;
         }
 
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-
-        /* Mobile Menu Toggle - Larger */
-        .mobile-toggle {
-            display: none;
-            background: none;
-            border: none;
-            color: white;
-            font-size: 2rem;
-            cursor: pointer;
-            padding: 15px;
-        }
-
-        /* Updated Dropdown Items with Hover Effects */
-        .dropdown-item {
-            padding: 15px 25px;
-            display: flex;
-            align-items: center;
-            color: #333;
-            text-decoration: none;
-            transition: var(--transition);
-            font-size: 1rem;
-            gap: 10px;
-            position: relative;
-            line-height: 1.3;
-        }
-
-        /* Hover effect matching nav icons */
-        .dropdown-item:hover {
-            background: rgba(43, 102, 37, 0.1);
-            transform: scale(1.02);
-        }
-
-        .dropdown-item:hover i {
-            color: var(--primary-dark);
-        }
-
-        /* Align icon and text to left */
-        .dropdown-item i {
-            width: 20px;
-            text-align: left;
-            font-size: 1.2rem;
-            color: var(--primary-color);
-            transition: var(--transition);
-        }
-
-        .dropdown-item .item-text {
-            flex: 1;
-            text-align: left;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        /* Quantity Badge - aligned to the right */
-        .quantity-badge {
-            color: var(--primary-color);
-            font-size: 1rem;
-            font-weight: bold;
-            margin-left: auto;
-            padding-left: 10px
-        }
-
-        .dropdown-menu.center:before {
-            left: 50%;
-            right: auto;
-            transform: translateX(-50%);
-        }
-
-        /* Main Content Styles for the Form */
+        /* Page content styles (unchanged) */
         .main-content {
-            margin-top:-3%;
+            margin-top: -3%;
             padding: 20px;
             max-width: 1200px;
-            margin-left: auto;
-            margin-right: auto;
+            margin-inline: auto
         }
 
-        /* Form Styles */
         .data-entry-form {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 25px;
-            width: 100%;
-            margin: 0 auto;
             padding: 30px;
-            align-content: start;
+            background: #fff;
             border-radius: 10px;
-            background-color: #ffffff;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.78);
-            position: relative;
+            box-shadow: 0 0 10px rgba(0, 0, 0, .78)
         }
 
         .form-header {
-            grid-column: span 2;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
+            grid-column: span 2
         }
 
         .form-title {
-            font-size: 24px;
-            font-family: Tahoma, sans-serif;
-            color: #000; /* Changed to black */
-            text-align: center;
-            margin: 0 auto;
-            padding: 10px 0;
+            text-align: center
         }
 
-        /* Input, Select & Date Picker Styling */
         .form-group {
             display: flex;
             flex-direction: column;
             margin: auto 5px;
-            width: 100%;
+            width: 100%
         }
 
-        .form-group label {
-            font-weight: bold;
-            font-size: 16px;
-            margin-bottom: 8px;
-            font-family: Tahoma, sans-serif;
-            color: #000; /* Changed to black */
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
+        .form-group input {
             height: 45px;
-            border: 1px solid #000; /* Changed to black */
+            border: 1px solid #000;
             border-radius: 4px;
-            font-size: 16px;
             padding: 10px;
-            box-sizing: border-box;
-            transition: var(--transition);
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
+            background: #f9f9f9
         }
 
-        .form-group input:focus,
-        .form-group select:focus {
+        .form-group input:focus {
             border-color: var(--primary-color);
             outline: none;
-            box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
-            background-color: #fff;
+            box-shadow: 0 0 0 2px rgba(43, 102, 37, .2);
+            background: #fff
         }
 
-        /* Custom number input styling */
         .number-input-container {
-            position: relative;
-            width: 100%;
-        }
-        
-        .number-input {
-            width: 100%;
-            height: 45px;
-            border: 1px solid #000; /* Changed to black */
-            border-radius: 4px;
-            font-size: 16px;
-            padding: 10px;
-            box-sizing: border-box;
-            appearance: none;
-            -moz-appearance: textfield;
-            -webkit-appearance: none;
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
+            position: relative
         }
 
-        .number-input::-webkit-inner-spin-button,
-        .number-input::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
+        .number-input {
+            height: 45px;
+            border: 1px solid #000;
+            border-radius: 4px;
+            padding: 10px;
+            background: #f9f9f9
         }
-        
+
         .number-input-buttons {
             position: absolute;
             right: 1px;
@@ -508,158 +528,83 @@ $quantities = [
             width: 30px;
             display: flex;
             flex-direction: column;
-            border-left: 1px solid #000; /* Changed to black */
+            border-left: 1px solid #000;
             background: #f5f5f5;
-            border-radius: 0 4px 4px 0;
+            border-radius: 0 4px 4px 0
         }
-        
+
         .number-input-button {
             flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
             border: none;
-            padding: 0;
-            font-size: 12px;
-            color: #000; /* Changed to black */
-            transition: var(--transition);
-        }
-        
-        .number-input-button:hover {
-            background: #e0e0e0;
-            color: #000;
-        }
-        
-        .number-input-button:first-child {
-            border-bottom: 1px solid #000; /* Changed to black */
+            background: transparent;
+            cursor: pointer
         }
 
-        input[type="file"] {
-            border: 1px solid #000; /* Changed to black */
-            border-radius: 4px;
-            font-size: 16px;
-            padding: 10px;
-            box-sizing: border-box;
-            cursor: pointer;
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
-        }
-
-        /* Date Input Styling */
-        input[type="date"] {
-            width: 100%;
-            height: 45px;
-            border: 1px solid #000; /* Changed to black */
-            border-radius: 4px;
-            font-size: 16px;
-            padding: 10px;
-            padding-right: 35px;
-            box-sizing: border-box;
-            cursor: pointer;
-            position: relative;
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
-        }
-
-        input[type="date"]::-webkit-calendar-picker-indicator {
-            width: 25px;
-            height: 30px;
-            cursor: pointer;
-            padding: 5px;
-            position: absolute;
-            right: 0;
-            margin-right: 5px;
-            background-position: right center;
-            opacity: 0.7;
-            transition: var(--transition);
-            filter: invert(0); /* Make the icon black */
-        }
-
-        input[type="date"]::-webkit-calendar-picker-indicator:hover {
-            opacity: 1;
-        }
-
-        /* Button Styles */
         .button-container {
             grid-column: span 2;
             display: flex;
             justify-content: center;
-            gap: 20px;
-            margin-top: 20px;
-            padding-top: 0; /* Removed padding-top to eliminate space */
-            border-top: none; /* Removed border-top */
+            gap: 20px
         }
 
         .submit-button,
         .view-records-button {
-            background-color: var(--primary-color);
-            color: white;
-            padding: 12px 25px;
+            background: var(--primary-color);
+            color: #fff;
             border: none;
             border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
+            padding: 12px 25px;
             min-width: 190px;
-            font-family: Tahoma, sans-serif;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-weight: 700;
+            cursor: pointer
         }
 
         .view-records-button {
-            background-color: #00796b;
+            background: #00796b
         }
 
-        .submit-button:hover,
-        .view-records-button:hover {
-            background-color: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        .species-list {
+            grid-column: span 2;
+            margin-top: 10px
         }
 
-        .submit-button:active,
-        .view-records-button:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 3px rgba(0,0,0,0.1);
+        .species-list-title {
+            font-weight: 700;
+            margin-bottom: 10px
         }
 
-        .view-records-top {
-            background-color: var(--primary-color);
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            font-family: Tahoma, sans-serif;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            width: auto;
-            float: none;
-            margin-bottom: 20px;
-        }
-
-        .view-records-container {
-            max-width: 1200px;
-            margin-left: auto;
-            margin-right: auto;
+        #species-list-items {
             display: flex;
-            justify-content: flex-end;
-            padding: 0 20px 10px 20px;
+            flex-direction: column;
+            gap: 12px
         }
 
-        .view-records-top:hover {
-            background-color: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            text-decoration: none;
+        .species-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px;
+            border: 1px solid #000;
+            border-radius: 6px;
+            background: #f9f9f9
         }
 
-        /* Modal styles */
+        .species-name {
+            font-weight: 700
+        }
+
+        .remove-species {
+            background: #f44336;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -668,333 +613,313 @@ $quantities = [
             top: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            backdrop-filter: blur(3px);
+            background: rgba(0, 0, 0, .5)
         }
-        
+
         .modal-content {
-            background-color: #fefefe;
-            margin: 10% auto;
-            padding: 30px;
-            border: none;
-            width: 60%;
-            max-width: 600px;
+            background: #fff;
+            margin: 8% auto;
+            padding: 28px;
             border-radius: 10px;
-            box-shadow: 0 5px 25px rgba(0,0,0,0.2);
-            animation: modalFadeIn 0.3s ease-out;
+            max-width: 640px;
+            position: relative
         }
-        
-        @keyframes modalFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
+
         .modal-title {
             text-align: center;
-            margin-bottom: 25px;
-            color: #000; /* Changed to black */
-            font-size: 24px;
-            font-family: Tahoma, sans-serif;
-            font-weight: bold;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #000; /* Changed to black */
+            margin-bottom: 15px;
+            font-weight: 700
         }
-        
-        .modal-form-row {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .modal-form-group {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .modal-form-group label {
-            font-weight: bold;
-            margin-bottom: 8px;
-            font-size: 16px;
-            font-family: Tahoma, sans-serif;
-            color: #000; /* Changed to black */
-        }
-        
-        .modal-form-group select {
-            width: 100%;
-            height: 45px;
-            border: 1px solid #000; /* Changed to black */
-            border-radius: 4px;
-            font-size: 16px;
-            padding: 10px;
-            box-sizing: border-box;
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
-        }
-        
-        .modal-number-input-container {
-            position: relative;
-            width: 100%;
-        }
-        
-        .modal-number-input {
-            width: 100%;
-            height: 45px;
-            border: 1px solid #000; /* Changed to black */
-            border-radius: 4px;
-            font-size: 16px;
-            padding: 10px;
-            box-sizing: border-box;
-            appearance: none;
-            -moz-appearance: textfield;
-            -webkit-appearance: none;
-            background-color: #f9f9f9;
-            color: #000; /* Changed to black */
-        }
-        
-        .modal-number-input::-webkit-outer-spin-button,
-        .modal-number-input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        
-        .modal-number-input-buttons {
-            position: absolute;
-            right: 1px;
-            top: 1px;
-            bottom: 1px;
-            width: 30px;
-            display: flex;
-            flex-direction: column;
-            border-left: 1px solid #000; /* Changed to black */
-            background: #f5f5f5;
-            border-radius: 0 4px 4px 0;
-        }
-        
-        .modal-number-input-button {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #f5f5f5;
-            cursor: pointer;
-            border: none;
-            padding: 0;
-            font-size: 12px;
-            color: #000; /* Changed to black */
-            transition: var(--transition);
-        }
-        
-        .modal-number-input-button:hover {
-            background: #e0e0e0;
-            color: #000;
-        }
-        
-        .modal-number-input-button:first-child {
-            border-bottom: 1px solid #000; /* Changed to black */
-        }
-        
+
         .modal-buttons {
             display: flex;
             justify-content: flex-end;
-            gap: 15px;
-            margin-top: 30px;
+            gap: 12px;
+            margin-top: 18px
         }
-        
+
         .modal-button {
             padding: 10px 20px;
             border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer
         }
-        
+
         .modal-save {
-            background-color: var(--primary-color);
-            color: white;
+            background: var(--primary-color);
+            color: #fff
         }
-        
-        .modal-save:hover {
-            background-color: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        
+
         .modal-cancel {
-            background-color: #f44336;
-            color: white;
+            background: #f44336;
+            color: #fff
         }
-        
-        .modal-cancel:hover {
-            background-color: #d32f2f;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        
-        /* Species list styles */
-        .species-list {
-            margin-top: 30px;
-            border-top: 2px solid #000; /* Changed to black */
-            padding-top: 15px;
-        }
-        
-        .species-list-title {
-            font-weight: bold;
-            margin-bottom: 15px;
-            color: #000; /* Changed to black */
-            font-size: 18px;
-            font-family: Tahoma, sans-serif;
-        }
-        
-        .species-item {
+
+        .modal-form-row {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px;
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            margin-bottom: 10px;
-            border: 1px solid #000; /* Changed to black */
-            transition: var(--transition);
+            gap: 20px
         }
-        
-        .species-item:hover {
-            background-color: #f0f0f0;
-        }
-        
-        .species-info {
+
+        .modal-form-group {
             flex: 1;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column
         }
-        
-        .species-name {
-            font-weight: bold;
-            color: #000; /* Changed to black */
-        }
-        
-        .species-quantity {
-            color: #000; /* Changed to black */
-            font-weight: bold;
-        }
-        
-        .remove-species {
-            background-color: #f44336;
-            color: white;
-            border: none;
+
+        .modal-number-input {
+            height: 45px;
+            border: 1px solid #000;
             border-radius: 4px;
-            padding: 6px 12px;
+            padding: 10px;
+            background: #f9f9f9
+        }
+
+        .modal-close {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            border: none;
+            background: transparent;
+            font-size: 22px;
+            line-height: 1;
             cursor: pointer;
-            margin-left: 15px;
-            transition: background-color 0.3s;
-            font-size: 14px;
-        }
-        
-        .remove-species:hover {
-            background-color: #d32f2f;
+            padding: 6px;
+            color: #333
         }
 
-        /* Responsive adjustments */
-        @media (max-width: 992px) {
-            .data-entry-form {
-                grid-template-columns: 1fr;
-                padding: 20px;
-            }
-            
-            .form-title,
-            .button-container {
-                grid-column: span 1;
-            }
-            
-            .modal-content {
-                width: 90%;
-                padding: 20px;
-            }
-            
-            .modal-form-row {
-                flex-direction: column;
-                gap: 15px;
+        .modal-close:hover {
+            color: #000
+        }
+
+        .combo {
+            position: relative
+        }
+
+        .combo-input {
+            height: 45px;
+            border: 1px solid #000;
+            border-radius: 4px;
+            padding: 10px;
+            background: #f9f9f9
+        }
+
+        .combo-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-top: none;
+            max-height: 260px;
+            overflow: auto;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, .12);
+            z-index: 1100;
+            display: none
+        }
+
+        .combo-item {
+            padding: 10px 12px;
+            cursor: pointer
+        }
+
+        .combo-item:hover,
+        .combo-item.active {
+            background: #eef2f7
+        }
+
+        .combo-empty {
+            padding: 10px 12px;
+            color: #444;
+            font-style: italic
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 72px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px
+        }
+
+        .toast {
+            min-width: 260px;
+            max-width: 420px;
+            background: #fff;
+            border-left: 6px solid #2b6625;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .15);
+            padding: 12px 14px
+        }
+
+        .toast.success {
+            border-left-color: #16a34a
+        }
+
+        .toast.error {
+            border-left-color: #dc2626
+        }
+
+        .toast-title {
+            font-weight: 700;
+            margin-bottom: 4px
+        }
+
+        .toast-msg {
+            font-size: .95rem
+        }
+
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, .85);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column
+        }
+
+        .loading-spinner {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 6px solid #e5e7eb;
+            border-top-color: var(--primary-color);
+            animation: spin 1s linear infinite
+        }
+
+        .loading-text {
+            margin-top: 12px;
+            font-weight: 700;
+            color: #1f2937
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
             }
         }
 
-        @media (max-width: 768px) {
-            .button-container {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .submit-button,
-            .view-records-button {
-                width: 100%;
-            }
-            
-            .form-header {
-                flex-direction: column;
-                gap: 15px;
-                align-items: flex-start;
-            }
-            
-            .form-title {
-                text-align: left;
-                width: 100%;
-            }
+        /* Simple notification list layout inside dropdown */
+        .notifications-dropdown {
+            padding: 10px 0;
+        }
+
+        .notification-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .notification-item {
+            padding: 12px 16px;
+        }
+
+        .notification-item.unread {
+            background: #f6fff6;
+        }
+
+        .notification-link {
+            display: flex;
+            gap: 12px;
+            text-decoration: none;
+            color: #222;
+        }
+
+        .notification-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef7ee;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .notification-message {
+            font-size: .95rem;
+        }
+
+        .notification-time {
+            font-size: .85rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .notification-footer {
+            border-top: 1px solid #eee;
+            padding: 10px 16px;
+            text-align: center;
+        }
+
+        .notification-footer .view-all {
+            text-decoration: none;
+            color: #0b6;
+            font-weight: 600;
         }
     </style>
 </head>
+
 <body>
-    
-<header>
+    <!-- HEADER from seedlings home, with Seedlings Received active -->
+    <header>
         <div class="logo">
             <a href="seedlingshome.php">
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <div class="nav-container">
             <!-- Main Dropdown Menu -->
             <div class="nav-item dropdown">
-            <div class="nav-icon active">
+                <div class="nav-icon">
                     <i class="fas fa-bars"></i>
                 </div>
                 <div class="dropdown-menu center">
-                    <!-- New Add Seedlings option -->
-                  
-                      <a href="incoming.php" class="dropdown-item active-page">
+                    <a href="incoming.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span class="item-text">Seedlings Received</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_received']; ?></span>
+                        <span class="quantity-badge"><?= (int)$quantities['total_received']; ?></span>
                     </a>
-                    
+
                     <a href="releasedrecords.php" class="dropdown-item">
                         <i class="fas fa-truck"></i>
                         <span class="item-text">Seedlings Released</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_released']; ?></span>
+                        <span class="quantity-badge"><?= (int)$quantities['total_released']; ?></span>
                     </a>
+
                     <a href="discardedrecords.php" class="dropdown-item">
                         <i class="fas fa-trash-alt"></i>
                         <span class="item-text">Seedlings Discarded</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_discarded']; ?></span>
+                        <span class="quantity-badge"><?= (int)$quantities['total_discarded']; ?></span>
                     </a>
+
                     <a href="balancerecords.php" class="dropdown-item">
                         <i class="fas fa-calculator"></i>
                         <span class="item-text">Seedlings Left</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_balance']; ?></span>
+                        <span class="quantity-badge"><?= (int)$quantities['total_balance']; ?></span>
                     </a>
-                    
+
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
                         <span>Incident Reports</span>
@@ -1006,50 +931,58 @@ $quantities = [
                     </a>
                 </div>
             </div>
-            
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="seedlingsmessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
-            
-            <!-- Notifications -->
+
+            <!-- Notifications (Seedling + Tree Cutting) -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <span class="badge" style="<?= ($unreadTotal > 0) ? '' : 'display:none;' ?>"><?= (int)$unreadTotal ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
-                    <div class="notification-item unread">
-                        <a href="seedlingseach.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-triangle"></i>
+
+                    <?php if (count($allNotifs) === 0): ?>
+                        <div class="notification-item">
+                            <div class="notification-link" href="javascript:void(0)">
+                                <div class="notification-icon">
+                                    <i class="far fa-bell"></i>
+                                </div>
+                                <div class="notification-content">
+                                    <div class="notification-title">No notifications</div>
+                                    <div class="notification-message">You’re all caught up.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                            <div class="notification-title">Seedlings Disposal Alert</div>
-                            <div class="notification-message">Report of seedlings being improperly discarded in the protected area.</div>
-                            <div class="notification-time">15 minutes ago</div>
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($allNotifs as $it): ?>
+                            <?php $iconClass = $it['is_read'] ? 'far fa-bell' : 'fas fa-bell'; ?>
+                            <div class="notification-item <?= $it['is_read'] ? '' : 'unread' ?>" data-id="<?= e($it['id']) ?>" data-src="<?= e($it['source']) ?>">
+                                <a class="notification-link" href="javascript:void(0)">
+                                    <div class="notification-icon">
+                                        <i class="<?= $iconClass ?>"></i>
+                                    </div>
+                                    <div class="notification-content">
+                                        <div class="notification-title"><?= e($it['title']) ?></div>
+                                        <div class="notification-message"><?= e($it['message']) ?></div>
+                                        <div class="notification-time"><?= e(fmt_dt($it['created_at'])) ?></div>
+                                    </div>
+                                </a>
                             </div>
-                        </a>
-                    </div>
-                    
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
                     <div class="notification-footer">
                         <a href="seedlingsnotification.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon <?php echo $current_page === 'forestry-profile.php' ? 'active' : ''; ?>">
+                <div class="nav-icon <?= $current_page === 'forestry-profile.php' ? 'active' : ''; ?>">
                     <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
@@ -1066,31 +999,31 @@ $quantities = [
         </div>
     </header>
 
-    <!-- Main Content -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Saving…</div>
+    </div>
+
     <div class="main-content">
-        <div class="view-records-container">
-            <a href="receivedrecords.php" class="view-records-top">VIEW RECORDS</a>
+        <div style="max-width:1200px;margin:0 auto 10px auto;display:flex;justify-content:flex-end;padding:0 20px">
+            <a href="receivedrecords.php" class="view-records-button">VIEW RECORDS</a>
         </div>
+
         <form class="data-entry-form" id="seedlings-form">
             <div class="form-header">
                 <h1 class="form-title">SEEDLINGS RECEIVED FORM</h1>
             </div>
 
             <div class="form-group" style="grid-column: span 2;">
-                <label for="name">NAME OF AGENCY/COMPANY:</label>
-                <input type="text" id="name" name="name" placeholder="Enter agency/company name">
+                <label for="agency_name">NAME OF AGENCY/COMPANY:</label>
+                <input type="text" id="agency_name" name="agency_name" placeholder="Enter agency/company name" required>
             </div>
 
-            <!-- Original species fields -->
             <div class="form-group">
                 <label for="species">SEEDLING NAME:</label>
-                <select id="species" name="species[]" class="species-select">
-                    <option value="">Select Seedling</option>
-                    <option value="Mahogany">Mahogany</option>
-                    <option value="Molave">Molave</option>
-                    <option value="Narra">Narra</option>
-                    <option value="Others">Others</option>
-                </select>
+                <input type="text" id="species" name="species[]" class="combo-input" placeholder="Type or choose…" autocomplete="off">
             </div>
 
             <div class="form-group">
@@ -1104,326 +1037,457 @@ $quantities = [
                 </div>
             </div>
 
-            <!-- Hidden container to store additional species -->
-            <div id="species-data-container" style="display: none;"></div>
+            <div id="species-data-container" style="display:none;"></div>
 
             <div class="form-group">
-                <label for="expiry-date">DATE RECEIVED:</label>
-                <input type="date" id="expiry-date" name="expiry-date">
+                <label for="date_received">DATE RECEIVED:</label>
+                <input type="date" id="date_received" name="date_received" required>
             </div>
 
             <div class="form-group">
-                <label for="name">NAME OF RECEIVER:</label>
-                <input type="text" id="name" name="name" placeholder="Enter receiver's name">
+                <label for="received_by">NAME OF RECEIVER:</label>
+                <input type="text" id="received_by" name="received_by" placeholder="Enter receiver's name" required>
             </div>
 
             <div class="button-container">
                 <button type="button" class="view-records-button" id="add-species-btn">ADD SEEDLINGS</button>
                 <button type="submit" class="submit-button">SUBMIT</button>
             </div>
+
+            <div class="species-list">
+                <div class="species-list-title">Added Seedlings:</div>
+                <div id="species-list-items"></div>
+            </div>
         </form>
     </div>
-    
-    <!-- Modal for adding species -->
+
+    <!-- Add Additional Seedlings modal -->
     <div id="species-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" id="species-modal-content">
+            <button type="button" class="modal-close" id="close-species-modal" aria-label="Close">&times;</button>
             <h2 class="modal-title">Add Additional Seedlings</h2>
             <div class="modal-form-row">
                 <div class="modal-form-group">
                     <label for="modal-species">SEEDLINGS NAME:</label>
-                    <select id="modal-species" name="modal-species" class="species-select">
-                        <option value="">Select Seedling</option>
-                        <option value="Mahogany">Mahogany</option>
-                        <option value="Molave">Molave</option>
-                        <option value="Narra">Narra</option>
-                        <option value="Others">Others</option>
-                    </select>
+                    <input type="text" id="modal-species" class="combo-input" placeholder="Type or choose…" autocomplete="off">
                 </div>
                 <div class="modal-form-group">
                     <label for="modal-seedlings">QUANTITY:</label>
-                    <div class="modal-number-input-container">
-                        <input type="number" id="modal-seedlings" name="modal-seedlings" min="0" value="0" class="modal-number-input">
-                        <div class="modal-number-input-buttons">
-                            <button type="button" class="modal-number-input-button" onclick="modalIncrementValue()">▲</button>
-                            <button type="button" class="modal-number-input-button" onclick="modalDecrementValue()">▼</button>
-                        </div>
-                    </div>
+                    <input type="number" id="modal-seedlings" min="0" value="0" class="modal-number-input">
                 </div>
             </div>
-            
             <div class="modal-buttons">
                 <button type="button" class="modal-button modal-cancel" id="cancel-species">Cancel</button>
-                <button type="button" class="modal-button modal-save" id="save-species">Save Seedlings</button>
-            </div>
-            
-            <div class="species-list">
-                <div class="species-list-title">Added Seedlings:</div>
-                <div id="species-list-items">
-                    <!-- Added species will appear here -->
-                </div>
+                <button type="button" class="modal-button modal-save" id="save-species">Add Seedlings</button>
             </div>
         </div>
     </div>
-    
+
+    <!-- Confirm modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <h2 class="modal-title">Submit this form?</h2>
+            <p id="confirm-msg" style="margin-top:8px">Are you sure you want to submit?</p>
+            <div class="modal-buttons">
+                <button type="button" class="modal-button modal-cancel" id="confirm-cancel">Cancel</button>
+                <button type="button" class="modal-button modal-save" id="confirm-save">Yes, Submit</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Function to handle number input increment/decrement
+        // options
+        window.SEEDLING_OPTIONS = <?= json_encode($seedlingOptions, JSON_UNESCAPED_UNICODE); ?>;
+
+        // toasts
+        function showToast(type, msg) {
+            const wrap = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = 'toast ' + (type === 'success' ? 'success' : 'error');
+            el.innerHTML = `<div class="toast-title">${type==='success'?'Success':'Error'}</div><div class="toast-msg">${msg}</div>`;
+            wrap.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transition = 'opacity .4s';
+                setTimeout(() => wrap.removeChild(el), 400)
+            }, 3500);
+        }
+
+        // loading overlay
+        const loadingEl = () => document.getElementById('loading-overlay');
+
+        function showLoading(text = 'Saving…') {
+            const el = loadingEl();
+            if (!el) return;
+            el.querySelector('.loading-text').textContent = text;
+            el.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            const el = loadingEl();
+            if (!el) return;
+            el.style.display = 'none';
+        }
+
+        // number helpers
         function seedlingsIncrementValue() {
-            const input = document.getElementById('seedlings-delivered');
-            if (input) {
-                let value = parseInt(input.value) || 0;
-                input.value = value + 1;
-            }
+            const i = document.getElementById('seedlings-delivered');
+            if (i) i.value = (parseInt(i.value) || 0) + 1;
         }
-        
+
         function seedlingsDecrementValue() {
-            const input = document.getElementById('seedlings-delivered');
-            if (input) {
-                let value = parseInt(input.value) || 0;
-                if (value > 0) {
-                    input.value = value - 1;
-                }
-            }
-        }
-        
-        // Modal number input functions
-        function modalIncrementValue() {
-            const input = document.getElementById('modal-seedlings');
-            if (input) {
-                let value = parseInt(input.value) || 0;
-                input.value = value + 1;
-            }
-        }
-        
-        function modalDecrementValue() {
-            const input = document.getElementById('modal-seedlings');
-            if (input) {
-                let value = parseInt(input.value) || 0;
-                if (value > 0) {
-                    input.value = value - 1;
-                }
-            }
-        }
-        
-        // Function to remove species
-        function removeSpecies(button) {
-            const item = button.parentElement;
-            const speciesList = document.getElementById('species-list-items');
-            const speciesDataContainer = document.getElementById('species-data-container');
-            
-            if (speciesList && speciesDataContainer) {
-                speciesList.removeChild(item);
-                
-                // Remove from hidden container
-                const species = item.querySelector('input[name="species[]"]')?.value;
-                const seedlings = item.querySelector('input[name="seedlings_delivered[]"]')?.value;
-                
-                if (species && seedlings) {
-                    const hiddenInputs = speciesDataContainer.querySelectorAll('input');
-                    hiddenInputs.forEach(input => {
-                        if ((input.name === "species[]" && input.value === species) || 
-                            (input.name === "seedlings_delivered[]" && input.value === seedlings)) {
-                            speciesDataContainer.removeChild(input);
-                        }
-                    });
-                }
-            }
+            const i = document.getElementById('seedlings-delivered');
+            if (i) i.value = Math.max(0, (parseInt(i.value) || 0) - 1);
         }
 
-        // Initialize when document is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            // Modal elements
-            const modal = document.getElementById('species-modal');
-            const addBtn = document.getElementById('add-species-btn');
-            const cancelBtn = document.getElementById('cancel-species');
-            const saveBtn = document.getElementById('save-species');
-            const speciesList = document.getElementById('species-list-items');
-            const speciesDataContainer = document.getElementById('species-data-container');
+        // autocomplete
+        function attachCombo(input) {
+            const wrap = document.createElement('div');
+            wrap.className = 'combo';
+            input.parentNode.insertBefore(wrap, input);
+            wrap.appendChild(input);
+            const menu = document.createElement('div');
+            menu.className = 'combo-menu';
+            wrap.appendChild(menu);
 
-            // Open modal when Add Another Seedlings is clicked
-            if (addBtn) {
-                addBtn.addEventListener('click', function() {
-                    if (modal) {
-                        // Reset form values
-                        const speciesSelect = document.getElementById('modal-species');
-                        const seedlingsInput = document.getElementById('modal-seedlings');
-                        
-                        if (speciesSelect) speciesSelect.value = '';
-                        if (seedlingsInput) seedlingsInput.value = '0';
-                        
-                        // Show modal
-                        modal.style.display = 'block';
+            const stopAll = e => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            };
+            ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(evt => menu.addEventListener(evt, stopAll));
+            input.addEventListener('mousedown', e => e.stopPropagation());
+            input.addEventListener('click', e => e.stopPropagation());
+
+            const opts = [...new Set((window.SEEDLING_OPTIONS || []).map(s => String(s)))];
+            let activeIndex = -1;
+
+            function render(list, q) {
+                menu.innerHTML = '';
+                activeIndex = -1;
+                if (!list.length) {
+                    const e = document.createElement('div');
+                    e.className = 'combo-empty';
+                    e.textContent = q ? `Add "${q}"` : 'Type to search…';
+                    menu.appendChild(e);
+                    menu.style.display = 'block';
+                    return;
+                }
+                list.forEach((t, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'combo-item';
+                    item.textContent = t;
+                    const pick = ev => {
+                        stopAll(ev);
+                        select(t);
+                    };
+                    item.addEventListener('mousedown', pick);
+                    item.addEventListener('click', pick);
+                    menu.appendChild(item);
+                    if (idx === 0) {
+                        item.classList.add('active');
+                        activeIndex = 0;
                     }
                 });
+                menu.style.display = 'block';
             }
 
-            // Close modal when Cancel is clicked
-            if (cancelBtn) {
-                cancelBtn.addEventListener('click', function() {
-                    if (modal) {
-                        modal.style.display = 'none';
+            function filter(q) {
+                q = q.toLowerCase().trim();
+                if (!q) return render(opts.slice(0, 10), '');
+                render(opts.filter(o => o.toLowerCase().includes(q)).slice(0, 12), q);
+            }
+
+            function move(d) {
+                const items = [...menu.querySelectorAll('.combo-item')];
+                if (!items.length) return;
+                activeIndex = (activeIndex + d + items.length) % items.length;
+                items.forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+            }
+
+            function select(v) {
+                input.value = v;
+                closeMenu();
+                const qty = document.getElementById('modal-seedlings');
+                if (qty && input.id === 'modal-species') qty.focus();
+            }
+
+            function closeMenu() {
+                menu.style.display = 'none';
+            }
+
+            input.addEventListener('input', () => filter(input.value));
+            input.addEventListener('focus', () => filter(input.value));
+            input.addEventListener('keydown', e => {
+                if (menu.style.display !== 'block') return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    move(1);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    move(-1);
+                } else if (e.key === 'Enter') {
+                    const act = menu.querySelector('.combo-item.active');
+                    if (act) {
+                        e.preventDefault();
+                        select(act.textContent);
                     }
-                });
-            }
-
-            // Close modal when clicking outside
-            window.addEventListener('click', function(event) {
-                if (event.target === modal) {
-                    modal.style.display = 'none';
+                    closeMenu();
+                } else if (e.key === 'Escape') {
+                    closeMenu();
                 }
             });
+            document.addEventListener('click', e => {
+                if (!wrap.contains(e.target)) closeMenu();
+            });
+        }
 
-            // Save species data
-            if (saveBtn) {
-                saveBtn.addEventListener('click', function() {
-                    const species = document.getElementById('modal-species')?.value;
-                    const seedlings = document.getElementById('modal-seedlings')?.value;
-                    
-                    if (species && seedlings > 0) {
-                        // Create a unique ID for this entry
-                        const entryId = 'species-' + Date.now();
-                        
-                        // Add to the visible list
-                        const speciesItem = document.createElement('div');
-                        speciesItem.className = 'species-item';
-                        speciesItem.id = entryId;
-                        speciesItem.innerHTML = `
-                            <div class="species-info">
-                                <span class="species-name">${species}</span>
-                                <span class="species-quantity">${seedlings} seedlings</span>
-                            </div>
-                            <button type="button" class="remove-species" onclick="removeSpecies(this)">Remove</button>
-                            <input type="hidden" name="species[]" value="${species}">
-                            <input type="hidden" name="seedlings_delivered[]" value="${seedlings}">
-                        `;
-                        
-                        if (speciesList) {
-                            speciesList.appendChild(speciesItem);
-                        }
-                        
-                        // Add to hidden container for form submission
-                        if (speciesDataContainer) {
-                            const hiddenInput1 = document.createElement('input');
-                            hiddenInput1.type = 'hidden';
-                            hiddenInput1.name = 'species[]';
-                            hiddenInput1.value = species;
-                            
-                            const hiddenInput2 = document.createElement('input');
-                            hiddenInput2.type = 'hidden';
-                            hiddenInput2.name = 'seedlings_delivered[]';
-                            hiddenInput2.value = seedlings;
-                            
-                            speciesDataContainer.appendChild(hiddenInput1);
-                            speciesDataContainer.appendChild(hiddenInput2);
-                        }
-                        
-                        // Clear form and close modal
-                        const speciesSelect = document.getElementById('modal-species');
-                        const seedlingsInput = document.getElementById('modal-seedlings');
-                        
-                        if (speciesSelect) speciesSelect.value = '';
-                        if (seedlingsInput) seedlingsInput.value = '0';
-                        if (modal) modal.style.display = 'none';
-                        
-                    } else {
-                        alert('Please select a species and enter a valid number of seedlings delivered');
-                    }
+        function removeSpecies(btn) {
+            const row = btn.closest('.species-item');
+            if (!row) return;
+            const id = row.dataset.entryId;
+            row.remove();
+            const hidden = document.getElementById('species-data-container');
+            if (hidden && id) hidden.querySelectorAll(`[data-entry-id="${id}"]`).forEach(n => n.remove());
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            attachCombo(document.getElementById('species'));
+            attachCombo(document.getElementById('modal-species'));
+
+            const modal = document.getElementById('species-modal');
+            const openBtn = document.getElementById('add-species-btn');
+            const closeBtn = document.getElementById('close-species-modal');
+
+            const openSpeciesModal = () => {
+                document.getElementById('modal-species').value = '';
+                document.getElementById('modal-seedlings').value = '0';
+                modal.style.display = 'block';
+                setTimeout(() => document.getElementById('modal-species').focus(), 0);
+            };
+            openBtn?.addEventListener('click', openSpeciesModal);
+            document.getElementById('cancel-species')?.addEventListener('click', () => modal.style.display = 'none');
+            closeBtn?.addEventListener('click', () => modal.style.display = 'none');
+
+            document.getElementById('save-species')?.addEventListener('click', () => {
+                const species = (document.getElementById('modal-species').value || '').trim();
+                const qty = parseInt(document.getElementById('modal-seedlings').value || '0');
+                if (!species || qty <= 0) {
+                    showToast('error', 'Please enter valid seedling name and quantity.');
+                    return;
+                }
+                const entryId = 'entry-' + Date.now();
+
+                const list = document.getElementById('species-list-items');
+                const row = document.createElement('div');
+                row.className = 'species-item';
+                row.dataset.entryId = entryId;
+                row.innerHTML = `<div class="species-info"><span class="species-name">${species}</span> <span class="species-quantity">${qty} seedlings</span></div>`;
+                const rm = document.createElement('button');
+                rm.className = 'remove-species';
+                rm.type = 'button';
+                rm.textContent = 'Remove';
+                rm.addEventListener('click', function() {
+                    removeSpecies(this);
                 });
-            }
+                row.appendChild(rm);
+                list.appendChild(row);
 
-            // Mobile menu toggle functionality
+                const hidden = document.getElementById('species-data-container');
+                const h1 = document.createElement('input');
+                h1.type = 'hidden';
+                h1.name = 'species[]';
+                h1.value = species;
+                h1.setAttribute('data-entry-id', entryId);
+                const h2 = document.createElement('input');
+                h2.type = 'hidden';
+                h2.name = 'seedlings_delivered[]';
+                h2.value = qty;
+                h2.setAttribute('data-entry-id', entryId);
+                hidden.appendChild(h1);
+                hidden.appendChild(h2);
+
+                document.getElementById('modal-species').value = '';
+                document.getElementById('modal-seedlings').value = '0';
+                document.getElementById('modal-species').focus();
+                showToast('success', 'Added to list.');
+            });
+
+            // confirm + submit
+            const form = document.getElementById('seedlings-form');
+            const confirmModal = document.getElementById('confirm-modal');
+            const confirmMsg = document.getElementById('confirm-msg');
+            const confirmCancel = document.getElementById('confirm-cancel');
+            const confirmSave = document.getElementById('confirm-save');
+
+            form?.addEventListener('submit', e => {
+                e.preventDefault();
+
+                const mainSpecies = (document.getElementById('species').value || '').trim();
+                const mainQty = parseInt(document.getElementById('seedlings-delivered').value || '0');
+
+                const hidden = document.getElementById('species-data-container');
+                const hs = hidden.querySelectorAll('input[name="species[]"]');
+                const hq = hidden.querySelectorAll('input[name="seedlings_delivered[]"]');
+
+                const items = [];
+                if (mainSpecies && mainQty > 0) items.push([mainSpecies, mainQty]);
+                for (let i = 0; i < hs.length && i < hq.length; i++) {
+                    const s = hs[i].value;
+                    const q = parseInt(hq[i].value || '0');
+                    if (s && q > 0) items.push([s, q]);
+                }
+
+                const agency = (document.getElementById('agency_name').value || '').trim();
+                const recby = (document.getElementById('received_by').value || '').trim();
+                const date = (document.getElementById('date_received').value || '').trim();
+
+                if (!agency || !recby || !date) {
+                    showToast('error', 'Agency, Receiver, and Date are required.');
+                    return;
+                }
+                if (!items.length) {
+                    showToast('error', 'Add at least one seedling with quantity > 0.');
+                    return;
+                }
+
+                confirmMsg.textContent = 'Are you sure you want to submit?';
+                confirmModal.style.display = 'block';
+
+                const onSave = async () => {
+                    confirmSave.removeEventListener('click', onSave);
+                    confirmSave.disabled = true;
+                    showLoading('Saving…');
+
+                    const payload = new URLSearchParams();
+                    payload.append('action', 'seedlings_intake_create');
+                    payload.append('agency_name', agency);
+                    payload.append('received_by', recby);
+                    payload.append('date_received', date);
+                    if (mainSpecies && mainQty > 0) {
+                        payload.append('species[]', mainSpecies);
+                        payload.append('seedlings_delivered[]', String(mainQty));
+                    }
+                    for (let i = 0; i < hs.length && i < hq.length; i++) {
+                        payload.append('species[]', hs[i].value);
+                        payload.append('seedlings_delivered[]', hq[i].value);
+                    }
+
+                    try {
+                        const res = await fetch(window.location.href, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded'
+                            },
+                            body: payload.toString()
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.success) throw new Error(data?.message || 'Save failed.');
+                        showToast('success', data.message ? data.message : `Saved ${data.inserted} record(s).`);
+                        form.reset();
+                        document.getElementById('species-list-items').innerHTML = '';
+                        hidden.innerHTML = '';
+                        confirmModal.style.display = 'none';
+                    } catch (err) {
+                        showToast('error', err.message || 'Save failed.');
+                        confirmModal.style.display = 'none';
+                    } finally {
+                        hideLoading();
+                        confirmSave.disabled = false;
+                    }
+                };
+                confirmSave.addEventListener('click', onSave, {
+                    once: true
+                });
+            });
+
+            confirmCancel?.addEventListener('click', () => confirmModal.style.display = 'none');
+            confirmModal.addEventListener('click', e => {
+                if (e.target === confirmModal) confirmModal.style.display = 'none';
+            });
+        });
+
+        // Header-only JS (dropdowns + mobile toggle + mark-all-read)
+        document.addEventListener('DOMContentLoaded', function() {
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    navContainer.classList.toggle('active');
-                });
-            }
-            
-            // Dropdown functionality
+            if (mobileToggle) mobileToggle.addEventListener('click', () => navContainer.classList.toggle('active'));
+
             const dropdowns = document.querySelectorAll('.dropdown');
-            
-            dropdowns.forEach(dropdown => {
-                const toggle = dropdown.querySelector('.nav-icon');
-                const menu = dropdown.querySelector('.dropdown-menu');
-                
-                // Show menu on hover (desktop)
-                dropdown.addEventListener('mouseenter', () => {
+            dropdowns.forEach(dd => {
+                const toggle = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+
+                dd.addEventListener('mouseenter', () => {
                     if (window.innerWidth > 992) {
                         menu.style.opacity = '1';
                         menu.style.visibility = 'visible';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(0)' 
-                            : 'translateY(0)';
+                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
                     }
                 });
-                
-                // Hide menu when leaving (desktop)
-                dropdown.addEventListener('mouseleave', (e) => {
-                    if (window.innerWidth > 992 && !dropdown.contains(e.relatedTarget)) {
+                dd.addEventListener('mouseleave', e => {
+                    if (window.innerWidth > 992 && !dd.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
                     }
                 });
-                
-                // Toggle menu on click (mobile)
-                if (window.innerWidth <= 992) {
-                    toggle.addEventListener('click', (e) => {
+
+                if (window.innerWidth <= 992 && toggle) {
+                    toggle.addEventListener('click', e => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
-                        // Close other dropdowns
-                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) {
-                                otherMenu.style.display = 'none';
+                        document.querySelectorAll('.dropdown-menu').forEach(m => {
+                            if (m !== menu) m.style.display = 'none';
+                        });
+                        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+                    });
+                }
+            });
+
+            document.addEventListener('click', e => {
+                if (!e.target.closest('.dropdown') && window.innerWidth <= 992) {
+                    document.querySelectorAll('.dropdown-menu').forEach(menu => menu.style.display = 'none');
+                }
+            });
+
+            const badge = document.querySelector('.nav-item .badge');
+            const markAll = document.querySelector('.mark-all-read');
+            if (markAll) {
+                markAll.addEventListener('click', async e => {
+                    e.preventDefault();
+                    try {
+                        const body = new URLSearchParams();
+                        body.append('action', 'notifications_mark_all_seedling_read');
+                        const res = await fetch(window.location.href, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded'
+                            },
+                            body: body.toString()
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.success) throw new Error('Failed to mark all as read');
+
+                        // Update UI
+                        document.querySelectorAll('.notifications-dropdown .notification-item.unread').forEach(item => {
+                            item.classList.remove('unread');
+                            const icon = item.querySelector('.notification-icon i');
+                            if (icon) {
+                                icon.classList.remove('fas');
+                                icon.classList.add('far'); // switch to outline bell when marked read
                             }
                         });
-                        
-                        // Toggle current dropdown
-                        if (menu.style.display === 'block') {
-                            menu.style.display = 'none';
-                        } else {
-                            menu.style.display = 'block';
+                        if (badge) {
+                            badge.style.display = 'none';
                         }
-                    });
-                }
-            });
-            
-            // Close dropdowns when clicking outside (mobile)
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown') && window.innerWidth <= 992) {
-                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                        menu.style.display = 'none';
-                    });
-                }
-            });
-
-            // Mark all notifications as read
-            const markAllRead = document.querySelector('.mark-all-read');
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                        item.classList.remove('unread');
-                    });
-                    document.querySelector('.badge').style.display = 'none';
-                });
-            }
-
-            // Form submission
-            const form = document.getElementById('seedlings-form');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    // Here you would normally submit the form data to the server
-                    alert('Form submitted successfully!');
-                    // form.submit(); // Uncomment this to actually submit the form
+                    } catch {
+                        // keep header minimal; no toast
+                    }
                 });
             }
         });
     </script>
 </body>
+
 </html>

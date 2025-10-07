@@ -19,10 +19,10 @@ use Twilio\Values;
 abstract class ChannelsSenderModels
 {
     /**
-     * @property string|null $wabaId The ID of the WhatsApp Business Account to use for this sender.
-     * @property string|null $verificationMethod The method to use for verification. Either \"sms\" or \"voice\".
-     * @property string|null $verificationCode The verification code to use for this sender.
-     * @property string|null $voiceApplicationSid The SID of the Twilio Voice application to use for this sender.
+     * @property string|null $wabaId The ID of the WhatsApp Business Account (WABA) to use for this sender.
+     * @property string|null $verificationMethod The verification method.
+     * @property string|null $verificationCode The verification code.
+     * @property string|null $voiceApplicationSid The SID of the Twilio Voice application.
     */
     public static function createMessagingV2ChannelsSenderConfiguration(array $payload = []): MessagingV2ChannelsSenderConfiguration
     {
@@ -31,11 +31,11 @@ abstract class ChannelsSenderModels
 
     /**
      * @property string|null $callbackUrl The URL to send the webhook to.
-     * @property string|null $callbackMethod The HTTP method to use for the webhook. Either \"POST\" or \"PUT\".
+     * @property string|null $callbackMethod The HTTP method for the webhook.
      * @property string|null $fallbackUrl The URL to send the fallback webhook to.
-     * @property string|null $fallbackMethod The HTTP method to use for the fallback webhook. Either \"POST\" or \"PUT\".
+     * @property string|null $fallbackMethod The HTTP method for the fallback webhook.
      * @property string|null $statusCallbackUrl The URL to send the status callback to.
-     * @property string|null $statusCallbackMethod The HTTP method to use for the status callback.
+     * @property string|null $statusCallbackMethod The HTTP method for the status callback.
     */
     public static function createMessagingV2ChannelsSenderWebhook(array $payload = []): MessagingV2ChannelsSenderWebhook
     {
@@ -43,14 +43,19 @@ abstract class ChannelsSenderModels
     }
 
     /**
-     * @property string|null $name The name of the sender.
-     * @property string|null $about The about text of the sender.
+     * @property string|null $name The name of the sender. Required for WhatsApp senders and must follow [Meta's display name guidelines](https://www.facebook.com/business/help/757569725593362).
+     * @property string|null $about The profile about text for the sender.
      * @property string|null $address The address of the sender.
      * @property string|null $description The description of the sender.
-     * @property array|null $emails The emails of the sender.
      * @property string|null $logoUrl The logo URL of the sender.
-     * @property string|null $vertical The vertical of the sender. Allowed values are: - \"Automotive\" - \"Beauty, Spa and Salon\" - \"Clothing and Apparel\" - \"Education\" - \"Entertainment\" - \"Event Planning and Service\" - \"Finance and Banking\" - \"Food and Grocery\" - \"Public Service\" - \"Hotel and Lodging\" - \"Medical and Health\" - \"Non-profit\" - \"Professional Services\" - \"Shopping and Retail\" - \"Travel and Transportation\" - \"Restaurant\" - \"Other\"
+     * @property string|null $bannerUrl The banner URL of the sender.
+     * @property string|null $privacyUrl The privacy URL of the sender. Must be a publicly accessible HTTP or HTTPS URI associated with the sender.
+     * @property string|null $termsOfServiceUrl The terms of service URL of the sender.
+     * @property string|null $accentColor The color theme of the sender. Must be in hex format and have at least a 4:5:1 contrast ratio against white.
+     * @property string|null $vertical The vertical of the sender. Allowed values are: - `Automotive` - `Beauty, Spa and Salon` - `Clothing and Apparel` - `Education` - `Entertainment` - `Event Planning and Service` - `Finance and Banking` - `Food and Grocery` - `Public Service` - `Hotel and Lodging` - `Medical and Health` - `Non-profit` - `Professional Services` - `Shopping and Retail` - `Travel and Transportation` - `Restaurant` - `Other`
      * @property array|null $websites The websites of the sender.
+     * @property array|null $emails The emails of the sender.
+     * @property array|null $phoneNumbers The phone numbers of the sender.
     */
     public static function createMessagingV2ChannelsSenderProfile(array $payload = []): MessagingV2ChannelsSenderProfile
     {
@@ -58,7 +63,7 @@ abstract class ChannelsSenderModels
     }
 
     /**
-     * @property string $senderId The ID of this Sender prefixed with the channel, e.g., `whatsapp:E.164`
+     * @property string $senderId The ID of the sender in `whatsapp:<E.164_PHONE_NUMBER>` format.
      * @property MessagingV2ChannelsSenderConfiguration $configuration
      * @property MessagingV2ChannelsSenderWebhook $webhook
      * @property MessagingV2ChannelsSenderProfile $profile
@@ -83,10 +88,10 @@ abstract class ChannelsSenderModels
 class MessagingV2ChannelsSenderConfiguration implements \JsonSerializable
 {
     /**
-     * @property string|null $wabaId The ID of the WhatsApp Business Account to use for this sender.
-     * @property string|null $verificationMethod The method to use for verification. Either \"sms\" or \"voice\".
-     * @property string|null $verificationCode The verification code to use for this sender.
-     * @property string|null $voiceApplicationSid The SID of the Twilio Voice application to use for this sender.
+     * @property string|null $wabaId The ID of the WhatsApp Business Account (WABA) to use for this sender.
+     * @property string|null $verificationMethod The verification method.
+     * @property string|null $verificationCode The verification code.
+     * @property string|null $voiceApplicationSid The SID of the Twilio Voice application.
     */
         protected $wabaId;
         protected $verificationMethod;
@@ -106,12 +111,21 @@ class MessagingV2ChannelsSenderConfiguration implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return [
-            'waba_id' => $this->wabaId,
-            'verification_method' => $this->verificationMethod,
-            'verification_code' => $this->verificationCode,
-            'voice_application_sid' => $this->voiceApplicationSid
+        $jsonString = [
         ];
+        if (isset($this->wabaId)) {
+            $jsonString['waba_id'] = $this->wabaId;
+        }
+        if (isset($this->verificationMethod)) {
+            $jsonString['verification_method'] = $this->verificationMethod;
+        }
+        if (isset($this->verificationCode)) {
+            $jsonString['verification_code'] = $this->verificationCode;
+        }
+        if (isset($this->voiceApplicationSid)) {
+            $jsonString['voice_application_sid'] = $this->voiceApplicationSid;
+        }
+        return $jsonString;
     }
 }
 
@@ -119,11 +133,11 @@ class MessagingV2ChannelsSenderWebhook implements \JsonSerializable
 {
     /**
      * @property string|null $callbackUrl The URL to send the webhook to.
-     * @property string|null $callbackMethod The HTTP method to use for the webhook. Either \"POST\" or \"PUT\".
+     * @property string|null $callbackMethod The HTTP method for the webhook.
      * @property string|null $fallbackUrl The URL to send the fallback webhook to.
-     * @property string|null $fallbackMethod The HTTP method to use for the fallback webhook. Either \"POST\" or \"PUT\".
+     * @property string|null $fallbackMethod The HTTP method for the fallback webhook.
      * @property string|null $statusCallbackUrl The URL to send the status callback to.
-     * @property string|null $statusCallbackMethod The HTTP method to use for the status callback.
+     * @property string|null $statusCallbackMethod The HTTP method for the status callback.
     */
         protected $callbackUrl;
         protected $callbackMethod;
@@ -147,46 +161,74 @@ class MessagingV2ChannelsSenderWebhook implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return [
-            'callback_url' => $this->callbackUrl,
-            'callback_method' => $this->callbackMethod,
-            'fallback_url' => $this->fallbackUrl,
-            'fallback_method' => $this->fallbackMethod,
-            'status_callback_url' => $this->statusCallbackUrl,
-            'status_callback_method' => $this->statusCallbackMethod
+        $jsonString = [
         ];
+        if (isset($this->callbackUrl)) {
+            $jsonString['callback_url'] = $this->callbackUrl;
+        }
+        if (isset($this->callbackMethod)) {
+            $jsonString['callback_method'] = $this->callbackMethod;
+        }
+        if (isset($this->fallbackUrl)) {
+            $jsonString['fallback_url'] = $this->fallbackUrl;
+        }
+        if (isset($this->fallbackMethod)) {
+            $jsonString['fallback_method'] = $this->fallbackMethod;
+        }
+        if (isset($this->statusCallbackUrl)) {
+            $jsonString['status_callback_url'] = $this->statusCallbackUrl;
+        }
+        if (isset($this->statusCallbackMethod)) {
+            $jsonString['status_callback_method'] = $this->statusCallbackMethod;
+        }
+        return $jsonString;
     }
 }
 
 class MessagingV2ChannelsSenderProfile implements \JsonSerializable
 {
     /**
-     * @property string|null $name The name of the sender.
-     * @property string|null $about The about text of the sender.
+     * @property string|null $name The name of the sender. Required for WhatsApp senders and must follow [Meta's display name guidelines](https://www.facebook.com/business/help/757569725593362).
+     * @property string|null $about The profile about text for the sender.
      * @property string|null $address The address of the sender.
      * @property string|null $description The description of the sender.
-     * @property array|null $emails The emails of the sender.
      * @property string|null $logoUrl The logo URL of the sender.
-     * @property string|null $vertical The vertical of the sender. Allowed values are: - \"Automotive\" - \"Beauty, Spa and Salon\" - \"Clothing and Apparel\" - \"Education\" - \"Entertainment\" - \"Event Planning and Service\" - \"Finance and Banking\" - \"Food and Grocery\" - \"Public Service\" - \"Hotel and Lodging\" - \"Medical and Health\" - \"Non-profit\" - \"Professional Services\" - \"Shopping and Retail\" - \"Travel and Transportation\" - \"Restaurant\" - \"Other\"
+     * @property string|null $bannerUrl The banner URL of the sender.
+     * @property string|null $privacyUrl The privacy URL of the sender. Must be a publicly accessible HTTP or HTTPS URI associated with the sender.
+     * @property string|null $termsOfServiceUrl The terms of service URL of the sender.
+     * @property string|null $accentColor The color theme of the sender. Must be in hex format and have at least a 4:5:1 contrast ratio against white.
+     * @property string|null $vertical The vertical of the sender. Allowed values are: - `Automotive` - `Beauty, Spa and Salon` - `Clothing and Apparel` - `Education` - `Entertainment` - `Event Planning and Service` - `Finance and Banking` - `Food and Grocery` - `Public Service` - `Hotel and Lodging` - `Medical and Health` - `Non-profit` - `Professional Services` - `Shopping and Retail` - `Travel and Transportation` - `Restaurant` - `Other`
      * @property array|null $websites The websites of the sender.
+     * @property array|null $emails The emails of the sender.
+     * @property array|null $phoneNumbers The phone numbers of the sender.
     */
         protected $name;
         protected $about;
         protected $address;
         protected $description;
-        protected $emails;
         protected $logoUrl;
+        protected $bannerUrl;
+        protected $privacyUrl;
+        protected $termsOfServiceUrl;
+        protected $accentColor;
         protected $vertical;
         protected $websites;
+        protected $emails;
+        protected $phoneNumbers;
     public function __construct(array $payload = []) {
         $this->name = Values::array_get($payload, 'name');
         $this->about = Values::array_get($payload, 'about');
         $this->address = Values::array_get($payload, 'address');
         $this->description = Values::array_get($payload, 'description');
-        $this->emails = Values::array_get($payload, 'emails');
         $this->logoUrl = Values::array_get($payload, 'logo_url');
+        $this->bannerUrl = Values::array_get($payload, 'banner_url');
+        $this->privacyUrl = Values::array_get($payload, 'privacy_url');
+        $this->termsOfServiceUrl = Values::array_get($payload, 'terms_of_service_url');
+        $this->accentColor = Values::array_get($payload, 'accent_color');
         $this->vertical = Values::array_get($payload, 'vertical');
         $this->websites = Values::array_get($payload, 'websites');
+        $this->emails = Values::array_get($payload, 'emails');
+        $this->phoneNumbers = Values::array_get($payload, 'phone_numbers');
     }
 
     public function toArray(): array
@@ -196,23 +238,55 @@ class MessagingV2ChannelsSenderProfile implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return [
-            'name' => $this->name,
-            'about' => $this->about,
-            'address' => $this->address,
-            'description' => $this->description,
-            'emails' => $this->emails,
-            'logo_url' => $this->logoUrl,
-            'vertical' => $this->vertical,
-            'websites' => $this->websites
+        $jsonString = [
         ];
+        if (isset($this->name)) {
+            $jsonString['name'] = $this->name;
+        }
+        if (isset($this->about)) {
+            $jsonString['about'] = $this->about;
+        }
+        if (isset($this->address)) {
+            $jsonString['address'] = $this->address;
+        }
+        if (isset($this->description)) {
+            $jsonString['description'] = $this->description;
+        }
+        if (isset($this->logoUrl)) {
+            $jsonString['logo_url'] = $this->logoUrl;
+        }
+        if (isset($this->bannerUrl)) {
+            $jsonString['banner_url'] = $this->bannerUrl;
+        }
+        if (isset($this->privacyUrl)) {
+            $jsonString['privacy_url'] = $this->privacyUrl;
+        }
+        if (isset($this->termsOfServiceUrl)) {
+            $jsonString['terms_of_service_url'] = $this->termsOfServiceUrl;
+        }
+        if (isset($this->accentColor)) {
+            $jsonString['accent_color'] = $this->accentColor;
+        }
+        if (isset($this->vertical)) {
+            $jsonString['vertical'] = $this->vertical;
+        }
+        if (isset($this->websites)) {
+            $jsonString['websites'] = $this->websites;
+        }
+        if (isset($this->emails)) {
+            $jsonString['emails'] = $this->emails;
+        }
+        if (isset($this->phoneNumbers)) {
+            $jsonString['phone_numbers'] = $this->phoneNumbers;
+        }
+        return $jsonString;
     }
 }
 
 class MessagingV2ChannelsSenderRequestsCreate implements \JsonSerializable
 {
     /**
-     * @property string $senderId The ID of this Sender prefixed with the channel, e.g., `whatsapp:E.164`
+     * @property string $senderId The ID of the sender in `whatsapp:<E.164_PHONE_NUMBER>` format.
      * @property MessagingV2ChannelsSenderConfiguration $configuration
      * @property MessagingV2ChannelsSenderWebhook $webhook
      * @property MessagingV2ChannelsSenderProfile $profile
@@ -235,12 +309,19 @@ class MessagingV2ChannelsSenderRequestsCreate implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return [
-            'sender_id' => $this->senderId,
-            'configuration' => $this->configuration,
-            'webhook' => $this->webhook,
-            'profile' => $this->profile
+        $jsonString = [
+            'sender_id' => $this->senderId
         ];
+        if (isset($this->configuration)) {
+            $jsonString['configuration'] = $this->configuration;
+        }
+        if (isset($this->webhook)) {
+            $jsonString['webhook'] = $this->webhook;
+        }
+        if (isset($this->profile)) {
+            $jsonString['profile'] = $this->profile;
+        }
+        return $jsonString;
     }
 }
 
@@ -267,11 +348,18 @@ class MessagingV2ChannelsSenderRequestsUpdate implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return [
-            'configuration' => $this->configuration,
-            'webhook' => $this->webhook,
-            'profile' => $this->profile
+        $jsonString = [
         ];
+        if (isset($this->configuration)) {
+            $jsonString['configuration'] = $this->configuration;
+        }
+        if (isset($this->webhook)) {
+            $jsonString['webhook'] = $this->webhook;
+        }
+        if (isset($this->profile)) {
+            $jsonString['profile'] = $this->profile;
+        }
+        return $jsonString;
     }
 }
 

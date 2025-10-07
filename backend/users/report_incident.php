@@ -1,10 +1,9 @@
 <?php
-// backend/users/report_incident.php
+
 declare(strict_types=1);
 
 session_start();
 
-/* ---------- JSON-only output & robust error handling ---------- */
 header('Content-Type: application/json');
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
@@ -31,37 +30,26 @@ register_shutdown_function(function () {
 });
 ob_start();
 
-/* ---------- Gate: logged-in User role only ---------- */
 if (empty($_SESSION['user_id']) || strtolower((string)($_SESSION['role'] ?? '')) !== 'user') {
     echo json_encode(['success' => false, 'message' => 'Unauthorized', 'code' => 'unauthorized']);
     exit;
 }
 
-/* ---------- Env & DB ---------- */
 require_once dirname(__DIR__) . '/bootstrap_env.php';
-require_once dirname(__DIR__) . '/connection.php'; // must expose $pdo (PDO to Supabase PG)
+require_once dirname(__DIR__) . '/connection.php';
 
-/* ---------- Config ---------- */
 $SUPABASE_URL  = rtrim(getenv('SUPABASE_URL') ?: ($_ENV['SUPABASE_URL'] ?? $_SERVER['SUPABASE_URL'] ?? ''), '/');
 $SERVICE_KEY   = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ($_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? $_SERVER['SUPABASE_SERVICE_ROLE_KEY'] ?? '');
 $BUCKET        = 'incident_report';
-$BUCKET_PUBLIC = filter_var(getenv('SUPABASE_STORAGE_PUBLIC') ?: 'false', FILTER_VALIDATE_BOOLEAN); // keep false (private)
+$BUCKET_PUBLIC = filter_var(getenv('SUPABASE_STORAGE_PUBLIC') ?: 'false', FILTER_VALIDATE_BOOLEAN);
 if (!$SUPABASE_URL || !$SERVICE_KEY) {
     echo json_encode(['success' => false, 'message' => 'Missing SUPABASE_URL or SERVICE_ROLE key', 'code' => 'env_missing']);
     exit;
 }
 
-/* ---------- Helpers ---------- */
 function is_uuid(string $s): bool
 {
     return (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $s);
-}
-function uuidv4(): string
-{
-    $d = random_bytes(16);
-    $d[6] = chr((ord($d[6]) & 0x0f) | 0x40);
-    $d[8] = chr((ord($d[8]) & 0x3f) | 0x80);
-    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($d), 4));
 }
 function sanitize_filename(string $n): string
 {
@@ -71,7 +59,6 @@ function storage_public_url(string $base, string $bucket, string $path): string
 {
     return rtrim($base, '/') . "/storage/v1/object/public/{$bucket}/" . ltrim($path, '/');
 }
-/** returns [ok(bool), code(int), body(string), err(string)] */
 function storage_upload(string $base, string $service, string $bucket, string $path, string $bin, string $mime, bool $upsert = false): array
 {
     $url = rtrim($base, '/') . "/storage/v1/object/{$bucket}/" . ltrim($path, '/');
@@ -82,8 +69,8 @@ function storage_upload(string $base, string $service, string $bucket, string $p
         CURLOPT_HTTPHEADER     => [
             'Content-Type: ' . $mime,
             'x-upsert: ' . ($upsert ? 'true' : 'false'),
-            'Authorization: Bearer ' . $service,   // service-role; server-only
-            'apikey: ' . $service,
+            'Authorization: Bearer ' . $service,
+            'apikey' => $service,
         ],
         CURLOPT_POSTFIELDS     => $bin,
         CURLOPT_TIMEOUT        => 45,
@@ -96,7 +83,6 @@ function storage_upload(string $base, string $service, string $bucket, string $p
     return [$ok, $code, (string)$body, (string)$err];
 }
 
-/* ---------- Inputs ---------- */
 $user_id  = (string)$_SESSION['user_id'];
 $who      = trim($_POST['who'] ?? '');
 $where    = trim($_POST['where'] ?? '');
@@ -105,9 +91,8 @@ $whenIn   = trim($_POST['when'] ?? '');
 $why      = trim($_POST['why'] ?? '');
 $what     = trim($_POST['what'] ?? '');
 $category = trim($_POST['categories'] ?? '');
-$desc     = trim($_POST['description'] ?? ''); // form field is "description" but DB column is more_description
+$desc     = trim($_POST['description'] ?? '');
 
-/* Build an echo payload we’ll include on every response */
 $filesEcho = [];
 if (isset($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
     $N = count($_FILES['photos']['name']);
@@ -145,28 +130,20 @@ function respond_err(string $msg, string $code, array $extra = [])
     exit;
 }
 
-/* ---------- Quick validation ---------- */
-if (!$who || !$where || !$contact || !$whenIn || !$why || !$what || !$category || !$desc) {
-    respond_err('Please fill out all required fields.', 'validation');
-}
-if (!is_uuid($user_id)) {
-    respond_err('Session user_id is not a valid UUID.', 'bad_user_id');
-}
+if (!$who || !$where || !$contact || !$whenIn || !$why || !$what || !$category || !$desc) respond_err('Please fill out all required fields.', 'validation');
+if (!is_uuid($user_id)) respond_err('Session user_id is not a valid UUID.', 'bad_user_id');
+
 $chk = $pdo->prepare("select 1 from public.users where user_id = :id limit 1");
 $chk->execute([':id' => $user_id]);
-if (!$chk->fetchColumn()) {
-    respond_err('Session user_id not found in public.users (FK would fail).', 'fk_missing_user');
-}
+if (!$chk->fetchColumn()) respond_err('Session user_id not found in public.users (FK would fail).', 'fk_missing_user');
 
-/* ---------- Parse datetime as Asia/Manila -> ISO 8601 ---------- */
 try {
     $dt = new DateTime($whenIn, new DateTimeZone('Asia/Manila'));
-    $whenIso = $dt->format('c'); // timestamptz-friendly
+    $whenIso = $dt->format('c');
 } catch (Throwable $e) {
     respond_err('Invalid date/time.', 'bad_datetime', ['error' => $e->getMessage()]);
 }
 
-/* ---------- Files (max 5) ---------- */
 if (!isset($_FILES['photos'])) respond_err('Please attach photos (up to 5).', 'no_files');
 $F = $_FILES['photos'];
 $cnt = is_array($F['name']) ? count($F['name']) : 0;
@@ -177,79 +154,116 @@ for ($i = 0; $i < $cnt; $i++) {
     if ($err !== UPLOAD_ERR_OK) respond_err("Upload failed for one file (PHP error {$err}).", 'php_upload_error', ['file_index' => $i]);
 }
 
-/* ---------- Upload to Storage ---------- */
-$incident_id = uuidv4();
-$prefix = "{$user_id}/{$incident_id}";
 $urlsOrPaths = [];
-
-for ($i = 0; $i < $cnt; $i++) {
-    $tmp  = $F['tmp_name'][$i];
-    $name = sanitize_filename((string)$F['name'][$i]);
-    $size = (int)$F['size'][$i];
-    if ($size <= 0) respond_err('One uploaded file is empty.', 'empty_file', ['file_index' => $i]);
-    if ($size > 10 * 1024 * 1024) respond_err('One image is too large (max 10MB).', 'too_large', ['file_index' => $i, 'size' => $size]);
-
-    $mime = mime_content_type($tmp) ?: 'application/octet-stream';
-    if (!preg_match('/^(image\/(jpeg|png|webp|gif))$/i', $mime)) {
-        respond_err('Only jpeg/png/webp/gif allowed.', 'bad_type', ['file_index' => $i, 'mime' => $mime]);
-    }
-
-    $ext   = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: (explode('/', $mime)[1] ?? 'bin');
-    $fname = sprintf('%s_%02d.%s', time(), $i + 1, $ext);
-    $path  = "{$prefix}/{$fname}";
-    $bin   = file_get_contents($tmp);
-    if ($bin === false) respond_err('Failed to read file.', 'read_fail', ['file_index' => $i]);
-
-    [$ok, $http, $body, $cerr] = storage_upload($SUPABASE_URL, $SERVICE_KEY, $BUCKET, $path, $bin, $mime, false);
-    if (!$ok) {
-        respond_err('Failed to upload one of the images.', 'storage_upload_failed', [
-            'file_index' => $i,
-            'http_code' => $http,
-            'storage_body' => $body,
-            'curl_error' => $cerr
-        ]);
-    }
-    $urlsOrPaths[] = $BUCKET_PUBLIC ? storage_public_url($SUPABASE_URL, $BUCKET, $path) : $path;
-}
-
-/* ---------- Insert into DB (photos is jsonb, description column is more_description) ---------- */
-$photos_json = json_encode($urlsOrPaths, JSON_UNESCAPED_SLASHES);
+$incident_id = null;
 
 try {
-    $sql = "insert into public.incident_report
-          (incident_id,user_id,\"who\",\"what\",\"where\",\"when\",\"why\",
-           contact_no,photos,category,more_description,status)
-          values
-          (:incident_id,:user_id,:who,:what,:where,:when,:why,
-           :contact, CAST(:photos AS jsonb), :category, :description, :status)
-          returning id, incident_id";
-    $st = $pdo->prepare($sql);
-    $st->execute([
-        ':incident_id' => $incident_id,
-        ':user_id' => $user_id,
-        ':who' => $who,
-        ':what' => $what,
-        ':where' => $where,
-        ':when' => $whenIso,
-        ':why' => $why,
-        ':contact' => $contact,
-        ':photos' => $photos_json,
-        ':category' => $category,
-        ':description' => $desc,
-        ':status' => 'pending'
-    ]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
+    // Display name fallback: first_name → last_name → email local-part → "User"
+    $getName = $pdo->prepare("
+        SELECT COALESCE(
+            NULLIF(btrim(first_name), ''),
+            NULLIF(btrim(last_name), ''),
+            NULLIF(btrim(split_part(email, '@', 1)), ''),
+            'User'
+        ) AS display_name
+        FROM public.users
+        WHERE user_id = :id
+        LIMIT 1
+    ");
+    $getName->execute([':id' => $user_id]);
+    $displayName = (string)($getName->fetchColumn() ?: 'User');
 
-    respond_ok(['message' => 'Incident submitted successfully.', 'data' => $row, 'photos_saved' => $urlsOrPaths]);
-} catch (PDOException $e) {
-    $sqlstate = $e->getCode();                 // e.g., 42703 undefined column, 23503 FK, 23502 NOT NULL
-    $detail   = $e->errorInfo[2] ?? '';
-    $constraint = null;
-    if ($detail && preg_match('/constraint "([^"]+)"/i', $detail, $m)) $constraint = $m[1];
-    error_log('[REPORT-INCIDENT][DB] ' . $sqlstate . ' :: ' . $detail);
-    respond_err('Failed to save incident.', 'db_error', [
-        'sqlstate' => $sqlstate,
-        'constraint' => $constraint,
-        'detail' => $detail
+    // Begin transaction
+    $pdo->beginTransaction();
+
+    // Insert incident (DB generates incident_id like 'icdt001')
+    $ins = $pdo->prepare("
+        INSERT INTO public.incident_report
+            (user_id, \"who\", \"what\", \"where\", \"when\", \"why\",
+             contact_no, category, more_description, status)
+        VALUES
+            (:user_id, :who, :what, :where, :when, :why,
+             :contact, :category, :description, :status)
+        RETURNING id, incident_id
+    ");
+    $ins->execute([
+        ':user_id'     => $user_id,
+        ':who'         => $who,
+        ':what'        => $what,
+        ':where'       => $where,
+        ':when'        => $whenIso,
+        ':why'         => $why,
+        ':contact'     => $contact,
+        ':category'    => $category,
+        ':description' => $desc,
+        ':status'      => 'pending',
     ]);
+    $row = $ins->fetch(PDO::FETCH_ASSOC);
+    if (!$row || empty($row['incident_id'])) throw new RuntimeException('Failed to get generated incident_id.');
+    $incident_id = (string)$row['incident_id'];
+
+    // Upload files under {user_id}/{incident_id}
+    $prefix = "{$user_id}/{$incident_id}";
+    for ($i = 0; $i < $cnt; $i++) {
+        $tmp  = $F['tmp_name'][$i];
+        $name = sanitize_filename((string)$F['name'][$i]);
+        $size = (int)$F['size'][$i];
+        if ($size <= 0) throw new RuntimeException('One uploaded file is empty.');
+        if ($size > 10 * 1024 * 1024) throw new RuntimeException('One image is too large (max 10MB).');
+
+        $mime = mime_content_type($tmp) ?: 'application/octet-stream';
+        if (!preg_match('/^(image\/(jpeg|png|webp|gif))$/i', $mime)) {
+            throw new RuntimeException("Only jpeg/png/webp/gif allowed. (got {$mime})");
+        }
+
+        $ext   = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: (explode('/', $mime)[1] ?? 'bin');
+        $fname = sprintf('%s_%02d.%s', time(), $i + 1, $ext);
+        $path  = "{$prefix}/{$fname}";
+        $bin   = file_get_contents($tmp);
+        if ($bin === false) throw new RuntimeException('Failed to read one uploaded file.');
+
+        [$ok, $http, $body, $cerr] = storage_upload($SUPABASE_URL, $SERVICE_KEY, $BUCKET, $path, $bin, $mime, false);
+        if (!$ok) throw new RuntimeException("Storage upload failed (HTTP {$http}) {$cerr} {$body}");
+        $urlsOrPaths[] = $BUCKET_PUBLIC ? storage_public_url($SUPABASE_URL, $BUCKET, $path) : $path;
+    }
+
+    // Update incident photos JSON
+    $photos_json = json_encode($urlsOrPaths, JSON_UNESCAPED_SLASHES);
+    $upd = $pdo->prepare("UPDATE public.incident_report SET photos = CAST(:photos AS jsonb) WHERE incident_id = :incident_id");
+    $upd->execute([':photos' => $photos_json, ':incident_id' => $incident_id]);
+
+    // Insert notification (approval_id NULL; message with display name)
+    $notifMsg = sprintf('%s reported an incident', $displayName);
+    $insN = $pdo->prepare("
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read)
+        VALUES (NULL, :incident_id, :message, FALSE)
+        RETURNING notif_id
+    ");
+    $insN->execute([
+        ':incident_id' => $incident_id,
+        ':message'     => $notifMsg,
+    ]);
+    $notif = $insN->fetch(PDO::FETCH_ASSOC);
+
+    // Commit
+    $pdo->commit();
+
+    echo json_encode([
+        'success'      => true,
+        'message'      => 'Incident submitted successfully.',
+        'data'         => [
+            'id'          => $row['id'] ?? null,
+            'incident_id' => $incident_id,
+            'notif_id'    => $notif['notif_id'] ?? null,
+        ],
+        'photos_saved' => $urlsOrPaths,
+        'echo'         => $ECHO
+    ]);
+    exit;
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('[REPORT-INCIDENT][DB] ' . $e->getMessage());
+    respond_err('Failed to save incident.', 'db_or_upload_error', ['detail' => $e->getMessage(), 'incident_id' => $incident_id]);
 }

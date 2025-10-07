@@ -888,6 +888,319 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 padding: 8px 12px;
             }
         }
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+        .form-section h2,
+        .form-section h3 {
+            background-color: #2b6625;
+            color: white;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #2b6625;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+            min-height: 48px;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            border-color: #2b6625;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(43, 102, 37, 0.2);
+        }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .declaration {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 4px;
+            border-left: 4px solid #2b6625;
+            margin-bottom: 25px;
+        }
+
+        .declaration p {
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .signature-date {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .signature-box {
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .signature-pad-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: white;
+        }
+
+        #signature-pad {
+            width: 100%;
+            height: 150px;
+            cursor: crosshair;
+        }
+
+        .signature-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .signature-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .clear-signature {
+            background-color: #ff4757;
+            color: white;
+        }
+
+        .save-signature {
+            background-color: #2b6625;
+            color: white;
+        }
+
+        .signature-preview {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        #signature-image {
+            max-width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .download-btn {
+            background-color: #2b6625;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 30px auto 0;
+            transition: background-color 0.3s;
+        }
+
+        .download-btn:hover {
+            background-color: #1e4a1a;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .declaration-input {
+            border: none;
+            border-bottom: 1px solid #999;
+            border-radius: 0;
+            padding: 0 5px;
+            width: 300px;
+            display: inline-block;
+            background: transparent;
+        }
+
+        .declaration-input:focus {
+            border-bottom: 2px solid #2b6625;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .required::after {
+            content: " *";
+            color: #ff4757;
+        }
+
+        .suppliers-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        .suppliers-table th,
+        .suppliers-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        .suppliers-table th {
+            background-color: #f2f2f2;
+        }
+
+        .suppliers-table input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 15px;
+            min-height: 48px;
+        }
+
+        .supplier-name {
+            width: 70%;
+        }
+
+        .supplier-volume {
+            width: 25%;
+        }
+
+        .add-row {
+            background-color: #2b6625;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .remove-btn {
+            background-color: #ff4757;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .govt-employee-container {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .govt-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .govt-option input[type="radio"] {
+            width: auto;
+            min-height: auto;
+        }
+
+        .govt-option label {
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .signature-date {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .declaration-input {
+                width: 100%;
+                margin: 5px 0;
+            }
+
+            .suppliers-table {
+                display: block;
+                overflow-x: auto;
+            }
+
+            .govt-employee-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+        }
+
+        /* Loading indicator */
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #2b6625;
+            font-weight: bold;
+        }
+
+        .loading i {
+            margin-right: 10px;
+        }
+
+        /* Print-specific styles */
+        @media print {
+
+            .download-btn,
+            .add-row,
+            .signature-actions,
+            .signature-pad-container,
+            .remove-btn {
+                display: none !important;
+            }
+
+            body {
+                background-color: white;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                border: none;
+                padding: 15px;
+            }
+        }
     </style>
 </head>
 
@@ -900,7 +1213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
+        <button type="button" class="mobile-toggle" aria-label="Toggle menu">
             <i class="fas fa-bars"></i>
         </button>
 
@@ -908,103 +1221,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon active">
+                <div class="nav-icon active" data-dropdown-toggle>
                     <i class="fas fa-bars"></i>
                 </div>
-                <div class="dropdown-menu center">
-                    <a href="user_reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Report Incident</span>
-                    </a>
-                    <a href="user_requestseedlings.php" class="dropdown-item">
-                        <i class="fas fa-seedling"></i>
-                        <span>Request Seedlings</span>
-                    </a>
-                    <a href="user_chainsaw_renewal.php" class="dropdown-item active-page">
-                        <i class="fas fa-tools"></i>
-                        <span>Chainsaw Renewal</span>
-                    </a>
-                </div>
-            </div>
-
-
-            <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
-                </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
-                        <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
-                    </div>
-
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
-                            </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
-                    </div>
-
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Profile Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
-                </div>
-                <div class="dropdown-menu">
-                    <a href="user_profile.php" class="dropdown-item">
-                        <i class="fas fa-user-edit"></i>
-                        <span>Edit Profile</span>
-                    </a>
-                    <a href="user_login.php" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <header>
-        <div class="logo">
-            <a href="user_home.php">
-                <img src="seal.png" alt="Site Logo">
-            </a>
-        </div>
-
-        <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
-            <i class="fas fa-bars"></i>
-        </button>
-
-        <!-- Navigation on the right -->
-        <div class="nav-container">
-            <!-- Dashboard Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon active">
-                    <i class="fas fa-bars"></i>
-                </div>
-
-
                 <div class="dropdown-menu center">
                     <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span>Report Incident</span>
                     </a>
-
                     <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
@@ -1029,14 +1253,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
-
-
                 </div>
             </div>
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
+                <div class="nav-icon" data-dropdown-toggle>
                     <i class="fas fa-bell"></i>
                     <span class="badge">1</span>
                 </div>
@@ -1067,7 +1289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
+                <div class="nav-icon" data-dropdown-toggle>
                     <i class="fas fa-user-circle"></i>
                 </div>
                 <div class="dropdown-menu">
@@ -1085,8 +1307,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
 
     <div class="main-container">
-        <div class="action-buttons">
-            <button class="btn btn-primary" id="addFilesBtn">
+        <!-- <div class="action-buttons">
+            <button type="button" class="btn btn-primary" id="addFilesBtn">
                 <i class="fas fa-plus-circle"></i> Add
             </button>
             <a href="usereditlumber.php" class="btn btn-outline">
@@ -1095,7 +1317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="userviewlumber.php" class="btn btn-outline">
                 <i class="fas fa-eye"></i> View
             </a>
-        </div>
+        </div> -->
 
         <div class="requirements-form">
             <div class="form-header">
@@ -1105,23 +1327,364 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
-                    <button class="permit-type-btn active" data-type="new">New Permit</button>
-                    <button class="permit-type-btn" data-type="renewal">Renewal</button>
+                    <button type="button" class="permit-type-btn active" data-type="new">New Permit</button>
+                    <button type="button" class="permit-type-btn" data-type="renewal">Renewal</button>
                 </div>
 
-                <!-- Name fields -->
-                <div class="name-fields">
-                    <div class="name-field">
-                        <input type="text" placeholder="First Name" required>
+                <!-- ===================== NEW LUMBER DEALER PERMIT APPLICATION (UI only) ===================== -->
+                <div class="form-section" id="lumber-application-section" style="margin-top:16px;">
+                    <!-- Applicant Information -->
+                    <div class="form-subsection">
+                        <h2>Applicant Information</h2>
+                        <div class="name-fields">
+                            <div class="name-field">
+                                <input type="text" id="first-name" placeholder="First Name" required>
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="middle-name" placeholder="Middle Name">
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="last-name" placeholder="Last Name" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applicant-age" class="required">Age:</label>
+                                <input type="number" id="applicant-age" min="18" placeholder="18+">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="required">Government Employee:</label>
+                                <div class="govt-employee-container" style="display:flex; gap:16px;">
+                                    <div class="govt-option">
+                                        <input type="radio" id="govt-employee-no" name="govt-employee" value="no" checked>
+                                        <label for="govt-employee-no">No</label>
+                                    </div>
+                                    <div class="govt-option">
+                                        <input type="radio" id="govt-employee-yes" name="govt-employee" value="yes">
+                                        <label for="govt-employee-yes">Yes</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="business-address" class="required">Business Address:</label>
+                            <input type="text" id="business-address" placeholder="Full business address">
+                        </div>
                     </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Middle Name">
+
+                    <!-- Business Information -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h3>Business Information</h3>
+
+                        <div class="form-group">
+                            <label for="operation-place" class="required">Proposed Place of Operation:</label>
+                            <input type="text" id="operation-place" placeholder="Full address of operation place">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="annual-volume" class="required">Expected Gross Annual Volume of Business:</label>
+                                <input type="text" id="annual-volume" placeholder="e.g., 1,000 bd ft">
+                            </div>
+                            <div class="form-group">
+                                <label for="annual-worth" class="required">Worth:</label>
+                                <input type="text" id="annual-worth" placeholder="e.g., ₱500,000">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employees-count" class="required">Total Number of Employees:</label>
+                                <input type="number" id="employees-count" min="0" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="dependents-count" class="required">Total Number of Dependents:</label>
+                                <input type="number" id="dependents-count" min="0" placeholder="0">
+                            </div>
+                        </div>
                     </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Last Name" required>
+
+                    <!-- Suppliers Information -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h3>Suppliers Information</h3>
+
+                        <table class="suppliers-table" id="suppliers-table">
+                            <thead>
+                                <tr>
+                                    <th width="70%">Suppliers Name/Company</th>
+                                    <th width="25%">Volume</th>
+                                    <th width="5%">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="text" class="supplier-name" placeholder="Supplier name"></td>
+                                    <td><input type="text" class="supplier-volume" placeholder="Volume"></td>
+                                    <td><button type="button" class="remove-btn">Remove</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <button type="button" class="add-row" id="add-supplier-row">Add Supplier</button>
+                    </div>
+
+                    <!-- Market & Experience -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h4>Market Information</h4>
+
+                        <div class="form-group">
+                            <label for="intended-market" class="required">Intended Market (Barangays and Municipalities to be served):</label>
+                            <textarea id="intended-market" rows="3" placeholder="List barangays and municipalities"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="experience" class="required">Experience as a Lumber Dealer:</label>
+                            <textarea id="experience" rows="3" placeholder="Describe your experience in the lumber business"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Declaration & Signature -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h4>Declaration</h4>
+
+                        <div class="declaration">
+                            <p>I will fully comply with Republic Act No. 123G and the rules and regulations of the Forest Management Bureau.</p>
+
+                            <p>I understand that false statements or omissions may result in:</p>
+                            <ul style="margin-left: 20px; margin-bottom: 15px;">
+                                <li>Disapproval of this application</li>
+                                <li>Cancellation of registration</li>
+                                <li>Forfeiture of bond</li>
+                                <li>Criminal liability</li>
+                            </ul>
+
+                            <p>
+                                I, <input type="text" id="declaration-name" class="declaration-input" placeholder="Enter your full name">,
+                                after being sworn to upon my oath, depose and say that I have read the foregoing application and that every statement therein is true and correct to the best of my knowledge and belief.
+                            </p>
+
+                            <div class="signature-date">
+                                <div class="signature-box">
+                                    <label>Signature of Applicant:</label>
+                                    <div class="signature-pad-container">
+                                        <!-- Width/height set in style so CSS size = drawing size (prevents “dead zone”) -->
+                                        <canvas id="signature-pad" style="width:100%;height:220px;display:block;"></canvas>
+                                    </div>
+                                    <div class="signature-actions">
+                                        <button type="button" class="signature-btn clear-signature" id="clear-signature">Clear</button>
+                                        <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button>
+                                    </div>
+                                    <div class="signature-preview">
+                                        <img id="signature-image" class="hidden" alt="Signature">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <!-- ===================== /NEW LUMBER DEALER PERMIT APPLICATION ===================== -->
 
+                <!-- ===================== RENEWAL LUMBER DEALER PERMIT APPLICATION ===================== -->
+                <div class="form-section" id="renewal-application-section" style="margin-top:16px; display:none;">
+                    <!-- Applicant Information -->
+                    <div class="form-subsection">
+                        <h2>Applicant Information (Renewal)</h2>
+
+                        <!-- split into First/Middle/Last -->
+                        <div class="name-fields">
+                            <div class="name-field">
+                                <input type="text" id="first-name-ren" placeholder="First Name" required>
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="middle-name-ren" placeholder="Middle Name">
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="last-name-ren" placeholder="Last Name" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="applicant-age-ren" class="required">Age:</label>
+                            <input type="number" id="applicant-age-ren" min="18">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="business-address-ren" class="required">Business Address:</label>
+                            <input type="text" id="business-address-ren" placeholder="Full business address">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="required">Government Employee:</label>
+                            <div class="govt-employee-container" style="display:flex; gap:16px;">
+                                <div class="govt-option">
+                                    <input type="radio" id="govt-employee-ren-no" name="govt-employee-ren" value="no" checked>
+                                    <label for="govt-employee-ren-no">No</label>
+                                </div>
+                                <div class="govt-option">
+                                    <input type="radio" id="govt-employee-ren-yes" name="govt-employee-ren" value="yes">
+                                    <label for="govt-employee-ren-yes">Yes</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Business Information -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h3>Business Information (Renewal)</h3>
+
+                        <div class="form-group">
+                            <label for="operation-place-ren" class="required">Place of Operation:</label>
+                            <input type="text" id="operation-place-ren" placeholder="Full address of operation place">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="annual-volume-ren" class="required">Expected Gross Annual Volume of Business:</label>
+                                <input type="text" id="annual-volume-ren" placeholder="e.g., 1000 board feet">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="annual-worth-ren" class="required">Value:</label>
+                                <input type="text" id="annual-worth-ren" placeholder="e.g., ₱500,000">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employees-count-ren" class="required">Total Number of Employees:</label>
+                                <input type="number" id="employees-count-ren" min="0">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="dependents-count-ren" class="required">Total Number of Dependents:</label>
+                                <input type="number" id="dependents-count-ren" min="0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Suppliers Information -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h3>Suppliers Information (Renewal)</h3>
+
+                        <table class="suppliers-table" id="suppliers-table-ren">
+                            <thead>
+                                <tr>
+                                    <th width="70%">SUPPLIERS NAME/COMPANY</th>
+                                    <th width="25%">VOLUME</th>
+                                    <th width="5%">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="text" class="supplier-name-ren" placeholder="Supplier name"></td>
+                                    <td><input type="text" class="supplier-volume-ren" placeholder="Volume"></td>
+                                    <td><button type="button" class="remove-btn-ren">Remove</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <button type="button" class="add-row" id="add-supplier-row-ren">Add Supplier</button>
+                    </div>
+
+                    <!-- Business Details -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h3>Business Details (Renewal)</h3>
+
+                        <div class="form-group">
+                            <label for="intended-market-ren" class="required">Selling Products To:</label>
+                            <textarea id="intended-market-ren" rows="3" placeholder="List adjacent barangays and municipalities"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="experience-ren" class="required">Experience as a Lumber Dealer:</label>
+                            <textarea id="experience-ren" rows="3" placeholder="Describe your experience in the lumber business"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="prev-certificate-ren">Previous Certificate of Registration No.:</label>
+                            <input type="text" id="prev-certificate-ren" placeholder="Certificate number">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="issued-date-ren">Issued On:</label>
+                                <input type="date" id="issued-date-ren">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="expiry-date-ren">Expires On:</label>
+                                <input type="date" id="expiry-date-ren">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="cr-license-ren">C.R. License No.:</label>
+                                <input type="text" id="cr-license-ren" placeholder="License number">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="sawmill-permit-ren">Sawmill Permit No.:</label>
+                                <input type="text" id="sawmill-permit-ren" placeholder="Permit number">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="required">Buying logs or lumber from other sources:</label>
+                            <div class="govt-employee-container" style="display:flex; gap:16px;">
+                                <div class="govt-option">
+                                    <input type="radio" id="other-sources-ren-no" name="other-sources-ren" value="no" checked>
+                                    <label for="other-sources-ren-no">No</label>
+                                </div>
+                                <div class="govt-option">
+                                    <input type="radio" id="other-sources-ren-yes" name="other-sources-ren" value="yes">
+                                    <label for="other-sources-ren-yes">Yes</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Declaration & Signature (RENEWAL) -->
+                    <div class="form-subsection" style="margin-top:18px;">
+                        <h4>Declaration (Renewal)</h4>
+
+                        <div class="declaration">
+                            <p>I will faithfully comply with all provisions of Rep. Act No. 1239 as well as rules and regulations of the Forest Management Bureau.</p>
+                            <p>I fully understand that false statements or material omissions may cause the cancellation of the registration and the forfeiture of the bond, without prejudice to criminal action that the government may take against me.</p>
+                            <p>I FINALLY UNDERSTAND THAT THE MERE FILING OF THE APPLICATION AND/OR PAYMENT OF THE NECESSARY FEES DOES NOT ENTITLE ME TO START OPERATION WHICH MUST COMMENCE ONLY AFTER THE ISSUANCE OF THE CERTIFICATE OF REGISTRATION.</p>
+
+                            <p style="text-align: center; font-weight: bold;">REPUBLIC OF THE PHILIPPINES</p>
+
+                            <p>
+                                I, <input type="text" id="declaration-name-ren" class="declaration-input" placeholder="Enter your full name">,
+                                the applicant after having been sworn to upon my oath, depose and say: That I have thoroughly read the foregoing application and that every statement therein is true to the best of my knowledge and belief.
+                            </p>
+
+                            <div class="signature-date">
+                                <div class="signature-box">
+                                    <label>Signature of Applicant:</label>
+                                    <div class="signature-pad-container">
+                                        <!-- Same fix: match CSS size & drawing size -->
+                                        <canvas id="signature-pad-ren" style="width:100%;height:220px;display:block;"></canvas>
+                                    </div>
+                                    <div class="signature-actions">
+                                        <button type="button" class="signature-btn clear-signature" id="clear-signature-ren">Clear</button>
+                                        <button type="button" class="signature-btn save-signature" id="save-signature-ren">Save Signature</button>
+                                    </div>
+                                    <div class="signature-preview">
+                                        <img id="signature-image-ren" class="hidden" alt="Signature">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ===================== /RENEWAL LUMBER DEALER PERMIT APPLICATION ===================== -->
+
+                <!-- Requirements List -->
                 <div class="requirements-list">
                     <!-- Requirement 1 (Common) -->
                     <div class="requirement-item">
@@ -1170,14 +1733,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="requirement-number new-number">3</span>
                                 <span class="requirement-number renewal-number" style="display:none">3</span>
                                 Application form duly accomplished (3 copies)
-                                <div class="download-buttons">
-                                    <a href="Lumber_applicationform.docx" class="download-btn new-form-btn" download="Lumber_Application_Form.docx">
-                                        <i class="fas fa-download"></i> Download New Form
-                                    </a>
-                                    <a href="lumber_renewal.docx" class="download-btn renewal-form-btn" style="display:none" download="Lumber_Renewal_Form.docx">
-                                        <i class="fas fa-download"></i> Download Renewal Form
-                                    </a>
-                                </div>
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1341,275 +1896,1304 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
                 </div>
+                <!-- /Requirements List -->
             </div>
 
             <div class="form-footer">
-                <button class="btn btn-primary" id="submitApplication">
+                <button type="button" class="btn btn-primary" id="submitApplication">
                     <i class="fas fa-paper-plane"></i> Submit Application
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="modal">
-        <div class="modal-content" style="max-width:400px;text-align:center;">
-            <span id="closeConfirmModal" class="close-modal">&times;</span>
-            <h3>Confirm Submission</h3>
-            <p>Are you sure you want to submit this lumber dealer permit request?</p>
-            <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Submit</button>
-            <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
+    <!-- Confirm Modal -->
+    <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Submit Application</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                Please confirm you want to submit this <b>Lumber Dealer</b> application. Files will be uploaded and your request will enter review.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="btnCancelConfirm" class="btn btn-outline" type="button">Cancel</button>
+                <button id="btnOkConfirm" class="btn btn-primary" type="button">Yes, submit</button>
+            </div>
         </div>
     </div>
 
+    <!-- Loading overlay (used during final save) -->
+    <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998;">
+        <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;">Working…</div>
+    </div>
+
+    <!-- Toast -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
+    <!-- Need Approved NEW modal (attempting renewal without approved NEW) -->
+    <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                To request a <b>renewal</b>, you must have an approved <b>NEW</b> lumber dealer permit on record.<br><br>
+                You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="needApprovedNewOk" class="btn btn-outline" type="button">Okay</button>
+                <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending NEW request modal -->
+    <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You already have a pending <b>NEW</b> lumber dealer permit request. Please wait for updates before submitting another one.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offer renewal modal (when user tries NEW but has approved NEW) -->
+    <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You can’t request a <b>new</b> lumber dealer permit because you already have an approved one. You’re allowed to request a <b>renewal</b> instead.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
+                <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
+            </div>
+        </div>
+    </div>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
-            const mobileToggle = document.querySelector('.mobile-toggle');
-            const navContainer = document.querySelector('.nav-container');
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    const isActive = navContainer.classList.toggle('active');
-                    document.body.style.overflow = isActive ? 'hidden' : '';
+        (function() {
+            'use strict';
+
+            /* =========================
+               Constants / Endpoints
+            ========================== */
+            const SAVE_URL = new URL('../backend/users/lumber/save_lumber.php', window.location.href).toString();
+            const PRECHECK_URL = new URL('../backend/users/lumber/precheck_lumber.php', window.location.href).toString();
+
+            /* =========================
+               Tiny helpers
+            ========================== */
+            const $ = (sel, root) => (root || document).querySelector(sel);
+            const $all = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+            const show = (el, on = true) => {
+                if (el) el.style.display = on ? '' : 'none';
+            };
+            const v = (id) => (document.getElementById(id)?.value || '').trim();
+            const display = (el, val) => {
+                if (el && el.style) el.style.display = val;
+            }; // safe show/hide
+
+            function toast(msg) {
+                const n = document.getElementById('profile-notification');
+                if (!n) return;
+                n.textContent = msg;
+                display(n, 'block');
+                n.style.opacity = '1';
+                setTimeout(() => {
+                    n.style.opacity = '0';
+                    setTimeout(() => {
+                        display(n, 'none');
+                        n.style.opacity = '1';
+                    }, 350);
+                }, 2400);
+            }
+
+            function dataURLToBlob(dataURL) {
+                if (!dataURL) return null;
+                const [meta, b64] = dataURL.split(',');
+                const mime = (meta.match(/data:(.*?);base64/) || [])[1] || 'application/octet-stream';
+                const bin = atob(b64 || '');
+                const u8 = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+                return new Blob([u8], {
+                    type: mime
                 });
             }
 
-            // Permit type selector functionality
-            const permitTypeBtns = document.querySelectorAll('.permit-type-btn');
+            function makeMHTML(html, parts = []) {
+                const boundary = '----=_NextPart_' + Date.now().toString(16);
+                const header = [
+                    'MIME-Version: 1.0',
+                    `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"`,
+                    'X-MimeOLE: Produced By Microsoft MimeOLE',
+                    '',
+                    `--${boundary}`,
+                    'Content-Type: text/html; charset="utf-8"',
+                    'Content-Transfer-Encoding: 8bit',
+                    '',
+                    html
+                ].join('\r\n');
+                const bodyParts = parts.map(p => {
+                    const wrapped = (p.base64 || '').replace(/.{1,76}/g, '$&\r\n');
+                    return [
+                        '', `--${boundary}`,
+                        `Content-Location: ${p.location}`,
+                        'Content-Transfer-Encoding: base64',
+                        `Content-Type: ${p.contentType}`, '',
+                        wrapped
+                    ].join('\r\n');
+                }).join('');
+                return header + bodyParts + `\r\n--${boundary}--`;
+            }
+
+            function svgToPngDataUrl(svgString) {
+                return new Promise((resolve) => {
+                    try {
+                        const svgBlob = new Blob([svgString], {
+                            type: 'image/svg+xml;charset=utf-8'
+                        });
+                        const url = URL.createObjectURL(svgBlob);
+                        const img = new Image();
+                        img.onload = function() {
+                            const c = document.createElement('canvas');
+                            c.width = img.width;
+                            c.height = img.height;
+                            c.getContext('2d').drawImage(img, 0, 0);
+                            URL.revokeObjectURL(url);
+                            try {
+                                resolve(c.toDataURL('image/png'));
+                            } catch {
+                                resolve('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+                            }
+                        };
+                        img.onerror = () => resolve('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+                        img.src = url;
+                    } catch {
+                        resolve('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+                    }
+                });
+            }
+
+            function wordHeaderStyles() {
+                return `
+      body, div, p { line-height:1.8; font-family: Arial; font-size:11pt; margin:0; padding:0; }
+      .section-title { font-weight:700; margin:15pt 0 6pt 0; text-decoration:underline; }
+      .info-line { margin:12pt 0; }
+      .underline { display:inline-block; min-width:300px; border-bottom:1px solid #000; padding:0 5px; margin:0 5px; }
+      .declaration { margin-top:15pt; }
+      .signature-line { margin-top:36pt; border-top:1px solid #000; width:50%; padding-top:3pt; }
+      .header-container { position:relative; margin-bottom:20px; width:100%; }
+      .header-logo { width:80px; height:80px; }
+      .header-content { text-align:center; margin:0 auto; width:100%; }
+      .header-content p { margin:0; padding:0; }
+      .bold { font-weight:700; }
+      .suppliers-table { width:100%; border-collapse:collapse; margin:15px 0; }
+      .suppliers-table th, .suppliers-table td { border:1px solid #000; padding:8px; text-align:left; }
+      .suppliers-table th { background:#f2f2f2; }
+    `;
+            }
+
+            function suppliersTableHTML(suppliers) {
+                const body = suppliers.length ?
+                    suppliers.map(s => `<tr><td>${s.name || ''}</td><td>${s.volume || ''}</td></tr>`).join('') :
+                    `<tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr>`;
+                return `
+      <table class="suppliers-table">
+        <tr><th>SUPPLIERS NAME/COMPANY</th><th>VOLUME</th></tr>
+        ${body}
+      </table>`;
+            }
+
+            function buildNewDocHTML(logoHref, sigHref, F, suppliers) {
+                const notStr = F.govEmp === 'yes' ? '' : 'not';
+                return `
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns:v="urn:schemas-microsoft-com:vml"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="UTF-8">
+  <title>Lumber Dealer Permit Application</title>
+  <style>${wordHeaderStyles()}</style>
+  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+</head>
+<body>
+  <div class="header-container">
+    <div style="text-align:center;">
+      <!--[if gte mso 9]><v:shape id="Logo" style="width:80px;height:80px;visibility:visible;mso-wrap-style:square" stroked="f" type="#_x0000_t75"><v:imagedata src="${logoHref}" o:title="Logo"/></v:shape><![endif]-->
+      <!--[if !mso]><!-- --><img class="header-logo" src="${logoHref}" alt="Logo"/><!--<![endif]-->
+    </div>
+    <div class="header-content">
+      <p class="bold">Republic of the Philippines</p>
+      <p class="bold">Department of Environment and Natural Resources</p>
+      <p>Community Environment and Natural Resources Office (CENRO)</p>
+      <p>Argao, Cebu</p>
+    </div>
+  </div>
+
+  <h2 style="text-align:center;margin-bottom:20px;">NEW LUMBER DEALER PERMIT APPLICATION</h2>
+
+  <p class="info-line">The CENR Officer<br>Argao, Cebu</p>
+  <p class="info-line">Sir:</p>
+
+  <p class="info-line">I/We, <span class="underline">${F.fullName || ''}</span>, <span class="underline">${F.applicantAge || ''}</span> years old, with business address at <span class="underline">${F.businessAddress || ''}</span>, hereby apply for registration as a Lumber Dealer.</p>
+
+  <p class="info-line">1. I am ${notStr} a government employee and have ${notStr} received any compensation from the government.</p>
+
+  <p class="info-line">2. Proposed place of operation: <span class="underline">${F.operationPlace || ''}</span></p>
+
+  <p class="info-line">3. Expected gross annual volume of business: <span class="underline">${F.annualVolume || ''}</span> worth <span class="underline">${F.annualWorth || ''}</span></p>
+
+  <p class="info-line">4. Total number of employees: <span class="underline">${F.employeesCount || ''}</span></p>
+  <p class="info-line" style="margin-left:20px;">Total number of dependents: <span class="underline">${F.dependentsCount || ''}</span></p>
+
+  <p class="info-line">5. List of Suppliers and Corresponding Volume</p>
+  ${suppliersTableHTML(suppliers)}
+
+  <p class="info-line">6. Intended market (barangays and municipalities to be served): <span class="underline">${F.intendedMarket || ''}</span></p>
+
+  <p class="info-line">7. My experience as a lumber dealer: <span class="underline">${F.experience || ''}</span></p>
+
+  <p class="info-line">8. I will fully comply with Republic Act No. 123G and the rules and regulations of the Forest Management Bureau.</p>
+
+  <p class="info-line">9. I understand that false statements or omissions may result in:</p>
+  <ul style="margin-left:40px;">
+    <li>Disapproval of this application</li>
+    <li>Cancellation of registration</li>
+    <li>Forfeiture of bond</li>
+    <li>Criminal liability</li>
+  </ul>
+
+  <div style="margin-top:40px;">
+    <p>AFFIDAVIT OF TRUTH</p>
+    <p>I, <span class="underline">${F.declarationName || ''}</span>, after being sworn to upon my oath, depose and say that I have read the foregoing application and that every statement therein is true and correct to the best of my knowledge and belief.</p>
+
+    <div style="margin-top:60px;">
+      ${sigHref
+        ? `
+          <!--[if gte mso 9]><v:shape style="width:300px;height:110px;visibility:visible;mso-wrap-style:square" stroked="f" type="#_x0000_t75"><v:imagedata src="${sigHref}" o:title="Signature"/></v:shape><![endif]-->
+          <!--[if !mso]><!-- --><img src="${sigHref}" width="300" height="110" alt="Signature"/><!--<![endif]-->
+          <p>Signature of Applicant</p>
+        `
+        : `
+          <div class="signature-line"></div>
+          <p>Signature of Applicant</p>
+        `}
+    </div>
+  </div>
+</body>
+</html>`;
+            }
+
+            function buildRenewalDocHTML(logoHref, sigHref, F, suppliers) {
+                const notStr = F.govEmp === 'yes' ? '' : 'not';
+                return `
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns:v="urn:schemas-microsoft-com:vml"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="UTF-8">
+  <title>Renewal – Lumber Dealer Permit</title>
+  <style>${wordHeaderStyles()}</style>
+  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+</head>
+<body>
+  <div class="header-container">
+    <div style="text-align:center;">
+      <!--[if gte mso 9]><v:shape id="Logo" style="width:80px;height:80px;visibility:visible;mso-wrap-style:square" stroked="f" type="#_x0000_t75"><v:imagedata src="${logoHref}" o:title="Logo"/></v:shape><![endif]-->
+      <!--[if !mso]><!-- --><img class="header-logo" src="${logoHref}" alt="Logo"/><!--<![endif]-->
+    </div>
+    <div class="header-content">
+      <p class="bold">Republic of the Philippines</p>
+      <p class="bold">Department of Environment and Natural Resources</p>
+      <p>Community Environment and Natural Resources Office (CENRO)</p>
+      <p>Argao, Cebu</p>
+    </div>
+  </div>
+
+  <h2 style="text-align:center;margin-bottom:20px;">RENEWAL OF LUMBER DEALER PERMIT</h2>
+
+  <p class="info-line">The CENR Officer<br>Argao, Cebu</p>
+  <p class="info-line">Sir:</p>
+
+  <p class="info-line">I/We, <span class="underline">${F.fullName || ''}</span>, <span class="underline">${F.applicantAge || ''}</span> years old, with business address at <span class="underline">${F.businessAddress || ''}</span>, hereby apply for <b>renewal</b> of registration as a Lumber Dealer.</p>
+
+  <p class="info-line">1. I am ${notStr} a government employee and have ${notStr} received any compensation from the government.</p>
+
+  <p class="info-line">2. Place of operation: <span class="underline">${F.operationPlace || ''}</span></p>
+
+  <p class="info-line">3. Expected gross annual volume of business: <span class="underline">${F.annualVolume || ''}</span> worth <span class="underline">${F.annualWorth || ''}</span></p>
+
+  <p class="info-line">4. Total number of employees: <span class="underline">${F.employeesCount || ''}</span></p>
+  <p class="info-line" style="margin-left:20px;">Total number of dependents: <span class="underline">${F.dependentsCount || ''}</span></p>
+
+  <p class="info-line">5. List of Suppliers and Corresponding Volume</p>
+  ${suppliersTableHTML(suppliers)}
+
+  <p class="info-line">6. Selling products to: <span class="underline">${F.intendedMarket || ''}</span></p>
+  <p class="info-line">7. My experience as a lumber dealer: <span class="underline">${F.experience || ''}</span></p>
+
+  <p class="info-line">8. Previous Certificate of Registration No.: <span class="underline">${F.prevCert || ''}</span></p>
+  <p class="info-line" style="margin-left:20px;">Issued On: <span class="underline">${F.issuedDate || ''}</span> &nbsp; Expires On: <span class="underline">${F.expiryDate || ''}</span></p>
+
+  <p class="info-line">9. C.R. License No.: <span class="underline">${F.crLicense || ''}</span> &nbsp;&nbsp; Sawmill Permit No.: <span class="underline">${F.sawmillPermit || ''}</span></p>
+  <p class="info-line">10. Buying logs/lumber from other sources: <span class="underline">${(F.buyingOther || '').toUpperCase()}</span></p>
+
+  <div style="margin-top:40px;">
+    <p>AFFIDAVIT OF TRUTH</p>
+    <p>I, <span class="underline">${F.declarationName || ''}</span>, after being sworn to upon my oath, depose and say that I have read the foregoing application and that every statement therein is true and correct to the best of my knowledge and belief.</p>
+
+    <div style="margin-top:60px;">
+      ${sigHref
+        ? `
+          <!--[if gte mso 9]><v:shape style="width:300px;height:110px;visibility:visible;mso-wrap-style:square" stroked="f" type="#_x0000_t75"><v:imagedata src="${sigHref}" o:title="Signature"/></v:shape><![endif]-->
+          <!--[if !mso]><!-- --><img src="${sigHref}" width="300" height="110" alt="Signature"/><!--<![endif]-->
+          <p>Signature of Applicant</p>
+        `
+        : `
+          <div class="signature-line"></div>
+          <p>Signature of Applicant</p>
+        `}
+    </div>
+  </div>
+</body>
+</html>`;
+            }
+
+            /* =========================
+               Mobile menu + header dropdowns
+            ========================== */
+            const mobileToggle = $('.mobile-toggle');
+            mobileToggle?.addEventListener('click', () => {
+                const nav = $('.nav-container');
+                nav?.classList.toggle('active');
+                document.body.style.overflow = nav?.classList.contains('active') ? 'hidden' : '';
+            });
+
+            const dropdownIcons = $all('.nav-item.dropdown [data-dropdown-toggle], .nav-item.dropdown .nav-icon');
+            dropdownIcons.forEach(icon => {
+                icon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const item = icon.closest('.nav-item');
+                    const menu = item?.querySelector('.dropdown-menu');
+                    $all('.dropdown-menu._open').forEach(m => {
+                        if (m !== menu) {
+                            m.classList.remove('_open');
+                            Object.assign(m.style, {
+                                opacity: 0,
+                                visibility: 'hidden',
+                                pointerEvents: 'none',
+                                transform: 'translateY(10px)'
+                            });
+                        }
+                    });
+                    if (!menu) return;
+                    const open = !menu.classList.contains('_open');
+                    menu.classList.toggle('_open', open);
+                    Object.assign(menu.style, open ?
+                        {
+                            opacity: 1,
+                            visibility: 'visible',
+                            pointerEvents: 'auto',
+                            transform: 'translateY(0)'
+                        } :
+                        {
+                            opacity: 0,
+                            visibility: 'hidden',
+                            pointerEvents: 'none',
+                            transform: 'translateY(10px)'
+                        }
+                    );
+                });
+            });
+            document.addEventListener('click', () => {
+                $all('.dropdown-menu._open').forEach(m => {
+                    m.classList.remove('_open');
+                    Object.assign(m.style, {
+                        opacity: 0,
+                        visibility: 'hidden',
+                        pointerEvents: 'none',
+                        transform: 'translateY(10px)'
+                    });
+                });
+            });
+
+            /* =========================
+               Permit Type toggle (NEW/RENEWAL)
+            ========================== */
             const requirement5 = document.getElementById('requirement-5');
             const requirement8 = document.getElementById('requirement-8');
             const requirement9 = document.getElementById('requirement-9');
 
-            permitTypeBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    permitTypeBtns.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
+            const newSection = document.getElementById('lumber-application-section');
+            const renSection = document.getElementById('renewal-application-section');
+            const permitTypeBtns = $all('.permit-type-btn');
 
-                    if (this.dataset.type === 'new') {
-                        requirement5.style.display = 'flex';
-                        requirement8.style.display = 'flex';
-                        requirement9.style.display = 'none';
-                        document.querySelectorAll('.new-number').forEach(el => el.style.display = 'inline');
-                        document.querySelectorAll('.renewal-number').forEach(el => el.style.display = 'none');
-                        document.querySelector('.new-form-btn').style.display = 'inline-flex';
-                        document.querySelector('.renewal-form-btn').style.display = 'none';
-                    } else {
-                        requirement5.style.display = 'none';
-                        requirement8.style.display = 'none';
-                        requirement9.style.display = 'flex';
-                        document.querySelectorAll('.new-number').forEach(el => el.style.display = 'none');
-                        document.querySelectorAll('.renewal-number').forEach(el => el.style.display = 'inline');
-                        document.querySelector('.new-form-btn').style.display = 'none';
-                        document.querySelector('.renewal-form-btn').style.display = 'inline-flex';
-                    }
-                });
-            });
-
-            // Initialize with New Permit selected
-            document.querySelector('.permit-type-btn[data-type="new"]').click();
-
-            // File input handling
-            const fileInputs = [{
-                    id: 'file-1',
-                    uploaded: 'uploaded-files-1'
-                },
-                {
-                    id: 'file-2',
-                    uploaded: 'uploaded-files-2'
-                },
-                {
-                    id: 'file-3',
-                    uploaded: 'uploaded-files-3'
-                },
-                {
-                    id: 'file-4',
-                    uploaded: 'uploaded-files-4'
-                },
-                {
-                    id: 'file-5',
-                    uploaded: 'uploaded-files-5'
-                },
-                {
-                    id: 'file-6',
-                    uploaded: 'uploaded-files-6'
-                },
-                {
-                    id: 'file-7',
-                    uploaded: 'uploaded-files-7'
-                },
-                {
-                    id: 'file-8',
-                    uploaded: 'uploaded-files-8'
-                },
-                {
-                    id: 'file-9',
-                    uploaded: 'uploaded-files-9'
-                },
-                {
-                    id: 'file-10a',
-                    uploaded: 'uploaded-files-10a'
-                },
-                {
-                    id: 'file-10b',
-                    uploaded: 'uploaded-files-10b'
-                }
-            ];
-
-            let selectedFiles = {};
-
-            fileInputs.forEach(input => {
-                const fileInput = document.getElementById(input.id);
-                if (fileInput) {
-                    fileInput.addEventListener('change', function() {
-                        const file = this.files[0];
-                        this.parentElement.querySelector('.file-name').textContent = file ? file.name : 'No file chosen';
-                        if (file) {
-                            selectedFiles[input.id] = file;
-                        } else {
-                            selectedFiles[input.id] = null;
-                        }
-                    });
-                }
-            });
-
-            // Confirmation modal logic
-            const confirmModal = document.getElementById('confirmModal');
-            const closeConfirmModal = document.getElementById('closeConfirmModal');
-            const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
-            const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
-
-            const submitApplicationBtn = document.getElementById('submitApplication');
-            if (submitApplicationBtn) {
-                submitApplicationBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    // Validate fields
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
-                    if (!firstName || !lastName) {
-                        alert('First name and last name are required.');
-                        return;
-                    }
-
-                    // Check if required files are uploaded based on permit type
-                    const isNewPermit = document.querySelector('.permit-type-btn[data-type="new"]').classList.contains('active');
-                    const requiredFiles = isNewPermit ? ['file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-10a', 'file-10b'] : ['file-1', 'file-2', 'file-3', 'file-4', 'file-6', 'file-7', 'file-9', 'file-10a', 'file-10b'];
-
-                    let allRequiredFilesUploaded = true;
-                    requiredFiles.forEach(fileId => {
-                        if (!selectedFiles[fileId]) {
-                            allRequiredFilesUploaded = false;
-                            const requirementItem = document.getElementById(fileId).closest('.requirement-item');
-                            if (requirementItem) {
-                                requirementItem.style.borderLeft = '4px solid #ff4757';
-                                setTimeout(() => {
-                                    requirementItem.style.borderLeft = '4px solid var(--primary-color)';
-                                }, 2000);
-                            }
-                        }
-                    });
-
-                    if (!allRequiredFilesUploaded) {
-                        alert('Please upload all required files before submitting.');
-                        return;
-                    }
-
-                    if (confirmModal) confirmModal.style.display = 'block';
-                });
+            function activePermitType() {
+                return (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
             }
 
-            if (closeConfirmModal) {
-                closeConfirmModal.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                });
-            }
-            if (cancelSubmitBtn) {
-                cancelSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-                });
-            }
-
-            if (confirmSubmitBtn) {
-                confirmSubmitBtn.addEventListener('click', function() {
-                    if (confirmModal) confirmModal.style.display = 'none';
-
-                    // Prepare form data
-                    const firstName = document.querySelector('.name-fields input[placeholder="First Name"]').value.trim();
-                    const middleName = document.querySelector('.name-fields input[placeholder="Middle Name"]').value.trim();
-                    const lastName = document.querySelector('.name-fields input[placeholder="Last Name"]').value.trim();
-                    const permitType = document.querySelector('.permit-type-btn.active').dataset.type;
-
-                    const formData = new FormData();
-                    formData.append('first_name', firstName);
-                    formData.append('middle_name', middleName);
-                    formData.append('last_name', lastName);
-                    formData.append('permit_type', permitType);
-
-                    // Append all files
-                    fileInputs.forEach(input => {
-                        if (selectedFiles[input.id]) {
-                            formData.append(input.id.replace('-', '_'), selectedFiles[input.id]);
-                        }
-                    });
-
-                    fetch('../backend/users/addlumber.php', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(response => {
-                            if (!response.ok) {
-                                return response.json().then(err => {
-                                    throw new Error(err.errors ? err.errors.join('\n') : 'Server error');
-                                });
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            if (data.success) {
-                                // Clear form and show success
-                                document.querySelectorAll('input[type="text"]').forEach(input => input.value = '');
-                                document.querySelectorAll('input[type="file"]').forEach(input => {
-                                    input.value = '';
-                                    input.parentElement.querySelector('.file-name').textContent = 'No file chosen';
-                                });
-                                selectedFiles = {};
-                                showProfileNotification(data.message);
-                            } else {
-                                throw new Error(data.errors ? data.errors.join('\n') : 'Submission failed');
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert(error.message || 'Network error. Please try again.');
-                        });
-                });
-            }
-
-            function showProfileNotification(message) {
-                const notif = document.getElementById('profile-notification');
-                if (!notif) return;
-                notif.textContent = message;
-                notif.style.display = 'block';
-                notif.style.opacity = '1';
+            function setPermitType(type) {
+                const isNew = type === 'new';
+                show(newSection, isNew);
+                show(renSection, !isNew);
+                show(requirement5, isNew);
+                show(requirement8, isNew);
+                show(requirement9, !isNew);
+                $all('.new-number').forEach(el => show(el, isNew));
+                $all('.renewal-number').forEach(el => show(el, !isNew));
                 setTimeout(() => {
-                    notif.style.opacity = '0';
-                    setTimeout(() => {
-                        notif.style.display = 'none';
-                        notif.style.opacity = '1';
-                    }, 400);
-                }, 2200);
+                    if (isNew) resizeSigCanvas();
+                    else resizeSigCanvasRen();
+                }, 0);
             }
 
-            // Add files button (demo functionality)
-            const addFilesBtn = document.getElementById('addFilesBtn');
-            if (addFilesBtn) {
-                addFilesBtn.addEventListener('click', function() {
-                    alert('In a real application, this would open a dialog to add multiple files at once.');
+            permitTypeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    permitTypeBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    setPermitType(btn.getAttribute('data-type'));
+                });
+            });
+            document.querySelector('.permit-type-btn[data-type="new"]')?.classList.add('active');
+            setPermitType('new');
+
+            /* =========================
+               Suppliers tables
+            ========================== */
+            const suppliersTbody = $('#suppliers-table tbody');
+            $('#add-supplier-row')?.addEventListener('click', () => addSupplierRow());
+
+            function addSupplierRow(name = '', vol = '') {
+                if (!suppliersTbody) return;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+      <td><input type="text" class="supplier-name" placeholder="Supplier name" value="${name}"></td>
+      <td><input type="text" class="supplier-volume" placeholder="Volume" value="${vol}"></td>
+      <td><button type="button" class="remove-btn">Remove</button></td>`;
+                suppliersTbody.appendChild(tr);
+                tr.querySelector('.remove-btn').addEventListener('click', () => {
+                    if (suppliersTbody.rows.length > 1) tr.remove();
                 });
             }
-        });
+
+            const suppliersTbodyRen = $('#suppliers-table-ren tbody');
+            $('#add-supplier-row-ren')?.addEventListener('click', () => addSupplierRowRen());
+
+            function addSupplierRowRen(name = '', vol = '') {
+                if (!suppliersTbodyRen) return;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+      <td><input type="text" class="supplier-name-ren" placeholder="Supplier name" value="${name}"></td>
+      <td><input type="text" class="supplier-volume-ren" placeholder="Volume" value="${vol}"></td>
+      <td><button type="button" class="remove-btn-ren">Remove</button></td>`;
+                suppliersTbodyRen.appendChild(tr);
+                tr.querySelector('.remove-btn-ren').addEventListener('click', () => {
+                    if (suppliersTbodyRen.rows.length > 1) tr.remove();
+                });
+            }
+
+            function gatherSuppliers(isRenewal) {
+                const rows = isRenewal ? $all('#suppliers-table-ren tbody tr') : $all('#suppliers-table tbody tr');
+                return rows.map(r => {
+                    const name = (r.querySelector(isRenewal ? '.supplier-name-ren' : '.supplier-name')?.value || '').trim();
+                    const volume = (r.querySelector(isRenewal ? '.supplier-volume-ren' : '.supplier-volume')?.value || '').trim();
+                    if (!name && !volume) return null;
+                    return {
+                        name,
+                        volume
+                    };
+                }).filter(Boolean);
+            }
+
+            /* =========================
+               File names on select
+            ========================== */
+            const fileIds = ['file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-9', 'file-10a', 'file-10b'];
+            fileIds.forEach(id => {
+                const input = document.getElementById(id);
+                if (!input) return;
+                input.addEventListener('change', () => {
+                    const nameEl = input.parentElement?.querySelector('.file-name');
+                    if (nameEl) nameEl.textContent = input.files?.[0]?.name ?? 'No file chosen';
+                });
+                document.querySelector(`label[for="${id}"]`)?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    input.click();
+                });
+            });
+
+            /* =========================
+               Signature NEW
+            ========================== */
+            const sigCanvas = document.getElementById('signature-pad');
+            const clearSigBtn = document.getElementById('clear-signature');
+            const saveSigBtn = document.getElementById('save-signature');
+            const sigPreview = document.getElementById('signature-image');
+
+            let strokes = [],
+                currentStroke = [],
+                drawing = false,
+                lastPt = {
+                    x: 0,
+                    y: 0
+                };
+
+            function sizeCanvasToCSS(canvas) {
+                if (!canvas) return;
+                const rect = canvas.getBoundingClientRect();
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+                canvas.width = Math.round(rect.width * ratio);
+                canvas.height = Math.round(rect.height * ratio);
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, rect.width, rect.height);
+            }
+
+            function getCanvasPos(e, canvas) {
+                const r = canvas.getBoundingClientRect();
+                const t = e.touches ? e.touches[0] : null;
+                const cx = t ? t.clientX : e.clientX;
+                const cy = t ? t.clientY : e.clientY;
+                return {
+                    x: cx - r.left,
+                    y: cy - r.top
+                };
+            }
+
+            function repaintSignature(bg = true) {
+                if (!sigCanvas) return;
+                const ctx = sigCanvas.getContext('2d');
+                const rect = sigCanvas.getBoundingClientRect();
+                if (bg) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, rect.width, rect.height);
+                }
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                for (const s of strokes) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x, s[0].y);
+                    for (let i = 1; i < s.length; i++) ctx.lineTo(s[i].x, s[i].y);
+                    ctx.stroke();
+                }
+            }
+
+            function resizeSigCanvas() {
+                sizeCanvasToCSS(sigCanvas);
+                repaintSignature(true);
+            }
+            window.addEventListener('resize', () => {
+                if (newSection?.style.display !== 'none') resizeSigCanvas();
+            });
+            resizeSigCanvas();
+
+            function startSig(e) {
+                if (!sigCanvas) return;
+                drawing = true;
+                currentStroke = [];
+                lastPt = getCanvasPos(e, sigCanvas);
+                currentStroke.push(lastPt);
+                e.preventDefault?.();
+            }
+
+            function drawSig(e) {
+                if (!drawing || !sigCanvas) return;
+                const ctx = sigCanvas.getContext('2d');
+                const p = getCanvasPos(e, sigCanvas);
+                ctx.beginPath();
+                ctx.moveTo(lastPt.x, lastPt.y);
+                ctx.lineTo(p.x, p.y);
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.stroke();
+                lastPt = p;
+                currentStroke.push(p);
+                e.preventDefault?.();
+            }
+
+            function endSig() {
+                if (!drawing) return;
+                drawing = false;
+                if (currentStroke.length > 1) strokes.push(currentStroke);
+                currentStroke = [];
+            }
+
+            if (sigCanvas) {
+                sigCanvas.addEventListener('mousedown', startSig);
+                sigCanvas.addEventListener('mousemove', drawSig);
+                window.addEventListener('mouseup', endSig);
+                sigCanvas.addEventListener('touchstart', startSig, {
+                    passive: false
+                });
+                sigCanvas.addEventListener('touchmove', drawSig, {
+                    passive: false
+                });
+                window.addEventListener('touchend', endSig);
+
+                clearSigBtn?.addEventListener('click', () => {
+                    strokes = [];
+                    repaintSignature(true);
+                    if (sigPreview) {
+                        sigPreview.src = '';
+                        sigPreview.classList.add('hidden');
+                    }
+                });
+                saveSigBtn?.addEventListener('click', () => {
+                    if (!strokes.some(s => s && s.length > 1)) {
+                        alert('Please provide a signature first.');
+                        return;
+                    }
+                    const img = getSignatureDataURLScaled(300, 110);
+                    sigPreview.src = img.dataURL;
+                    sigPreview.classList.remove('hidden');
+                });
+            }
+
+            function getSignatureDataURLScaled(targetW = 300, targetH = 110) {
+                if (!sigCanvas || !strokes.some(s => s && s.length > 1)) return {
+                    dataURL: '',
+                    w: 0,
+                    h: 0
+                };
+                const rect = sigCanvas.getBoundingClientRect();
+                const off = document.createElement('canvas');
+                off.width = targetW;
+                off.height = targetH;
+                const ctx = off.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, targetW, targetH);
+                const sx = targetW / rect.width,
+                    sy = targetH / rect.height;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 2 * Math.min(sx, sy);
+                for (const s of strokes) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x * sx, s[0].y * sy);
+                    for (let j = 1; j < s.length; j++) ctx.lineTo(s[j].x * sx, s[j].y * sy);
+                    ctx.stroke();
+                }
+                return {
+                    dataURL: off.toDataURL('image/png'),
+                    w: targetW,
+                    h: targetH
+                };
+            }
+
+            /* =========================
+               Signature RENEWAL
+            ========================== */
+            const sigCanvasRen = document.getElementById('signature-pad-ren');
+            const clearSigBtnRen = document.getElementById('clear-signature-ren');
+            const saveSigBtnRen = document.getElementById('save-signature-ren');
+            const sigPreviewRen = document.getElementById('signature-image-ren');
+
+            let strokesRen = [],
+                currentStrokeRen = [],
+                drawingRen = false,
+                lastPtRen = {
+                    x: 0,
+                    y: 0
+                };
+
+            function repaintSignatureRen(bg = true) {
+                if (!sigCanvasRen) return;
+                const ctx = sigCanvasRen.getContext('2d');
+                const rect = sigCanvasRen.getBoundingClientRect();
+                if (bg) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, rect.width, rect.height);
+                }
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                for (const s of strokesRen) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x, s[0].y);
+                    for (let i = 1; i < s.length; i++) ctx.lineTo(s[i].x, s[i].y);
+                    ctx.stroke();
+                }
+            }
+
+            function resizeSigCanvasRen() {
+                sizeCanvasToCSS(sigCanvasRen);
+                repaintSignatureRen(true);
+            }
+            window.addEventListener('resize', () => {
+                if (renSection?.style.display !== 'none') resizeSigCanvasRen();
+            });
+
+            function startSigRen(e) {
+                if (!sigCanvasRen) return;
+                drawingRen = true;
+                currentStrokeRen = [];
+                lastPtRen = getCanvasPos(e, sigCanvasRen);
+                currentStrokeRen.push(lastPtRen);
+                e.preventDefault?.();
+            }
+
+            function drawSigRen(e) {
+                if (!drawingRen || !sigCanvasRen) return;
+                const ctx = sigCanvasRen.getContext('2d');
+                const p = getCanvasPos(e, sigCanvasRen);
+                ctx.beginPath();
+                ctx.moveTo(lastPtRen.x, lastPtRen.y);
+                ctx.lineTo(p.x, p.y);
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.stroke();
+                lastPtRen = p;
+                currentStrokeRen.push(p);
+                e.preventDefault?.();
+            }
+
+            function endSigRen() {
+                if (!drawingRen) return;
+                drawingRen = false;
+                if (currentStrokeRen.length > 1) strokesRen.push(currentStrokeRen);
+                currentStrokeRen = [];
+            }
+
+            if (sigCanvasRen) {
+                sigCanvasRen.addEventListener('mousedown', startSigRen);
+                sigCanvasRen.addEventListener('mousemove', drawSigRen);
+                window.addEventListener('mouseup', endSigRen);
+                sigCanvasRen.addEventListener('touchstart', startSigRen, {
+                    passive: false
+                });
+                sigCanvasRen.addEventListener('touchmove', drawSigRen, {
+                    passive: false
+                });
+                window.addEventListener('touchend', endSigRen);
+
+                clearSigBtnRen?.addEventListener('click', () => {
+                    strokesRen = [];
+                    repaintSignatureRen(true);
+                    if (sigPreviewRen) {
+                        sigPreviewRen.src = '';
+                        sigPreviewRen.classList.add('hidden');
+                    }
+                });
+                saveSigBtnRen?.addEventListener('click', () => {
+                    if (!strokesRen.some(s => s && s.length > 1)) {
+                        alert('Please provide a signature first.');
+                        return;
+                    }
+                    const img = getSignatureDataURLScaledRen(300, 110);
+                    sigPreviewRen.src = img.dataURL;
+                    sigPreviewRen.classList.remove('hidden');
+                });
+            }
+
+            function getSignatureDataURLScaledRen(targetW = 300, targetH = 110) {
+                if (!sigCanvasRen || !strokesRen.some(s => s && s.length > 1)) return {
+                    dataURL: '',
+                    w: 0,
+                    h: 0
+                };
+                const rect = sigCanvasRen.getBoundingClientRect();
+                const off = document.createElement('canvas');
+                off.width = targetW;
+                off.height = targetH;
+                const ctx = off.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, targetW, targetH);
+                const sx = targetW / rect.width,
+                    sy = targetH / rect.height;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 2 * Math.min(sx, sy);
+                for (const s of strokesRen) {
+                    if (!s || s.length < 2) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(s[0].x * sx, s[0].y * sy);
+                    for (let j = 1; j < s.length; j++) ctx.lineTo(s[j].x * sx, s[j].y * sy);
+                    ctx.stroke();
+                }
+                return {
+                    dataURL: off.toDataURL('image/png'),
+                    w: targetW,
+                    h: targetH
+                };
+            }
+
+            /* =========================
+               Autofill NEW <-> RENEWAL
+            ========================== */
+            function autofillRenewalFromNew() {
+                const map = [
+                    ['first-name', 'first-name-ren'],
+                    ['middle-name', 'middle-name-ren'],
+                    ['last-name', 'last-name-ren'],
+                    ['business-address', 'business-address-ren'],
+                    ['operation-place', 'operation-place-ren'],
+                    ['annual-volume', 'annual-volume-ren'],
+                    ['annual-worth', 'annual-worth-ren'],
+                    ['employees-count', 'employees-count-ren'],
+                    ['dependents-count', 'dependents-count-ren'],
+                    ['intended-market', 'intended-market-ren'],
+                    ['experience', 'experience-ren'],
+                    ['declaration-name', 'declaration-name-ren'],
+                ];
+                map.forEach(([a, b]) => {
+                    const src = document.getElementById(a),
+                        dst = document.getElementById(b);
+                    if (src && dst) dst.value = src.value;
+                });
+                (document.getElementById('govt-employee-ren-yes') || {}).checked = !!document.getElementById('govt-employee-yes')?.checked;
+                (document.getElementById('govt-employee-ren-no') || {}).checked = !!document.getElementById('govt-employee-no')?.checked;
+
+                const rows = $all('#suppliers-table tbody tr');
+                $all('#suppliers-table-ren tbody tr').forEach((r, i) => {
+                    if (i > 0) r.remove();
+                });
+                const firstRen = $('#suppliers-table-ren tbody tr');
+                rows.forEach((r, idx) => {
+                    const name = r.querySelector('.supplier-name')?.value || '';
+                    const vol = r.querySelector('.supplier-volume')?.value || '';
+                    if (idx === 0 && firstRen) {
+                        firstRen.querySelector('.supplier-name-ren').value = name;
+                        firstRen.querySelector('.supplier-volume-ren').value = vol;
+                    } else {
+                        addSupplierRowRen(name, vol);
+                    }
+                });
+            }
+
+            function autofillNewFromRenewal() {
+                const map = [
+                    ['first-name-ren', 'first-name'],
+                    ['middle-name-ren', 'middle-name'],
+                    ['last-name-ren', 'last-name'],
+                    ['business-address-ren', 'business-address'],
+                    ['operation-place-ren', 'operation-place'],
+                    ['annual-volume-ren', 'annual-volume'],
+                    ['annual-worth-ren', 'annual-worth'],
+                    ['employees-count-ren', 'employees-count'],
+                    ['dependents-count-ren', 'dependents-count'],
+                    ['intended-market-ren', 'intended-market'],
+                    ['experience-ren', 'experience'],
+                    ['declaration-name-ren', 'declaration-name'],
+                ];
+                map.forEach(([a, b]) => {
+                    const src = document.getElementById(a),
+                        dst = document.getElementById(b);
+                    if (src && dst) dst.value = src.value;
+                });
+                (document.getElementById('govt-employee-yes') || {}).checked = !!document.getElementById('govt-employee-ren-yes')?.checked;
+                (document.getElementById('govt-employee-no') || {}).checked = !!document.getElementById('govt-employee-ren-no')?.checked;
+
+                const rows = $all('#suppliers-table-ren tbody tr');
+                $all('#suppliers-table tbody tr').forEach((r, i) => {
+                    if (i > 0) r.remove();
+                });
+                const first = $('#suppliers-table tbody tr');
+                rows.forEach((r, idx) => {
+                    const name = r.querySelector('.supplier-name-ren')?.value || '';
+                    const vol = r.querySelector('.supplier-volume-ren')?.value || '';
+                    if (idx === 0 && first) {
+                        first.querySelector('.supplier-name').value = name;
+                        first.querySelector('.supplier-volume').value = vol;
+                    } else {
+                        addSupplierRow(name, vol);
+                    }
+                });
+            }
+
+            /* =========================
+               Modals (guarded)
+            ========================== */
+            const confirmModal = document.getElementById('confirmModal');
+            const btnCancelConfirm = document.getElementById('btnCancelConfirm') || document.getElementById('cancelSubmitBtn');
+            const btnOkConfirm = document.getElementById('btnOkConfirm') || document.getElementById('confirmSubmitBtn');
+
+            const pendingNewModal = document.getElementById('pendingNewModal');
+            const pendingNewOk = document.getElementById('pendingNewOk');
+
+            const offerRenewalModal = document.getElementById('offerRenewalModal');
+            const offerRenewalOk = document.getElementById('offerRenewalOk');
+            const offerRenewalSwitch = document.getElementById('offerRenewalSwitch');
+
+            const needApprovedNewModal = document.getElementById('needApprovedNewModal');
+            const needApprovedNewOk = document.getElementById('needApprovedNewOk');
+            const needApprovedNewSwitch = document.getElementById('needApprovedNewSwitch');
+
+            pendingNewOk?.addEventListener('click', () => {
+                display(pendingNewModal, 'none');
+            });
+            offerRenewalOk?.addEventListener('click', () => {
+                display(offerRenewalModal, 'none');
+            });
+            needApprovedNewOk?.addEventListener('click', () => {
+                display(needApprovedNewModal, 'none');
+            });
+
+            offerRenewalSwitch?.addEventListener('click', () => {
+                display(offerRenewalModal, 'none');
+                permitTypeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'renewal'));
+                setPermitType('renewal');
+                autofillRenewalFromNew();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+
+            needApprovedNewSwitch?.addEventListener('click', () => {
+                display(needApprovedNewModal, 'none');
+                permitTypeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'new'));
+                setPermitType('new');
+                autofillNewFromRenewal();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+
+            btnCancelConfirm?.addEventListener('click', () => {
+                display(confirmModal, 'none');
+            });
+
+            /* =========================
+               PRECHECK → CONFIRM → SUBMIT
+            ========================== */
+            document.getElementById('submitApplication')?.addEventListener('click', async () => {
+                const overlay = document.getElementById('loadingIndicator');
+                display(overlay, 'flex');
+                try {
+                    const type = activePermitType();
+                    const first = type === 'renewal' ? v('first-name-ren') : v('first-name');
+                    const middle = type === 'renewal' ? v('middle-name-ren') : v('middle-name');
+                    const last = type === 'renewal' ? v('last-name-ren') : v('last-name');
+
+                    const fd = new FormData();
+                    fd.append('first_name', first);
+                    fd.append('middle_name', middle);
+                    fd.append('last_name', last);
+                    fd.append('desired_permit_type', type);
+
+                    const res = await fetch(PRECHECK_URL, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'include'
+                    });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error(json.message || 'Precheck failed');
+
+                    if (json.block === 'pending_new') {
+                        display(pendingNewModal, 'flex');
+                        return;
+                    }
+                    if (json.block === 'pending_renewal') {
+                        toast('You already have a pending lumber renewal. Please wait for the update first.');
+                        return;
+                    }
+                    if (json.block === 'need_approved_new') {
+                        display(needApprovedNewModal, 'flex');
+                        return;
+                    }
+                    if (json.offer === 'renewal' && type === 'new') {
+                        display(offerRenewalModal, 'flex');
+                        return;
+                    }
+
+                    display(confirmModal, 'flex');
+                } catch (e) {
+                    console.error(e);
+                    display(confirmModal, 'flex');
+                } finally {
+                    display(overlay, 'none');
+                }
+            });
+
+            btnOkConfirm?.addEventListener('click', async () => {
+                display(confirmModal, 'none');
+                const overlay = document.getElementById('loadingIndicator'); // FIX: use the correct ID
+                display(overlay, 'flex');
+                try {
+                    await doSubmit();
+                    toast("Application submitted. We'll notify you once reviewed.");
+                    resetForm();
+                } catch (e) {
+                    console.error(e);
+                    toast(e?.message || 'Submission failed. Please try again.');
+                } finally {
+                    display(overlay, 'none');
+                }
+            });
+
+            /* =========================
+               Final submit (generate doc + upload files)
+            ========================== */
+            async function doSubmit() {
+                const type = activePermitType();
+                const isRenewal = type === 'renewal';
+
+                const sigScaled = isRenewal ? getSignatureDataURLScaledRen(300, 110) : getSignatureDataURLScaled(300, 110);
+                const hasSignature = !!(sigScaled && sigScaled.dataURL);
+
+                const suppliersArr = gatherSuppliers(isRenewal);
+
+                let firstName, middleName, lastName, applicantAge, businessAddress, govEmp, operationPlace,
+                    annualVolume, annualWorth, employeesCount, dependentsCount, intendedMarket, experience,
+                    declarationName, prevCert, issuedDate, expiryDate, crLicense, sawmillPermit, buyingOther;
+
+                if (isRenewal) {
+                    firstName = v('first-name-ren');
+                    middleName = v('middle-name-ren');
+                    lastName = v('last-name-ren');
+                    applicantAge = v('applicant-age-ren');
+                    businessAddress = v('business-address-ren');
+                    govEmp = (document.getElementById('govt-employee-ren-yes')?.checked ? 'yes' : 'no');
+                    operationPlace = v('operation-place-ren');
+                    annualVolume = v('annual-volume-ren');
+                    annualWorth = v('annual-worth-ren');
+                    employeesCount = v('employees-count-ren');
+                    dependentsCount = v('dependents-count-ren');
+                    intendedMarket = v('intended-market-ren');
+                    experience = v('experience-ren');
+                    declarationName = v('declaration-name-ren');
+                    prevCert = v('prev-certificate-ren');
+                    issuedDate = v('issued-date-ren');
+                    expiryDate = v('expiry-date-ren');
+                    crLicense = v('cr-license-ren');
+                    sawmillPermit = v('sawmill-permit-ren');
+                    buyingOther = (document.getElementById('other-sources-ren-yes')?.checked ? 'yes' : 'no');
+                } else {
+                    firstName = v('first-name');
+                    middleName = v('middle-name');
+                    lastName = v('last-name');
+                    applicantAge = v('applicant-age');
+                    businessAddress = v('business-address');
+                    govEmp = (document.getElementById('govt-employee-yes')?.checked ? 'yes' : 'no');
+                    operationPlace = v('operation-place');
+                    annualVolume = v('annual-volume');
+                    annualWorth = v('annual-worth');
+                    employeesCount = v('employees-count');
+                    dependentsCount = v('dependents-count');
+                    intendedMarket = v('intended-market');
+                    experience = v('experience');
+                    declarationName = v('declaration-name');
+                }
+
+                const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+
+                // Build a tiny logo as PNG (for Word)
+                const svgLogo = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="45" fill="#2b6625"/>
+        <path d="M35 35L65 65" stroke="white" stroke-width="5"/>
+        <path d="M65 35L35 65" stroke="white" stroke-width="5"/>
+        <circle cx="50" cy="50" r="20" stroke="white" stroke-width="3" fill="none"/>
+      </svg>`;
+                const logoDataUrl = await svgToPngDataUrl(svgLogo);
+
+                const fields = {
+                    fullName,
+                    applicantAge,
+                    businessAddress,
+                    govEmp,
+                    operationPlace,
+                    annualVolume,
+                    annualWorth,
+                    employeesCount,
+                    dependentsCount,
+                    intendedMarket,
+                    experience,
+                    declarationName,
+                    prevCert,
+                    issuedDate,
+                    expiryDate,
+                    crLicense,
+                    sawmillPermit,
+                    buyingOther
+                };
+
+                const logoLoc = 'logo.png';
+                const sigLoc = 'signature.png';
+
+                const docHTML = isRenewal ?
+                    buildRenewalDocHTML(logoLoc, hasSignature ? sigLoc : '', fields, suppliersArr) :
+                    buildNewDocHTML(logoLoc, hasSignature ? sigLoc : '', fields, suppliersArr);
+
+                const parts = [];
+                if (logoDataUrl) parts.push({
+                    location: logoLoc,
+                    contentType: 'image/png',
+                    base64: (logoDataUrl.split(',')[1] || '')
+                });
+                if (hasSignature) parts.push({
+                    location: sigLoc,
+                    contentType: 'image/png',
+                    base64: (sigScaled.dataURL.split(',')[1] || '')
+                });
+
+                const mhtml = makeMHTML(docHTML, parts);
+                const docBlob = new Blob([mhtml], {
+                    type: 'application/msword'
+                });
+                const docFileName = `${isRenewal ? 'Lumber_Renewal' : 'Lumber_New'}_${(fullName || 'Applicant').replace(/\s+/g,'_')}.doc`;
+                const docFile = new File([docBlob], docFileName, {
+                    type: 'application/msword'
+                });
+
+                const fd = new FormData();
+                fd.append('permit_type', isRenewal ? 'renewal' : 'new');
+                fd.append('first_name', firstName);
+                fd.append('middle_name', middleName);
+                fd.append('last_name', lastName);
+                fd.append('applicant_age', applicantAge);
+                fd.append('business_address', businessAddress);
+                fd.append('is_government_employee', govEmp);
+                fd.append('proposed_place_of_operation', operationPlace);
+                fd.append('expected_annual_volume', annualVolume);
+                fd.append('estimated_annual_worth', annualWorth);
+                fd.append('total_number_of_employees', employeesCount);
+                fd.append('total_number_of_dependents', dependentsCount);
+                fd.append('intended_market', intendedMarket);
+                fd.append('my_experience_as_alumber_dealer', experience);
+                fd.append('declaration_name', declarationName);
+                fd.append('suppliers_json', JSON.stringify(suppliersArr));
+                if (isRenewal) {
+                    fd.append('prev_certificate_no', prevCert);
+                    fd.append('issued_date', issuedDate);
+                    fd.append('expiry_date', expiryDate);
+                    fd.append('cr_license_no', crLicense);
+                    fd.append('sawmill_permit_no', sawmillPermit);
+                    fd.append('buying_from_other_sources', buyingOther);
+                }
+
+                // Generated application document + signature (if any)
+                fd.append('application_doc', docFile);
+                if (hasSignature) {
+                    const sigBlob = dataURLToBlob(sigScaled.dataURL);
+                    if (sigBlob) fd.append('signature_file', new File([sigBlob], 'signature.png', {
+                        type: 'image/png'
+                    }));
+                }
+
+                // Attach uploads
+                const pick = (id) => document.getElementById(id)?.files?.[0] || null;
+                const filesCommon = {
+                    lumber_csw_document: pick('file-1'),
+                    geo_photos: pick('file-2'),
+                    application_form: pick('file-3'),
+                    lumber_supply_contract: pick('file-4'),
+                    lumber_mayors_permit: pick('file-6'),
+                    lumber_registration_certificate: pick('file-7'),
+                    lumber_or_copy: pick('file-10a'),
+                    lumber_op_copy: pick('file-10b'),
+                };
+                const filesNew = {
+                    lumber_business_plan: pick('file-5'),
+                    lumber_tax_return: pick('file-8')
+                };
+                const filesRenewal = {
+                    lumber_monthly_reports: pick('file-9')
+                };
+                Object.entries(filesCommon).forEach(([k, f]) => {
+                    if (f) fd.append(k, f);
+                });
+                if (isRenewal) Object.entries(filesRenewal).forEach(([k, f]) => {
+                    if (f) fd.append(k, f);
+                });
+                else Object.entries(filesNew).forEach(([k, f]) => {
+                    if (f) fd.append(k, f);
+                });
+
+                const res = await fetch(SAVE_URL, {
+                    method: 'POST',
+                    body: fd,
+                    credentials: 'include'
+                });
+                let json;
+                try {
+                    json = await res.json();
+                } catch {
+                    const text = await res.text();
+                    throw new Error(`HTTP ${res.status} – ${text.slice(0, 200)}`);
+                }
+                if (!res.ok || !json.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+            }
+
+            /* =========================
+               Reset form after success
+            ========================== */
+            function resetForm() {
+                $all('input[type="text"], input[type="number"], input[type="date"]').forEach(i => i.value = '');
+                (document.getElementById('govt-employee-no') || {}).checked = true;
+                (document.getElementById('govt-employee-ren-no') || {}).checked = true;
+                (document.getElementById('other-sources-ren-no') || {}).checked = true;
+
+                $all('input[type="file"]').forEach(fi => {
+                    fi.value = '';
+                    const nameSpan = fi.parentElement?.querySelector('.file-name');
+                    if (nameSpan) nameSpan.textContent = 'No file chosen';
+                });
+
+                $all('#suppliers-table tbody tr').forEach((r, i) => {
+                    if (i > 0) r.remove();
+                });
+                const first = $('#suppliers-table tbody tr');
+                if (first) {
+                    first.querySelector('.supplier-name').value = '';
+                    first.querySelector('.supplier-volume').value = '';
+                }
+
+                $all('#suppliers-table-ren tbody tr').forEach((r, i) => {
+                    if (i > 0) r.remove();
+                });
+                const firstRen = $('#suppliers-table-ren tbody tr');
+                if (firstRen) {
+                    firstRen.querySelector('.supplier-name-ren').value = '';
+                    firstRen.querySelector('.supplier-volume-ren').value = '';
+                }
+
+                strokes = [];
+                repaintSignature(true);
+                if (sigPreview) {
+                    sigPreview.src = '';
+                    sigPreview.classList.add('hidden');
+                }
+                strokesRen = [];
+                repaintSignatureRen(true);
+                if (sigPreviewRen) {
+                    sigPreviewRen.src = '';
+                    sigPreviewRen.classList.add('hidden');
+                }
+
+                permitTypeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'new'));
+                setPermitType('new');
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            }
+        })();
     </script>
+
+
+
+
+
+
+
 </body>
+
+
+
+
+
 
 </html>

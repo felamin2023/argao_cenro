@@ -4,9 +4,9 @@ declare(strict_types=1);
 session_start();
 header('Content-Type: application/json');
 
-require_once __DIR__ . '/../../connection.php'; // provides $pdo, SUPABASE_URL, SUPABASE_SERVICE_KEY
+require_once __DIR__ . '/../../connection.php'; // $pdo, SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-/* ---------- helpers ---------- */
+/* ----------------------- storage helpers ----------------------- */
 const DEFAULT_REQUIREMENTS_BUCKET = 'requirements';
 
 function bucket_name(): string
@@ -15,20 +15,34 @@ function bucket_name(): string
     if (defined('SUPABASE_BUCKET') && SUPABASE_BUCKET) return SUPABASE_BUCKET;
     return DEFAULT_REQUIREMENTS_BUCKET;
 }
+
+/** URL-encode each segment of the storage path so spaces & unicode are safe */
+function encode_path_segments(string $path): string
+{
+    $path = ltrim($path, '/');
+    $segments = explode('/', $path);
+    $segments = array_map('rawurlencode', $segments);
+    return implode('/', $segments);
+}
+
 function supa_public_url(string $bucket, string $path): string
 {
-    return rtrim(SUPABASE_URL, '/') . "/storage/v1/object/public/{$bucket}/" . ltrim($path, '/');
+    $encoded = encode_path_segments($path);
+    return rtrim(SUPABASE_URL, '/') . "/storage/v1/object/public/{$bucket}/{$encoded}";
 }
+
 function supa_upload(string $bucket, string $path, string $tmpPath, string $mime): string
 {
-    $url = rtrim(SUPABASE_URL, '/') . "/storage/v1/object/{$bucket}/" . ltrim($path, '/');
+    $encoded = encode_path_segments($path);
+    $url = rtrim(SUPABASE_URL, '/') . "/storage/v1/object/{$bucket}/{$encoded}";
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => 'POST',
         CURLOPT_HTTPHEADER     => [
             'Authorization: Bearer ' . SUPABASE_SERVICE_KEY,
             'Content-Type: ' . $mime,
-            'x-upsert: true',
+            // Do NOT overwrite existing files; each submission has its own folder anyway.
+            'x-upsert: false',
         ],
         CURLOPT_POSTFIELDS     => file_get_contents($tmpPath),
         CURLOPT_RETURNTRANSFER => true,
@@ -43,6 +57,7 @@ function supa_upload(string $bucket, string $path, string $tmpPath, string $mime
     curl_close($ch);
     return supa_public_url($bucket, $path);
 }
+
 function slugify_name(string $s): string
 {
     $s = preg_replace('~[^\pL\d._-]+~u', '_', $s);
@@ -57,12 +72,17 @@ function pick_ext(array $file, string $fallback): string
     $ext = pathinfo($file['name'] ?? '', PATHINFO_EXTENSION);
     return $ext ? ('.' . strtolower($ext)) : $fallback;
 }
+function norm(?string $s): string
+{
+    return strtolower(trim((string)$s));
+}
 
-/* ---------- main ---------- */
+/* ----------------------------- main ---------------------------- */
 try {
     if (!isset($_SESSION['user_id'])) throw new Exception('Not authenticated');
+    if (!$pdo) throw new Exception('DB not available');
 
-    // users.user_id lookup (schema: public.users has user_id UUID)
+    // users.user_id lookup
     $idOrUuid = (string)$_SESSION['user_id'];
     $stmt = $pdo->prepare("SELECT user_id FROM public.users WHERE id::text = :v OR user_id::text = :v LIMIT 1");
     $stmt->execute([':v' => $idOrUuid]);
@@ -70,25 +90,23 @@ try {
     if (!$urow) throw new Exception('User record not found');
     $user_uuid = $urow['user_id'];
 
-    /* read POST */
+    // Inputs
     $permit_type = isset($_POST['permit_type']) && in_array(strtolower($_POST['permit_type']), ['new', 'renewal'], true)
         ? strtolower($_POST['permit_type']) : 'new';
 
     $first_name   = trim($_POST['first_name']   ?? '');
     $middle_name  = trim($_POST['middle_name']  ?? '');
     $last_name    = trim($_POST['last_name']    ?? '');
-    $contact_num  = trim($_POST['contact_number'] ?? ''); // goes to application_form.contact_number
+    $contact_num  = trim($_POST['contact_number'] ?? '');
     $sitio_street = trim($_POST['sitio_street'] ?? '');
     $barangay     = trim($_POST['barangay']     ?? '');
     $municipality = trim($_POST['municipality'] ?? '');
     $province     = trim($_POST['province']     ?? '');
 
-    // renewal extras (optional)
     $permit_number = trim($_POST['permit_number'] ?? '');
-    $issuance_date = trim($_POST['issuance_date'] ?? ''); // no exact column; we won’t store unless you want a mapping
+    $issuance_date = trim($_POST['issuance_date'] ?? ''); // (not a dedicated column)
     $expiry_date   = trim($_POST['expiry_date']   ?? '');
 
-    // chainsaw info
     $purpose             = trim($_POST['purpose']              ?? '');
     $brand               = trim($_POST['brand']                ?? '');
     $model               = trim($_POST['model']                ?? '');
@@ -97,41 +115,134 @@ try {
     $horsepower          = trim($_POST['horsepower']           ?? '');
     $max_guide           = trim($_POST['maximum_length_of_guide_bar'] ?? '');
 
-    $complete_name = trim(preg_replace('/\s+/', ' ', "{$first_name} {$middle_name} {$last_name}"));
+    $complete_name   = trim(preg_replace('/\s+/', ' ', "{$first_name} {$middle_name} {$last_name}"));
     $present_address = implode(', ', array_filter([$sitio_street, $barangay, $municipality, $province]));
+
+    // --- Server-side PRECHECK (hard rules) ---
+    $nf = norm($first_name);
+    $nm = norm($middle_name);
+    $nl = norm($last_name);
+
+    // Try normalized columns; fallback
+    $hasNormCols = false;
+    try {
+        $pdo->query("SELECT norm_first, norm_middle, norm_last FROM public.client LIMIT 0");
+        $hasNormCols = true;
+    } catch (\Throwable $ignored) {
+    }
+
+    if ($hasNormCols) {
+        $stmt = $pdo->prepare("SELECT client_id FROM public.client WHERE norm_first=:f AND norm_middle=:m AND norm_last=:l LIMIT 1");
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT client_id
+            FROM public.client
+            WHERE lower(trim(coalesce(first_name,'')))  = :f
+              AND lower(trim(coalesce(middle_name,''))) = :m
+              AND lower(trim(coalesce(last_name,'')))   = :l
+            LIMIT 1
+        ");
+    }
+    $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
+    $existing_client_id = $stmt->fetchColumn() ?: null;
 
     $pdo->beginTransaction();
 
-    /* 1) NEW client per submission (use only existing columns in public.client) */
-    $clientSql = "
-    INSERT INTO public.client
-      (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality)
-    VALUES
-      (:uid, :first, :middle, :last, :sitio, :brgy, :mun)
-    RETURNING client_id
-  ";
-    $stmt = $pdo->prepare($clientSql);
-    $stmt->execute([
-        ':uid'    => $user_uuid,
-        ':first'  => $first_name,
-        ':middle' => $middle_name,
-        ':last'   => $last_name,
-        ':sitio'  => $sitio_street,
-        ':brgy'   => $barangay,
-        ':mun'    => $municipality,
-    ]);
-    $client_id = $stmt->fetchColumn();
-    if (!$client_id) throw new Exception('Failed to create client record');
+    // --- Client: reuse if found, else create ---
+    if ($existing_client_id) {
+        $client_id = $existing_client_id;
+    } else {
+        $stmt = $pdo->prepare("
+            INSERT INTO public.client
+                (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
+            VALUES
+                (:uid, :first, :middle, :last, :sitio, :brgy, :mun, :contact)
+            RETURNING client_id
+        ");
+        $stmt->execute([
+            ':uid'     => $user_uuid,
+            ':first'   => $first_name,
+            ':middle'  => $middle_name,
+            ':last'    => $last_name,
+            ':sitio'   => $sitio_street,
+            ':brgy'    => $barangay,
+            ':mun'     => $municipality,
+            ':contact' => $contact_num,
+        ]);
+        $client_id = $stmt->fetchColumn();
+        if (!$client_id) throw new Exception('Failed to create client record');
+    }
 
-    /* 2) requirements row */
+    // ---- Status flags on this client ----
+    // PENDING NEW
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'chainsaw'
+          AND lower(permit_type)  = 'new'
+          AND lower(approval_status) = 'pending'
+        LIMIT 1
+    ");
+    $stmt->execute([':cid' => $client_id]);
+    $hasPendingNew = (bool)$stmt->fetchColumn();
+
+    // APPROVED NEW
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'chainsaw'
+          AND lower(permit_type)  = 'new'
+          AND lower(approval_status) = 'approved'
+        ORDER BY approved_at DESC NULLS LAST
+        LIMIT 1
+    ");
+    $stmt->execute([':cid' => $client_id]);
+    $hasApprovedNew = (bool)$stmt->fetchColumn();
+
+    // PENDING RENEWAL
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'chainsaw'
+          AND lower(permit_type)  = 'renewal'
+          AND lower(approval_status) = 'pending'
+        LIMIT 1
+    ");
+    $stmt->execute([':cid' => $client_id]);
+    $hasPendingRenewal = (bool)$stmt->fetchColumn();
+
+    // ---- Enforce rules (HARD BLOCKS) ----
+    if ($permit_type === 'renewal') {
+        if ($hasPendingRenewal) {
+            throw new Exception('You already have a pending RENEWAL chainsaw application.');
+        }
+        if (!$hasApprovedNew) {
+            throw new Exception('To file a renewal, you must have an APPROVED new chainsaw permit on record.');
+        }
+    } else { // NEW
+        if ($hasPendingNew) {
+            throw new Exception('You already have a pending NEW chainsaw application.');
+        }
+        if ($hasPendingRenewal) {
+            throw new Exception('You have a pending RENEWAL; please wait for the update first.');
+        }
+    }
+
+    // --- requirements row ---
     $ridStmt = $pdo->query("INSERT INTO public.requirements DEFAULT VALUES RETURNING requirement_id");
     $requirement_id = $ridStmt->fetchColumn();
     if (!$requirement_id) throw new Exception('Failed to create requirements record');
 
     $bucket = bucket_name();
-    $prefix = "chainsaw/{$requirement_id}/";
 
-    /* 3) uploads */
+    // --------- UNIQUE submission key & folder (no overwrites, keep every request) ----------
+    $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
+    // chainsaw/new permit/<client_id>/<run>/...  OR  chainsaw/renewal permit/<client_id>/<run>/...
+    $permitFolder = ($permit_type === 'renewal') ? 'renewal permit' : 'new permit';
+    $prefix = "chainsaw/{$permitFolder}/{$client_id}/{$run}/";
+    // ---------------------------------------------------------------------------------------
+
+    // --- uploads ---
     $urls = [
         'chainsaw_cert_terms'       => null,
         'chainsaw_cert_sticker'     => null,
@@ -144,12 +255,15 @@ try {
         'signature'                 => null,
     ];
 
+    // Generated application document (Word via MHTML) from the frontend
     if (!empty($_FILES['application_doc']) && is_uploaded_file($_FILES['application_doc']['tmp_name'])) {
         $f = $_FILES['application_doc'];
         $safe = slugify_name("application_doc__" . ($f['name'] ?: 'chainsaw.doc'));
         if (pathinfo($safe, PATHINFO_EXTENSION) === '') $safe .= '.doc';
         $urls['application_form'] = supa_upload($bucket, $prefix . $safe, $f['tmp_name'], $f['type'] ?: 'application/msword');
     }
+
+    // Signature (optional)
     if (!empty($_FILES['signature_file']) && is_uploaded_file($_FILES['signature_file']['tmp_name'])) {
         $f = $_FILES['signature_file'];
         $ext = pick_ext($f, '.png');
@@ -157,6 +271,7 @@ try {
         $urls['signature'] = supa_upload($bucket, $prefix . $safe, $f['tmp_name'], $f['type'] ?: 'image/png');
     }
 
+    // Other uploads
     $fileMap = [
         'chainsaw_cert_terms'       => 'chainsaw_cert_terms',
         'chainsaw_cert_sticker'     => 'chainsaw_cert_sticker',
@@ -176,72 +291,79 @@ try {
         }
     }
 
-    // update requirements with uploaded URLs (only the ones we have)
-    $setParts = [];
+    // Update requirements row with uploaded urls
+    $set = [];
     $params = [':rid' => $requirement_id];
     foreach ($fileMap as $postField => $dbCol) {
         if ($urls[$dbCol]) {
-            $setParts[] = "{$dbCol} = :{$dbCol}";
+            $set[] = "{$dbCol} = :{$dbCol}";
             $params[":{$dbCol}"] = $urls[$dbCol];
         }
     }
     if ($urls['application_form']) {
-        $setParts[] = "application_form = :application_form";
+        $set[] = "application_form = :application_form";
         $params[":application_form"] = $urls['application_form'];
     }
-    if ($setParts) {
-        $sql = "UPDATE public.requirements SET " . implode(', ', $setParts) . " WHERE requirement_id = :rid";
+    if ($set) {
+        $sql = "UPDATE public.requirements SET " . implode(', ', $set) . " WHERE requirement_id = :rid";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
     }
 
-    /* 4) application_form row */
-    $appSql = "
-    INSERT INTO public.application_form
-      (client_id, contact_number, application_for, type_of_permit,
-       brand, model, date_of_acquisition, horsepower, maximum_length_of_guide_bar,
-       complete_name, present_address, province, location,
-       brand_model_serial_number_of_chain_saw, signature_of_applicant, additional_information,
-       permit_number, expiry_date, date_today)
-    VALUES
-      (:client_id, :contact_number, 'chainsaw', :permit_type,
-       :brand, :model, :date_of_acq, :horsepower, :max_guide,
-       :complete_name, :present_address, :province, :location,
-       :serial_number, :signature_url, :purpose,
-       :permit_number, :expiry_date, to_char(now(),'YYYY-MM-DD'))
-    RETURNING application_id
-  ";
-    $stmt = $pdo->prepare($appSql);
+    // --- application_form row ---
+    // Build additional_information (store submission_key and optional issuance_date)
+    $extraInfo = ["submission_key={$run}"];
+    if ($issuance_date !== '') $extraInfo[] = "issuance_date={$issuance_date}";
+    $additional_information = implode('; ', $extraInfo);
+
+    $stmt = $pdo->prepare("
+        INSERT INTO public.application_form
+          (client_id, contact_number, application_for, type_of_permit,
+           brand, model, date_of_acquisition, horsepower, maximum_length_of_guide_bar,
+           complete_name, present_address, province, location,
+           serial_number_chainsaw, signature_of_applicant,
+           purpose_of_use, additional_information,
+           permit_number, expiry_date, date_today)
+        VALUES
+          (:client_id, :contact_number, 'chainsaw', :permit_type,
+           :brand, :model, :date_of_acq, :horsepower, :max_guide,
+           :complete_name, :present_address, :province, :location,
+           :serial_number, :signature_url,
+           :purpose, :additional_info,
+           :permit_number, :expiry_date, to_char(now(),'YYYY-MM-DD'))
+        RETURNING application_id
+    ");
     $stmt->execute([
-        ':client_id'      => $client_id,
-        ':contact_number' => $contact_num,
-        ':permit_type'    => $permit_type,
-        ':brand'          => $brand,
-        ':model'          => $model,
-        ':date_of_acq'    => $date_of_acquisition,
-        ':horsepower'     => $horsepower,
-        ':max_guide'      => $max_guide,
-        ':complete_name'  => $complete_name,
+        ':client_id'       => $client_id,
+        ':contact_number'  => $contact_num,
+        ':permit_type'     => $permit_type,
+        ':brand'           => $brand,
+        ':model'           => $model,
+        ':date_of_acq'     => $date_of_acquisition,
+        ':horsepower'      => $horsepower,
+        ':max_guide'       => $max_guide,
+        ':complete_name'   => $complete_name,
         ':present_address' => $present_address,
-        ':province'       => $province,
-        ':location'       => $municipality,
-        ':serial_number'  => $serial_number,
-        ':signature_url'  => $urls['signature'] ?? null,
-        ':purpose'        => $purpose,
-        ':permit_number'  => $permit_number ?: null,
-        ':expiry_date'    => $expiry_date ?: null,
+        ':province'        => $province,
+        ':location'        => $municipality,
+        ':serial_number'   => $serial_number,
+        ':signature_url'   => $urls['signature'] ?? null,
+        ':purpose'         => $purpose,
+        ':additional_info' => $additional_information ?: null,
+        ':permit_number'   => $permit_number ?: null,
+        ':expiry_date'     => $expiry_date ?: null,
     ]);
     $application_id = $stmt->fetchColumn();
     if (!$application_id) throw new Exception('Failed to create application form');
 
-    /* 5) approval row */
+    // --- approval row ---
     $stmt = $pdo->prepare("
-    INSERT INTO public.approval
-      (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
-    VALUES
-      (:client_id, :requirement_id, 'chainsaw', 'pending', NULL, :permit_type, :application_id, now())
-    RETURNING approval_id
-  ");
+        INSERT INTO public.approval
+          (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
+        VALUES
+          (:client_id, :requirement_id, 'chainsaw', 'pending', NULL, :permit_type, :application_id, now())
+        RETURNING approval_id
+    ");
     $stmt->execute([
         ':client_id'      => $client_id,
         ':requirement_id' => $requirement_id,
@@ -249,19 +371,38 @@ try {
         ':application_id' => $application_id,
     ]);
     $approval_id = $stmt->fetchColumn();
+    if (!$approval_id) throw new Exception('Failed to create approval record');
+
+    // --- admin notification (now with "from" and "to") ---
+    $nicePermit = strtolower($permit_type); // "new" or "renewal"
+    $msg = sprintf('%s requested a chainsaw %s permit.', $first_name ?: $complete_name, $nicePermit);
+    $stmt = $pdo->prepare("
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
+        VALUES (:approval_id, NULL, :message, false, :from_user, :to_value)
+        RETURNING notif_id
+    ");
+    $stmt->execute([
+        ':approval_id' => $approval_id,
+        ':message'     => $msg,
+        ':from_user'   => $user_uuid,      // current logged-in user id (uuid)
+        ':to_value'    => 'Tree Cutting',  // requested target value
+    ]);
+    $notif_id = $stmt->fetchColumn();
 
     $pdo->commit();
 
     echo json_encode([
-        'ok'             => true,
-        'client_id'      => $client_id,
-        'requirement_id' => $requirement_id,
-        'application_id' => $application_id,
-        'approval_id'    => $approval_id,
-        'storage_prefix' => "chainsaw/{$requirement_id}/",
-        'bucket'         => $bucket,
+        'ok'              => true,
+        'client_id'       => $client_id,
+        'requirement_id'  => $requirement_id,
+        'application_id'  => $application_id,
+        'approval_id'     => $approval_id,
+        'notification_id' => $notif_id,
+        'storage_prefix'  => $prefix,
+        'bucket'          => $bucket,
+        'submission_key'  => $run,
     ]);
-} catch (Throwable $e) {
+} catch (\Throwable $e) {
     if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);

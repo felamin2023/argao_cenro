@@ -1175,7 +1175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3>Notifications</h3><a href="#" class="mark-all-as-read">Mark all as read</a>
                     </div>
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
@@ -1201,11 +1201,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
 
     <div class="main-container">
-        <div class="action-buttons">
+        <!-- <div class="action-buttons">
             <button class="btn btn-primary" id="addFilesBtn"><i class="fas fa-plus-circle"></i> Add</button>
             <a href="usereditchainsaw.php" class="btn btn-outline"><i class="fas fa-edit"></i> Edit</a>
             <a href="userviewchainsaw.php" class="btn btn-outline"><i class="fas fa-eye"></i> View</a>
-        </div>
+        </div> -->
 
         <div class="requirements-form">
             <div class="form-header">
@@ -1218,7 +1218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <button class="permit-type-btn" data-type="renewal" type="button">Chainsaw Renewal</button>
                 </div>
 
-                <!-- ========== NEW: APPLICANT INFO ========== -->
+                <!-- NEW: APPLICANT INFO -->
                 <div class="form-section-group" data-permit-for="new">
                     <div class="form-section">
                         <h2>I. APPLICANT INFORMATION</h2>
@@ -1362,7 +1362,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- ========== RENEWAL: EXACT INPUTS YOU PROVIDED ========== -->
+                <!-- RENEWAL -->
                 <div class="form-section-group" data-permit-for="renewal" style="display:none">
                     <div class="form-section">
                         <h2>I. APPLICANT INFORMATION</h2>
@@ -1482,7 +1482,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- ========== DECLARATION (shared) ========== -->
+                <!-- DECLARATION -->
                 <div class="form-section">
                     <h2 class="declaration-title">DECLARATION AND SUBMISSION</h2>
                     <div class="declaration">
@@ -1500,7 +1500,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
                                 <div class="signature-actions">
                                     <button type="button" class="signature-btn clear-signature" id="clear-signature"><i class="fa-solid fa-eraser"></i> Clear</button>
-                                    <button type="button" class="signature-btn save-signature" id="save-signature"><i class="fa-solid fa-floppy-disk"></i> Save Signature</button>
                                 </div>
                                 <div class="signature-preview">
                                     <img id="signature-image" class="hidden" alt="Signature Preview" />
@@ -1510,9 +1509,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- ========== Requirements (hidden for renewal) ========== -->
+                <!-- Requirements (common + filtered per type) -->
                 <div class="requirements-list" id="requirementsList">
-                    <!-- 1) Certificate of Chainsaw Registration (COMMON) -->
+                    <!-- 1 -->
                     <div class="requirement-item" data-show-for="new,renewal">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -1521,8 +1520,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                         <div class="file-upload">
-                            <div class="sub-requirement">
-                                <p style="margin-bottom:10px;font-weight:500;">- Terms and Condition</p>
+                            <div class="sub-requirement" data-show-for="new,renewal">
+                                <p style="margin-bottom:10px;font-weight:500;">- Terms and Conditions</p>
                                 <div class="file-input-container">
                                     <label for="file-cert-terms" class="file-input-label"><i class="fas fa-upload"></i> Upload File</label>
                                     <input type="file" id="file-cert-terms" name="chainsaw_cert_terms" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
@@ -1530,7 +1529,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
                                 <div class="uploaded-files" id="uploaded-cert-terms"></div>
                             </div>
-                            <div class="sub-requirement" style="margin-top:15px;">
+                            <div class="sub-requirement" style="margin-top:15px;" data-show-for="new,renewal">
                                 <p style="margin-bottom:10px;font-weight:500;">- Chainsaw Registration Sticker</p>
                                 <div class="file-input-container">
                                     <label for="file-cert-sticker" class="file-input-label"><i class="fas fa-upload"></i> Upload File</label>
@@ -1542,12 +1541,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- 2) Complete Staff Work (COMMON) -->
+                    <!-- 2 -->
                     <div class="requirement-item" data-show-for="new,renewal">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">2</span>
-                                Complete Staff Work (Memorandum Report) - 2 pages Station Supervisor signature
+                                Complete Staff Work (Memorandum Report) – 2 pages with Station Supervisor’s signature (1 file)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1560,12 +1559,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- 3) Geo-tagged photos (COMMON) -->
+                    <!-- 3 -->
                     <div class="requirement-item" data-show-for="new,renewal">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">3</span>
-                                Geo-tagged photos of the chainsaw - 2 pages Station Supervisor signature
+                                Geo-tagged Photos of the Chainsaw (2 copies from the client)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1575,10 +1574,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-geo"></div>
+                            <!-- NOTE: Application letter REMOVED from UI -->
                         </div>
                     </div>
 
-                    <!-- 4) Permit to Sell (NEW ONLY) -->
+                    <!-- New-only items -->
                     <div class="requirement-item" data-show-for="new">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -1596,12 +1596,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- 5) Photocopy of Business Permit (NEW ONLY) -->
                     <div class="requirement-item" data-show-for="new">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">5</span>
-                                Photocopy of Business Permit - new recent issued (2 copies)
+                                Photocopy of Business Permit – new recent issued (2 copies)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1614,12 +1613,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- 6) Photocopy of old chainsaw Registration (RENEWAL ONLY) -->
-                    <div class="requirement-item" data-show-for="renewal">
+                    <div class="requirement-item" data-show-for="new">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">6</span>
-                                Photocopy of old chainsaw Registration (renewal) - 2 copies
+                                Photocopy of old chainsaw Registration – 2 copies
                             </div>
                         </div>
                         <div class="file-upload">
@@ -1649,6 +1647,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
         <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px">Working…</div>
     </div>
+    <!-- Need Approved NEW modal -->
+    <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                To request a renewal, you must have an approved <b>NEW</b> chainsaw permit on record.<br><br>
+                You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="needApprovedNewOk" class="btn btn-outline" type="button">Okay</button>
+                <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Confirm Modal -->
     <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
@@ -1664,22 +1677,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- Pending NEW request modal -->
+    <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You already have a pending chainsaw <b>new</b> permit request. Please wait for updates before submitting another one.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offer renewal modal -->
+    <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You can’t request a <b>new</b> chainsaw permit because you already have an approved one. You’re allowed to request a <b>renewal</b> instead.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
+                <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         (function() {
-            /* === Config === */
             const SIG_WIDTH = 300,
                 SIG_HEIGHT = 110;
             const SAVE_URL = new URL('../backend/users/chainsaw/save_chainsaw.php', window.location.href).toString();
+            const PRECHECK_URL = new URL('../backend/users/chainsaw/precheck_chainsaw.php', window.location.href).toString();
 
-            /* ---------- permit type toggle + renumber + group show/hide ---------- */
             const btns = document.querySelectorAll(".permit-type-btn");
             const list = document.getElementById("requirementsList");
 
             function renumberVisible() {
-                if (!list || list.style.display === "none") return;
-                const items = Array.from(list.querySelectorAll(".requirement-item")).filter(
-                    (el) => el.style.display !== "none"
-                );
+                if (!list) return;
+                const items = Array.from(list.querySelectorAll(".requirement-item")).filter(el => el.style.display !== "none");
                 items.forEach((el, idx) => {
                     const num = el.querySelector(".requirement-number");
                     if (num) num.textContent = (idx + 1).toString();
@@ -1693,32 +1730,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             function applyFilter(type) {
-                // toggle active button
                 btns.forEach((b) => b.classList.toggle("active", b.dataset.type === type));
-
-                // show correct section group
                 showPermitGroup(type);
 
-                // requirements visibility: show only for "new"
+                // filter items and sub-requirements
                 if (list) {
-                    list.style.display = (type === "new") ? "" : "none";
-                    if (list.style.display !== "none") {
-                        // per-item filter when list visible
-                        list.querySelectorAll(".requirement-item").forEach((el) => {
-                            const show = (el.getAttribute("data-show-for") || "")
-                                .split(",")
-                                .map((s) => s.trim());
-                            el.style.display = show.includes(type) ? "" : "none";
-                        });
-                    }
+                    list.style.display = "";
+                    list.querySelectorAll(".requirement-item").forEach((el) => {
+                        const show = (el.getAttribute("data-show-for") || "").split(",").map((s) => s.trim());
+                        el.style.display = show.includes(type) ? "" : "none";
+                    });
+                    list.querySelectorAll(".sub-requirement[data-show-for]").forEach((sub) => {
+                        const show = (sub.getAttribute("data-show-for") || "").split(",").map((s) => s.trim());
+                        sub.style.display = show.includes(type) ? "" : "none";
+                    });
                 }
                 renumberVisible();
             }
-
             btns.forEach((b) => b.addEventListener("click", () => applyFilter(b.dataset.type)));
-            applyFilter("new"); // default view
+            applyFilter("new");
 
-            /* ---------- file input filename preview ---------- */
+            // file input name preview
             document.addEventListener("change", (e) => {
                 const input = e.target;
                 if (input.classList && input.classList.contains("file-input")) {
@@ -1727,11 +1759,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             });
 
-            /* ---------- signature pad (mouse + touch) ---------- */
+            // signature pad
             const canvas = document.getElementById("signature-pad");
             const clearBtn = document.getElementById("clear-signature");
             const sigImg = document.getElementById("signature-image");
-
             let isDrawing = false,
                 lastX = 0,
                 lastY = 0,
@@ -1742,10 +1773,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const ratio = Math.max(window.devicePixelRatio || 1, 1);
                 const cssWidth = canvas.clientWidth || 300;
                 const cssHeight = canvas.clientHeight || 150;
-
                 canvas.width = Math.floor(cssWidth * ratio);
                 canvas.height = Math.floor(cssHeight * ratio);
-
                 const ctx = canvas.getContext("2d");
                 ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
                 ctx.fillStyle = "#fff";
@@ -1811,7 +1840,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     passive: false
                 });
                 window.addEventListener("touchend", endDraw);
-
                 clearBtn?.addEventListener("click", () => {
                     resizeCanvas();
                     hasDrawn = false;
@@ -1822,15 +1850,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
-            /* ---------- helpers ---------- */
+            // helpers
             function dataURLToBlob(dataURL) {
                 if (!dataURL) return null;
                 const [meta, b64] = dataURL.split(",");
                 const mime = (meta.match(/data:(.*?);base64/) || [])[1] || "application/octet-stream";
                 const bin = atob(b64 || "");
-                const len = bin.length;
-                const u8 = new Uint8Array(len);
-                for (let i = 0; i < len; i++) u8[i] = bin.charCodeAt(i);
+                const u8 = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
                 return new Blob([u8], {
                     type: mime
                 });
@@ -1849,20 +1876,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "",
                     html
                 ].join("\r\n");
-
                 const bodyParts = parts.map(p => {
                     const wrapped = p.base64.replace(/.{1,76}/g, "$&\r\n");
                     return [
-                        "",
-                        `--${boundary}`,
+                        "", `--${boundary}`,
                         `Content-Location: ${p.location}`,
                         "Content-Transfer-Encoding: base64",
-                        `Content-Type: ${p.contentType}`,
-                        "",
-                        wrapped
+                        `Content-Type: ${p.contentType}`, "", wrapped
                     ].join("\r\n");
                 }).join("");
-
                 return header + bodyParts + `\r\n--${boundary}--`;
             }
 
@@ -1889,6 +1911,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (nameSpan) nameSpan.textContent = "No file chosen";
                 });
                 hasDrawn = false;
+                const sigImg = document.getElementById("signature-image");
                 if (sigImg) {
                     sigImg.src = "";
                     sigImg.classList.add("hidden");
@@ -1897,21 +1920,181 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 applyFilter("new");
             }
 
-            /* ---------- Confirm Modal ---------- */
+            // elements
             const confirmModal = document.getElementById("confirmModal");
             const btnSubmit = document.getElementById("submitApplication");
             const btnOk = document.getElementById("btnOkConfirm");
             const btnCancel = document.getElementById("btnCancelConfirm");
             const loading = document.getElementById("loadingIndicator");
 
-            btnSubmit?.addEventListener("click", () => {
-                confirmModal.style.display = "flex";
+            const pendingNewModal = document.getElementById("pendingNewModal");
+            const pendingNewOk = document.getElementById("pendingNewOk");
+            const offerRenewalModal = document.getElementById("offerRenewalModal");
+            const offerRenewalOk = document.getElementById("offerRenewalOk");
+            const offerRenewalSwitch = document.getElementById("offerRenewalSwitch");
+
+            // NEW: Need Approved NEW modal refs
+            const needApprovedNewModal = document.getElementById("needApprovedNewModal");
+            const needApprovedNewOk = document.getElementById("needApprovedNewOk");
+            const needApprovedNewSwitch = document.getElementById("needApprovedNewSwitch");
+
+            pendingNewOk?.addEventListener("click", () => {
+                pendingNewModal.style.display = "none";
             });
+            offerRenewalOk?.addEventListener("click", () => {
+                offerRenewalModal.style.display = "none";
+            });
+            needApprovedNewOk?.addEventListener("click", () => {
+                needApprovedNewModal.style.display = "none";
+            });
+
+            // value helper
+            function v(id) {
+                return (document.getElementById(id)?.value || "").trim();
+            }
+
+            // Autofill RENEWAL from NEW (used when offering renewal)
+            function autofillRenewalFromNew() {
+                const map = [
+                    ["first-name", "first-name-r"],
+                    ["middle-name", "middle-name-r"],
+                    ["last-name", "last-name-r"],
+                    ["street", "street-r"],
+                    ["barangay", "barangay-r"],
+                    ["municipality", "municipality-r"],
+                    ["province", "province-r"],
+                    ["contact-number", "contact-number-r"],
+                    ["purpose", "purpose-r"],
+                    ["brand", "brand-r"],
+                    ["model", "model-r"],
+                    ["acquisition-date", "acquisition-date-r"],
+                    ["serial-number", "serial-number-r"],
+                    ["horsepower", "horsepower-r"],
+                    ["guide-bar-length", "guide-bar-length-r"],
+                ];
+                map.forEach(([srcId, dstId]) => {
+                    const src = document.getElementById(srcId);
+                    const dst = document.getElementById(dstId);
+                    if (src && dst && typeof src.value === "string") dst.value = src.value;
+                });
+                const addr = [v("street"), v("barangay"), v("municipality"), v("province")].filter(Boolean).join(", ");
+                const addrR = document.getElementById("address-r");
+                if (addrR) addrR.value = addr;
+                const decl = document.getElementById("declaration-name");
+                const fullName = [v("first-name"), v("middle-name"), v("last-name")].filter(Boolean).join(" ");
+                if (decl && !decl.value) decl.value = fullName;
+            }
+
+            // NEW: Autofill NEW from RENEWAL (used when renewal is blocked; switch to NEW)
+            function autofillNewFromRenewal() {
+                const map = [
+                    ["first-name-r", "first-name"],
+                    ["middle-name-r", "middle-name"],
+                    ["last-name-r", "last-name"],
+                    ["street-r", "street"],
+                    ["barangay-r", "barangay"],
+                    ["municipality-r", "municipality"],
+                    ["province-r", "province"],
+                    ["contact-number-r", "contact-number"],
+                    ["purpose-r", "purpose"],
+                    ["brand-r", "brand"],
+                    ["model-r", "model"],
+                    ["acquisition-date-r", "acquisition-date"],
+                    ["serial-number-r", "serial-number"],
+                    ["horsepower-r", "horsepower"],
+                    ["guide-bar-length-r", "guide-bar-length"],
+                ];
+                map.forEach(([srcId, dstId]) => {
+                    const src = document.getElementById(srcId);
+                    const dst = document.getElementById(dstId);
+                    if (src && dst && typeof src.value === "string") dst.value = src.value;
+                });
+                // declaration name if blank
+                const decl = document.getElementById("declaration-name");
+                if (decl && !decl.value) {
+                    const fullName = [v("first-name-r"), v("middle-name-r"), v("last-name-r")].filter(Boolean).join(" ");
+                    decl.value = fullName;
+                }
+            }
+
+            // Switch to renewal via offer
+            offerRenewalSwitch?.addEventListener("click", () => {
+                offerRenewalModal.style.display = "none";
+                applyFilter("renewal");
+                autofillRenewalFromNew();
+                window.scrollTo({
+                    top: 0,
+                    behavior: "smooth"
+                });
+            });
+
+            // NEW: Switch to NEW from the "Need Approved NEW" modal
+            needApprovedNewSwitch?.addEventListener("click", () => {
+                needApprovedNewModal.style.display = "none";
+                applyFilter("new");
+                autofillNewFromRenewal();
+                window.scrollTo({
+                    top: 0,
+                    behavior: "smooth"
+                });
+            });
+
             btnCancel?.addEventListener("click", () => {
                 confirmModal.style.display = "none";
             });
 
-            btnOk?.addEventListener("click", async () => {
+            const activePermitType = () =>
+                (document.querySelector(".permit-type-btn.active")?.getAttribute("data-type") || "new");
+
+            // PRECHECK before confirm (sync with backend decisions)
+            btnSubmit?.addEventListener("click", async () => {
+                try {
+                    const type = activePermitType();
+                    const first = type === "renewal" ? v("first-name-r") : v("first-name");
+                    const middle = type === "renewal" ? v("middle-name-r") : v("middle-name");
+                    const last = type === "renewal" ? v("last-name-r") : v("last-name");
+
+                    const fd = new FormData();
+                    fd.append("first_name", first);
+                    fd.append("middle_name", middle);
+                    fd.append("last_name", last);
+                    fd.append("desired_permit_type", type);
+
+                    const res = await fetch(PRECHECK_URL, {
+                        method: "POST",
+                        body: fd,
+                        credentials: "include"
+                    });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error(json.message || "Precheck failed");
+
+                    if (json.block === "pending_new") {
+                        pendingNewModal.style.display = "flex";
+                        return;
+                    }
+                    if (json.block === "pending_renewal") {
+                        toast("You already have a pending chainsaw renewal. Please wait for the update first.");
+                        return;
+                    }
+                    if (json.block === "need_approved_new") {
+                        // Show the new modal (instead of toast). User can switch to NEW and keep their values.
+                        needApprovedNewModal.style.display = "flex";
+                        return;
+                    }
+                    if (json.offer === "renewal" && type === "new") {
+                        offerRenewalModal.style.display = "flex";
+                        return;
+                    }
+                    confirmModal.style.display = "flex";
+                } catch (e) {
+                    console.error(e);
+                    // still allow manual confirm so user gets feedback
+                    confirmModal.style.display = "flex";
+                }
+            });
+
+            // FINAL submit
+            document.getElementById("btnOkConfirm")?.addEventListener("click", async () => {
                 confirmModal.style.display = "none";
                 loading.style.display = "flex";
                 try {
@@ -1920,26 +2103,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     resetForm();
                 } catch (e) {
                     console.error(e);
-                    toast("Submission failed. Please try again.");
+                    toast(e?.message || "Submission failed. Please try again.");
                 } finally {
                     loading.style.display = "none";
                 }
             });
 
-            /* ---------- Submit flow ---------- */
             async function doSubmit() {
                 // Signature capture
                 let signatureDataURL = "";
-                if (canvas && hasDrawn) {
-                    signatureDataURL = canvas.toDataURL("image/png");
-                }
+                if (canvas && hasDrawn) signatureDataURL = canvas.toDataURL("image/png");
 
-                // Helper
-                const v = (id) => (document.getElementById(id)?.value || "").trim();
-                const activeBtn = document.querySelector(".permit-type-btn.active");
-                const permit_type = activeBtn ? activeBtn.getAttribute("data-type") : "new";
-
-                // Read fields based on type
+                const type = activePermitType();
                 let firstName, middleName, lastName, sitio_street, barangay, municipality, province, contact_number;
                 let permit_number = "",
                     issuance_date = "",
@@ -1947,21 +2122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 let purpose, brand, model, date_of_acquisition, serial_number, horsepower, maximum_length_of_guide_bar;
                 let address_line = "";
 
-                if (permit_type === "renewal") {
+                if (type === "renewal") {
                     firstName = v("first-name-r");
                     middleName = v("middle-name-r");
                     lastName = v("last-name-r");
-                    address_line = v("address-r"); // for doc display only
+                    address_line = v("address-r");
                     sitio_street = v("street-r");
                     barangay = v("barangay-r");
                     municipality = v("municipality-r");
                     province = v("province-r");
                     contact_number = v("contact-number-r");
-
                     permit_number = v("permit-number-r");
                     issuance_date = v("issuance-date-r");
                     expiry_date = v("expiry-date-r");
-
                     purpose = v("purpose-r");
                     brand = v("brand-r");
                     model = v("model-r");
@@ -1978,7 +2151,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     municipality = v("municipality");
                     province = v("province");
                     contact_number = v("contact-number");
-
                     purpose = v("purpose");
                     brand = v("brand");
                     model = v("model");
@@ -1990,78 +2162,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 const fullName = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, " ").trim();
 
-                // Build application DOC (MHTML with inline signature)
+                // Build MHTML doc (Word-opening)
                 const sigLocation = "signature.png";
                 const hasSignature = !!signatureDataURL;
-                const titleLine = permit_type === "renewal" ?
-                    "Application for Renewal of Chainsaw Permit" :
-                    "Application for New Chainsaw Permit";
-
+                const titleLine = type === "renewal" ? "Application for Renewal of Chainsaw Permit" : "Application for New Chainsaw Permit";
                 const signatureBlock = hasSignature ?
                     `<div style="margin-top:28px;">
-               <img src="${sigLocation}" width="${SIG_WIDTH}" height="${SIG_HEIGHT}"
-                    style="display:block;border:1px solid #ddd;padding:4px;border-radius:4px;width:${SIG_WIDTH}px;height:${SIG_HEIGHT}px;" alt="Signature"/>
-               <p style="margin-top:6px;">Signature of Applicant</p>
-             </div>` :
+             <img src="${sigLocation}" width="${SIG_WIDTH}" height="${SIG_HEIGHT}"
+                  style="display:block;border:1px solid #ddd;padding:4px;border-radius:4px;width:${SIG_WIDTH}px;height:${SIG_HEIGHT}px;" alt="Signature"/>
+             <p style="margin-top:6px;">Signature of Applicant</p>
+           </div>` :
                     `<div style="margin-top:40px;">
-               <div style="border-top:1px solid #000;width:50%;padding-top:3pt;"></div>
-               <p>Signature of Applicant</p>
-             </div>`;
+             <div style="border-top:1px solid #000;width:50%;padding-top:3pt;"></div>
+             <p>Signature of Applicant</p>
+           </div>`;
 
                 const addrJoined = [address_line, sitio_street, barangay, municipality, province].filter(Boolean).join(", ");
-
                 const bodyHtml = `
-          <html xmlns:o="urn:schemas-microsoft-com:office:office"
-                xmlns:w="urn:schemas-microsoft-com:office:word"
-                xmlns="http://www.w3.org/TR/REC-html40">
-            <head>
-              <meta charset="UTF-8">
-              <title>Chainsaw Registration Form</title>
-              <style>
-                body, div, p { line-height:1.8; font-family: Arial; font-size:11pt; margin:0; padding:0; }
-                .section-title { font-weight: normal; margin: 15pt 0 6pt 0; }
-                .info-line { margin: 12pt 0; }
-                .underline { display:inline-block; min-width:300px; border-bottom:1px solid #000; padding:0 5px; margin:0 5px; }
-                .declaration { margin-top:15pt; }
-              </style>
-            </head>
-            <body>
-              <div style="margin-bottom: 20px;">
-                <p style="text-align:center; font-weight:bold;">Republic of the Philippines</p>
-                <p style="text-align:center; font-weight:bold;">Department of Environment and Natural Resources</p>
-                <p style="text-align:center;">Community Environment and Natural Resources Office (CENRO)</p>
-                <p style="text-align:center;">Argao, Cebu</p>
-              </div>
+        <html xmlns:o="urn:schemas-microsoft-com:office:office"
+              xmlns:w="urn:schemas-microsoft-com:office:word"
+              xmlns="http://www.w3.org/TR/REC-html40">
+          <head><meta charset="UTF-8"><title>Chainsaw Registration Form</title></head>
+          <body>
+            <div style="text-align:center">
+              <p><b>Republic of the Philippines</b></p>
+              <p><b>Department of Environment and Natural Resources</b></p>
+              <p>Community Environment and Natural Resources Office (CENRO)</p>
+              <p>Argao, Cebu</p>
+            </div>
+            <h3 style="text-align:center;">${titleLine}</h3>
 
-              <h3 style="text-align:center; margin-bottom:20px;">${titleLine}</h3>
+            <p><b>I. APPLICANT INFORMATION</b></p>
+            <p>Name: <u>${fullName}</u></p>
+            <p>Address: <u>${addrJoined}</u></p>
+            <p>Contact Number: <u>${contact_number}</u></p>
 
-              <p class="section-title">I. APPLICANT INFORMATION</p>
-              <p class="info-line">Name: <span class="underline">${fullName}</span></p>
-              <p class="info-line">Address: <span class="underline">${addrJoined}</span></p>
-              <p class="info-line">Contact Number: <span class="underline">${contact_number}</span></p>
+            ${type === "renewal" ? `
+            <p><b>II. EXISTING CHAINSAW PERMIT INFORMATION</b></p>
+            <p>Permit Number: <u>${permit_number}</u></p>
+            <p>Date of Original Issuance: <u>${issuance_date}</u></p>
+            <p>Expiry Date: <u>${expiry_date}</u></p>
+            ` : ""}
 
-              ${permit_type === "renewal" ? `
-              <p class="section-title">II. EXISTING CHAINSAW PERMIT INFORMATION</p>
-              <p class="info-line">Permit Number: <span class="underline">${permit_number}</span></p>
-              <p class="info-line">Date of Original Issuance: <span class="underline">${issuance_date}</span></p>
-              <p class="info-line">Expiry Date: <span class="underline">${expiry_date}</span></p>
-              ` : ""}
+            <p><b>${type === "renewal" ? "III" : "II"}. CHAINSAW INFORMATION AND DESCRIPTION</b></p>
+            <p>Purpose of Use: <u>${purpose}</u></p>
+            <p>Brand: <u>${brand}</u></p>
+            <p>Model: <u>${model}</u></p>
+            <p>Date of Acquisition: <u>${date_of_acquisition}</u></p>
+            <p>Serial Number: <u>${serial_number}</u></p>
+            <p>Horsepower: <u>${horsepower}</u></p>
+            <p>Maximum Length of Guide Bar: <u>${maximum_length_of_guide_bar}</u></p>
 
-              <p class="section-title">${permit_type === "renewal" ? "III" : "II"}. CHAINSAW INFORMATION AND DESCRIPTION</p>
-              <p class="info-line">Purpose of Use: <span class="underline">${purpose}</span></p>
-              <p class="info-line">Brand: <span class="underline">${brand}</span></p>
-              <p class="info-line">Model: <span class="underline">${model}</span></p>
-              <p class="info-line">Date of Acquisition: <span class="underline">${date_of_acquisition}</span></p>
-              <p class="info-line">Serial Number: <span class="underline">${serial_number}</span></p>
-              <p class="info-line">Horsepower: <span class="underline">${horsepower}</span></p>
-              <p class="info-line">Maximum Length of Guide Bar: <span class="underline">${maximum_length_of_guide_bar}</span></p>
-
-              <p class="section-title">${permit_type === "renewal" ? "IV" : "III"}. DECLARATION AND SUBMISSION</p>
-              <div class="declaration">
-                ${signatureBlock}
-              </div>
-            </body>
-          </html>`.trim();
+            <p><b>${type === "renewal" ? "IV" : "III"}. DECLARATION AND SUBMISSION</b></p>
+            ${signatureBlock}
+          </body>
+        </html>`.trim();
 
                 const parts = hasSignature ? [{
                     location: sigLocation,
@@ -2072,14 +2227,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const docBlob = new Blob([mhtml], {
                     type: "application/msword"
                 });
-                const docFileName = `${permit_type === "renewal" ? "Chainsaw_Renewal" : "Chainsaw_New"}_${(fullName || "Applicant").replace(/\s+/g, "_")}.doc`;
+                const docFileName = `${type === "renewal" ? "Chainsaw_Renewal" : "Chainsaw_New"}_${(fullName || "Applicant").replace(/\s+/g, "_")}.doc`;
                 const docFile = new File([docBlob], docFileName, {
                     type: "application/msword"
                 });
 
-                // Build form-data for backend
                 const fd = new FormData();
-                fd.append("permit_type", permit_type);
+                fd.append("permit_type", type);
                 fd.append("first_name", firstName);
                 fd.append("middle_name", middleName);
                 fd.append("last_name", lastName);
@@ -2088,13 +2242,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fd.append("municipality", municipality);
                 fd.append("province", province);
                 fd.append("contact_number", contact_number);
-
-                if (permit_type === "renewal") {
+                if (type === "renewal") {
                     fd.append("permit_number", permit_number);
                     fd.append("issuance_date", issuance_date);
                     fd.append("expiry_date", expiry_date);
                 }
-
                 fd.append("purpose", purpose);
                 fd.append("brand", brand);
                 fd.append("model", model);
@@ -2114,9 +2266,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }));
                 }
 
-                // For renewal: do NOT attach other files (list hidden). For new: attach if selected.
-                if (permit_type === "new") {
-                    const pick = (id) => document.getElementById(id)?.files?.[0] || null;
+                // Attach files (Application letter intentionally NOT present)
+                const pick = (id) => document.getElementById(id)?.files?.[0] || null;
+
+                if (type === "new") {
                     const files = {
                         chainsaw_cert_terms: pick("file-cert-terms"),
                         chainsaw_cert_sticker: pick("file-cert-sticker"),
@@ -2129,9 +2282,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Object.entries(files).forEach(([name, file]) => {
                         if (file) fd.append(name, file);
                     });
+                } else {
+                    const filesRenewal = {
+                        chainsaw_cert_terms: pick("file-cert-terms"), // 1.1
+                        chainsaw_cert_sticker: pick("file-cert-sticker"), // 1.2
+                        chainsaw_staff_work: pick("file-memo"), // 2
+                        geo_photos: pick("file-geo"), // 3
+                        // (no application letter)
+                    };
+                    Object.entries(filesRenewal).forEach(([name, file]) => {
+                        if (file) fd.append(name, file);
+                    });
                 }
 
-                // send to backend
                 const res = await fetch(SAVE_URL, {
                     method: "POST",
                     body: fd,
@@ -2147,7 +2310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
             }
 
-            /* mobile menu toggle */
+            // mobile menu toggle
             const mobileToggle = document.querySelector(".mobile-toggle");
             const navContainer = document.querySelector(".nav-container");
             mobileToggle?.addEventListener("click", () => {
@@ -2156,7 +2319,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         })();
     </script>
+
 </body>
+
+
+
 
 
 

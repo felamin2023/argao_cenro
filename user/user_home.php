@@ -54,6 +54,26 @@ try {
     header('Location: user_login.php');
     exit();
 }
+
+/* ---------- Notifications (to = current user_id) for header ---------- */
+$notifs = [];
+$unreadCount = 0;
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[USER-HOME NOTIFS] ' . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -90,7 +110,7 @@ try {
             line-height: 1.6;
         }
 
-        /* Header Styles */
+        /* Header Styles (legacy styles from this page — kept as-is) */
         header {
             display: flex;
             justify-content: space-between;
@@ -143,14 +163,13 @@ try {
             border-radius: 1px;
         }
 
-        /* Navigation Container */
+        /* Navigation Container (legacy – may be unused by new header) */
         .nav-container {
             display: flex;
             align-items: center;
             gap: 20px;
         }
 
-        /* Navigation Items */
         .nav-item {
             position: relative;
         }
@@ -181,7 +200,6 @@ try {
             transition: color 0.3s ease;
         }
 
-        /* Dropdown Menu */
         .dropdown-menu {
             position: absolute;
             top: calc(100% + 10px);
@@ -328,7 +346,6 @@ try {
             transform: translateX(-50%);
         }
 
-        /* Dropdown Items */
         .dropdown-item {
             padding: 15px 25px;
             display: flex;
@@ -351,7 +368,6 @@ try {
             padding-left: 30px;
         }
 
-        /* Notification Badge */
         .badge {
             position: absolute;
             top: 2px;
@@ -383,7 +399,6 @@ try {
             }
         }
 
-        /* Mobile Menu Toggle */
         .mobile-toggle {
             display: none;
             background: none;
@@ -456,7 +471,6 @@ try {
             gap: 10px;
         }
 
-        /* Cards */
         .program-highlight,
         .component-section {
             background: var(--white);
@@ -501,7 +515,6 @@ try {
             margin-bottom: 20px;
         }
 
-        /* Performance Metrics */
         .performance-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -538,7 +551,6 @@ try {
             font-weight: 500;
         }
 
-        /* Enhanced Chart Container */
         .chart-container {
             position: relative;
             height: 400px;
@@ -588,7 +600,6 @@ try {
             margin-top: 10px;
         }
 
-        /* Enhanced Data Table */
         .data-table-container {
             overflow-x: auto;
             margin: 25px 0;
@@ -637,7 +648,6 @@ try {
             background-color: #f1f1f1;
         }
 
-        /* Status badges */
         .status-badge {
             padding: 6px 12px;
             border-radius: 20px;
@@ -666,7 +676,6 @@ try {
             border: 1px solid #a5d6a7;
         }
 
-        /* Buttons */
         .btn {
             display: inline-flex;
             align-items: center;
@@ -725,7 +734,6 @@ try {
             transform: translateY(-2px);
         }
 
-        /* Two-column layout */
         .two-column {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -733,7 +741,6 @@ try {
             align-items: center;
         }
 
-        /* Enhanced Habitat Assessment Section */
         .habitat-features {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -752,7 +759,7 @@ try {
 
         .habitat-feature:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .12);
         }
 
         .habitat-feature h4 {
@@ -774,7 +781,6 @@ try {
             margin-bottom: 0;
         }
 
-        /* Enhanced Ways Forward Section */
         .roadmap {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -795,7 +801,7 @@ try {
 
         .roadmap-item:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .12);
         }
 
         .roadmap-item h4 {
@@ -811,7 +817,6 @@ try {
             color: var(--primary-dark);
         }
 
-        /* Stat Blocks */
         .stat-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -828,7 +833,7 @@ try {
 
         .stat-block:hover {
             transform: translateY(-3px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
         }
 
         .stat-block .stat-title {
@@ -855,7 +860,6 @@ try {
             color: var(--text-light);
         }
 
-        /* Filter Container Styles */
         .filter-container {
             display: flex;
             justify-content: flex-start;
@@ -892,7 +896,7 @@ try {
         }
 
         .filter-btn:hover {
-            background-color: rgba(43, 102, 37, 0.1);
+            background-color: rgba(43, 102, 37, .1);
         }
 
         .filter-btn i {
@@ -927,12 +931,12 @@ try {
         }
 
         .filter-item:hover {
-            background-color: rgba(43, 102, 37, 0.1);
+            background-color: rgba(43, 102, 37, .1);
             padding-left: 20px;
         }
 
         .filter-item.active {
-            background-color: rgba(43, 102, 37, 0.2);
+            background-color: rgba(43, 102, 37, .2);
             font-weight: 600;
         }
 
@@ -955,10 +959,9 @@ try {
         .apply-filter-btn:hover {
             background-color: var(--primary-dark);
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, .15);
         }
 
-        /* Responsive adjustments */
         @media (max-width: 1200px) {
             .two-column {
                 grid-template-columns: 1fr;
@@ -1031,7 +1034,6 @@ try {
             }
         }
 
-        /* Copy of inline styles for section titles */
         .inline-style-copy {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-weight: 700;
@@ -1056,107 +1058,357 @@ try {
             border-left: none !important;
         }
     </style>
+
+    <!-- Namespaced styles for the Application Status navbar to avoid collisions -->
+    <style id="as-nav-styles">
+        :root {
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
+        }
+
+        .as-header {
+            position: fixed;
+            inset: 0 0 auto 0;
+            height: 58px;
+            background: var(--as-primary);
+            color: var(--as-white);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+        }
+
+        .as-logo {
+            height: 45px;
+            display: flex;
+            align-items: center;
+            position: relative
+        }
+
+        .as-logo a {
+            display: flex;
+            align-items: center;
+            height: 90%
+        }
+
+        .as-logo img {
+            height: 98%;
+            width: auto;
+            transition: var(--as-trans)
+        }
+
+        .as-logo:hover img {
+            transform: scale(1.05)
+        }
+
+        .as-logo::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: -2px;
+            width: 100%;
+            height: 2px;
+            background: var(--as-white);
+            border-radius: 1px
+        }
+
+        .as-nav {
+            display: flex;
+            align-items: center;
+            gap: 20px
+        }
+
+        .as-item {
+            position: relative
+        }
+
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans)
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25)
+        }
+
+        .as-icon i {
+            font-size: 1.3rem
+        }
+
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000
+        }
+
+        .as-center {
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%) translateY(10px)
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0)
+        }
+
+        .as-center.as-dropdown-menu:hover,
+        .as-item:hover>.as-center {
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .as-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px 25px;
+            text-decoration: none;
+            color: #111;
+            transition: var(--as-trans);
+            font-size: 1.05rem
+        }
+
+        .as-dropdown-item i {
+            width: 30px;
+            font-size: 1.5rem;
+            color: var(--as-primary) !important
+        }
+
+        .as-dropdown-item:hover {
+            background: var(--as-light-gray);
+            padding-left: 30px
+        }
+
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+            overflow-y: auto
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans)
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05)
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans)
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05)
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+    </style>
 </head>
 
 <body>
-    <header>
-        <div class="logo">
-            <a href="user_home.php">
-                <img src="seal.png" alt="Site Logo">
-            </a>
+    <!-- Application Status navbar (scoped & safe) -->
+    <header class="as-header">
+        <div class="as-logo">
+            <a href="user_home.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
 
-        <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
-            <i class="fas fa-bars"></i>
-        </button>
-
-        <!-- Navigation on the right -->
-        <div class="nav-container">
-            <!-- Dashboard Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-bars"></i>
-                </div>
-                <div class="dropdown-menu center">
-                    <a href="user_reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Report Incident</span>
-                    </a>
-
-                    <a href="useraddseed.php" class="dropdown-item">
-                        <i class="fas fa-seedling"></i>
-                        <span>Request Seedlings</span>
-                    </a>
-                    <a href="useraddwild.php" class="dropdown-item">
-                        <i class="fas fa-paw"></i>
-                        <span>Wildlife Permit</span>
-                    </a>
-                    <a href="useraddtreecut.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Tree Cutting Permit</span>
-                    </a>
-                    <a href="useraddlumber.php" class="dropdown-item">
-                        <i class="fas fa-boxes"></i>
-                        <span>Lumber Dealers Permit</span>
-                    </a>
-                    <a href="useraddwood.php" class="dropdown-item">
-                        <i class="fas fa-industry"></i>
-                        <span>Wood Processing Permit</span>
-                    </a>
-                    <a href="useraddchainsaw.php" class="dropdown-item">
-                        <i class="fas fa-tools"></i>
-                        <span>Chainsaw Permit</span>
-                    </a>
+        <div class="as-nav">
+            <!-- App menu -->
+            <div class="as-item">
+                <div class="as-icon"><i class="fas fa-bars"></i></div>
+                <div class="as-dropdown-menu as-center">
+                    <a href="user_reportaccident.php" class="as-dropdown-item"><i class="fas fa-file-invoice"></i><span>Report Incident</span></a>
+                    <a href="useraddseed.php" class="as-dropdown-item"><i class="fas fa-seedling"></i><span>Request Seedlings</span></a>
+                    <a href="useraddwild.php" class="as-dropdown-item"><i class="fas fa-paw"></i><span>Wildlife Permit</span></a>
+                    <a href="useraddtreecut.php" class="as-dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting Permit</span></a>
+                    <a href="useraddlumber.php" class="as-dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
+                    <a href="useraddwood.php" class="as-dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
+                    <a href="applicationstatus.php" class="as-dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
-
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge"><?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+                <div class="as-dropdown-menu as-notifications">
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <?php if (!$notifs): ?>
+                        <div class="as-notif-item">
+                            <div class="as-notif-content">
+                                <div class="as-notif-title">No record found</div>
+                                <div class="as-notif-message">There are no notifications.</div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($notifs as $n): ?>
+                            <?php
+                            $unread = empty($n['is_read']);
+                            $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                            $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                            $cleanMsg = (function ($m) {
+                                $t = trim((string)$m);
+                                $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
+                                $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+                                return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                            })($n['message'] ?? '');
+                            ?>
+                            <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                <a href="#" class="as-notif-link"
+                                    data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                    <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                    <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                    <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                    <div class="as-notif-content">
+                                        <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                        <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                        <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                    </div>
+                                </a>
                             </div>
-                        </a>
-                    </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
 
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
 
-            <!-- Profile Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
-                </div>
-                <div class="dropdown-menu">
-                    <a href="user_profile.php" class="dropdown-item">
-                        <i class="fas fa-user-edit"></i>
-                        <span>Edit Profile</span>
-                    </a>
-                    <a href="logout.php" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
+            <!-- Profile -->
+            <div class="as-item">
+                <div class="as-icon"><i class="fas fa-user-circle"></i></div>
+                <div class="as-dropdown-menu">
+                    <a href="user_profile.php" class="as-dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="logout.php" class="as-dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
@@ -1342,28 +1594,91 @@ try {
         </div>
     </div>
 
+    <!-- Minimal, namespaced JS for the AS navbar only -->
+    <script>
+        (function() {
+            // relative time labels
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const ts = Number(el.dataset.ts || 0) * 1000;
+                if (!ts) return;
+                const s = Math.floor((Date.now() - ts) / 1000);
 
+                function ago(sec) {
+                    if (sec < 60) return 'just now';
+                    const m = Math.floor(sec / 60);
+                    if (m < 60) return `${m} minute${m>1?'s':''} ago`;
+                    const h = Math.floor(m / 60);
+                    if (h < 24) return `${h} hour${h>1?'s':''} ago`;
+                    const d = Math.floor(h / 24);
+                    if (d < 7) return `${d} day${d>1?'s':''} ago`;
+                    const w = Math.floor(d / 7);
+                    if (w < 5) return `${w} week${w>1?'s':''} ago`;
+                    const mo = Math.floor(d / 30);
+                    if (mo < 12) return `${mo} month${mo>1?'s':''} ago`;
+                    const y = Math.floor(d / 365);
+                    return `${y} year${y>1?'s':''} ago`;
+                }
+                el.textContent = ago(s);
+                el.title = new Date(ts).toLocaleString();
+            });
+
+            // mark all read (best-effort)
+            const badge = document.getElementById('asNotifBadge');
+            document.getElementById('asMarkAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST'
+                    });
+                } catch {}
+                document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
+                if (badge) badge.style.display = 'none';
+            });
+
+            // click a single notification
+            document.querySelector('.as-notifications')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.as-notif-link');
+                if (!link) return;
+                e.preventDefault();
+                const nid = link.dataset.notifId;
+                try {
+                    await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(nid)}`, {
+                        method: 'POST'
+                    });
+                } catch {}
+                if (link.dataset.approvalId) {
+                    window.location.href = 'application_status.php';
+                    return;
+                }
+                if (link.dataset.incidentId) {
+                    window.location.href = `user_reportaccident.php?view=${encodeURIComponent(link.dataset.incidentId)}`;
+                    return;
+                }
+            });
+        })();
+    </script>
+
+    <!-- Your existing page JS (left untouched) -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
+            // Mobile menu toggle (legacy)
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
 
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
-                    navContainer.classList.toggle('active');
+                    navContainer?.classList.toggle('active');
                 });
             }
 
-            // Improved dropdown functionality
+            // Improved dropdown functionality (legacy selectors; harmless if not present)
             const dropdowns = document.querySelectorAll('.dropdown');
 
             dropdowns.forEach(dropdown => {
-                const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
 
-                // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
+                    if (!menu) return;
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
                     menu.style.transform = menu.classList.contains('center') ?
@@ -1371,9 +1686,8 @@ try {
                         'translateY(0)';
                 });
 
-                // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
-                    // Check if we're leaving the entire dropdown area
+                    if (!menu) return;
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
@@ -1383,8 +1697,7 @@ try {
                     }
                 });
 
-                // Additional check for menu mouseleave
-                menu.addEventListener('mouseleave', (e) => {
+                menu?.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
@@ -1395,7 +1708,6 @@ try {
                 });
             });
 
-            // Close dropdowns when clicking outside (for mobile)
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
@@ -1408,34 +1720,25 @@ try {
                 }
             });
 
-            // Mobile dropdown toggle
             if (window.innerWidth <= 992) {
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
 
-                    toggle.addEventListener('click', (e) => {
+                    toggle?.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
 
-                        // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) {
-                                otherMenu.style.display = 'none';
-                            }
+                            if (otherMenu !== menu) otherMenu.style.display = 'none';
                         });
 
-                        // Toggle current dropdown
-                        if (menu.style.display === 'block') {
-                            menu.style.display = 'none';
-                        } else {
-                            menu.style.display = 'block';
-                        }
+                        if (!menu) return;
+                        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
                     });
                 });
             }
 
-            // Mark all notifications as read
             const markAllRead = document.querySelector('.mark-all-read');
             if (markAllRead) {
                 markAllRead.addEventListener('click', function(e) {
@@ -1443,7 +1746,8 @@ try {
                     document.querySelectorAll('.notification-item.unread').forEach(item => {
                         item.classList.remove('unread');
                     });
-                    document.querySelector('.badge').style.display = 'none';
+                    const b = document.querySelector('.badge');
+                    if (b) b.style.display = 'none';
                 });
             }
 
@@ -1506,14 +1810,11 @@ try {
                 }
             });
 
-            // Custom legend
-            const legendItems = performanceChart.data.datasets.map((dataset, i) => {
-                return {
-                    label: dataset.label,
-                    backgroundColor: dataset.backgroundColor,
-                    borderColor: dataset.borderColor
-                };
-            });
+            const legendItems = performanceChart.data.datasets.map(dataset => ({
+                label: dataset.label,
+                backgroundColor: dataset.backgroundColor,
+                borderColor: dataset.borderColor
+            }));
 
             const legendContainer = document.getElementById('chartLegend');
             legendItems.forEach(item => {
@@ -1533,22 +1834,17 @@ try {
                 legendContainer.appendChild(legendItem);
             });
 
-            // Filter button functionality
             const applyFilterBtn = document.querySelector('.apply-filter-btn');
             if (applyFilterBtn) {
                 applyFilterBtn.addEventListener('click', function() {
-                    // Here you would implement your filter functionality
                     alert('Filters applied. Implement your filter functionality here.');
                 });
             }
 
-            // Edit button functionality
             const editBtn = document.querySelector('.btn-edit');
             if (editBtn) {
                 editBtn.addEventListener('click', function() {
-                    // Here you would implement your edit functionality
                     alert('Edit mode activated. Implement your edit functionality here.');
-                    // Example: Enable form fields, show editable content, etc.
                 });
             }
         });

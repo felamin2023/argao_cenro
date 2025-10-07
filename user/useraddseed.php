@@ -39,7 +39,6 @@ try {
     $statusOk = $row && strtolower((string)$row['status']) === 'verified';
 
     if (!$roleOk || !$statusOk) {
-        // Invalidate session if it no longer matches a real verified User
         $_SESSION = [];
         if (ini_get('session.use_cookies')) {
             $params = session_get_cookie_params();
@@ -1529,77 +1528,59 @@ try {
 </head>
 
 <body>
+    <!-- Global toast -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+
+    <!-- Loading overlay -->
+    <!-- Loading overlay (fixed) -->
+    <style>
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <div id="loadingOverlay"
+        style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.55);
+            backdrop-filter:blur(2px); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:#0b1220; color:#fff; padding:22px 26px; border-radius:12px;
+              box-shadow:0 10px 30px rgba(0,0,0,.35); min-width:240px; text-align:center;">
+            <div style="margin:0 auto 12px; width:42px; height:42px; border:4px solid rgba(255,255,255,.25);
+                border-top-color:#fff; border-radius:50%; animation:spin 1s linear infinite;"></div>
+            <div id="loadingText" style="font-weight:600;">Submitting…</div>
+        </div>
+    </div>
+
 
     <header>
         <div class="logo">
-            <a href="user_home.php">
-                <img src="seal.png" alt="Site Logo">
-            </a>
+            <a href="user_home.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
-
-        <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
-            <i class="fas fa-bars"></i>
-        </button>
-
-        <!-- Navigation on the right -->
+        <button class="mobile-toggle"><i class="fas fa-bars"></i></button>
         <div class="nav-container">
-            <!-- Dashboard Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon active">
-                    <i class="fas fa-bars"></i>
-                </div>
-
+                <div class="nav-icon active"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="user_reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <span>Report Incident</span>
-                    </a>
-                    <a href="useraddseed.php" class="dropdown-item active-page">
-                        <i class="fas fa-seedling"></i>
-                        <span>Request Seedlings</span>
-                    </a>
-                    <a href="useraddwild.php" class="dropdown-item">
-                        <i class="fas fa-paw"></i>
-                        <span>Wildlife Permit</span>
-                    </a>
-                    <a href="useraddtreecut.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Tree Cutting Permit</span>
-                    </a>
-                    <a href="useraddlumber.php" class="dropdown-item">
-                        <i class="fas fa-boxes"></i>
-                        <span>Lumber Dealers Permit</span>
-                    </a>
-                    <a href="useraddwood.php" class="dropdown-item">
-                        <i class="fas fa-industry"></i>
-                        <span>Wood Processing Permit</span>
-                    </a>
-                    <a href="useraddchainsaw.php" class="dropdown-item">
-                        <i class="fas fa-tools"></i>
-                        <span>Chainsaw Permit</span>
-                    </a>
+                    <a href="user_reportaccident.php" class="dropdown-item"><i class="fas fa-exclamation-triangle"></i><span>Report Incident</span></a>
+                    <a href="useraddseed.php" class="dropdown-item active-page"><i class="fas fa-seedling"></i><span>Request Seedlings</span></a>
+                    <a href="useraddwild.php" class="dropdown-item"><i class="fas fa-paw"></i><span>Wildlife Permit</span></a>
+                    <a href="useraddtreecut.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting Permit</span></a>
+                    <a href="useraddlumber.php" class="dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
+                    <a href="useraddwood.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
+                    <a href="useraddchainsaw.php" class="dropdown-item"><i class="fas fa-tools"></i><span>Chainsaw Permit</span></a>
                 </div>
             </div>
 
-            <!-- Notifications -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
-                </div>
+                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-
                     <div class="notification-item unread">
                         <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
-                            </div>
+                            <div class="notification-icon"><i class="fas fa-exclamation-circle"></i></div>
                             <div class="notification-content">
                                 <div class="notification-title">Seedling Request Status</div>
                                 <div class="notification-message">Your seedling request has been approved.</div>
@@ -1607,75 +1588,50 @@ try {
                             </div>
                         </a>
                     </div>
-
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
-                    </div>
+                    <div class="notification-footer"><a href="user_notification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
-            <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-user-circle"></i>
-                </div>
+                <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
-                    <a href="user_profile.php" class="dropdown-item">
-                        <i class="fas fa-user-edit"></i>
-                        <span>Edit Profile</span>
-                    </a>
-                    <a href="user_login.php" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
+                    <a href="user_profile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="user_login.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
     </header>
 
     <div class="main-container">
-        <div class="action-buttons">
-            <button class="btn btn-primary" id="addFilesBtn">
-                <i class="fas fa-plus-circle"></i> Add
-            </button>
-            <a href="usereditseed.php" class="btn btn-outline">
-                <i class="fas fa-edit"></i> Edit
-            </a>
-            <a href="userviewseed.php" class="btn btn-outline">
-                <i class="fas fa-eye"></i> View
-            </a>
-        </div>
-
         <div class="requirements-form">
             <div class="form-header">
                 <h2>Seedling Request - Requirement</h2>
             </div>
 
             <div class="form-body">
-                <!-- Basic info -->
+                <!-- Names -->
                 <div class="name-fields">
-                    <div class="name-field">
-                        <input type="text" placeholder="First Name" id="firstName" required>
-                    </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Middle Name" id="middleName">
-                    </div>
-                    <div class="name-field">
-                        <input type="text" placeholder="Last Name" id="lastName" required>
+                    <div class="name-field"><input type="text" placeholder="First Name" id="firstName" required></div>
+                    <div class="name-field"><input type="text" placeholder="Middle Name" id="middleName"></div>
+                    <div class="name-field"><input type="text" placeholder="Last Name" id="lastName" required></div>
+                </div>
+
+                <!-- Contact -->
+                <div class="name-fields" style="margin-top:8px;">
+                    <div class="name-field" style="width:320px;">
+                        <input type="text" placeholder="Contact Number (optional)" id="contactNumber">
                     </div>
                 </div>
 
                 <!-- Purpose -->
-                <div style="width: 100%; display: flex; flex-direction: column;">
+                <div style="width:100%;display:flex;flex-direction:column;">
                     <label style="font-weight:600">Purpose of the Request</label>
                     <textarea id="purpose" placeholder="e.g., community tree-planting along the barangay road..." style="width:100%;height:80px"></textarea>
                 </div>
 
                 <!-- Address + org + date -->
-                <div style=" width: 100%; display:grid;grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:14px">
+                <div style="width:100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:14px">
                     <input type="text" id="organization" placeholder="Organization (optional)" style="width:100%;">
-                    <input type="text" id="sitioStreet" placeholder="Sitio / Street">
-
                     <input list="barangayList" id="barangay" placeholder="Barangay">
                     <datalist id="barangayList">
                         <option value="Guadalupe">
@@ -1684,7 +1640,7 @@ try {
                         <option value="Labangon">
                         <option value="Talamban">
                     </datalist>
-
+                    <input type="text" id="sitioStreet" placeholder="Sitio / Street">
                     <select id="municipality">
                         <option value="">Select Municipality (Cebu)</option>
                         <option>Alcantara</option>
@@ -1732,7 +1688,6 @@ try {
                         <option>Tuburan</option>
                         <option>Tudela</option>
                     </select>
-
                     <select id="city">
                         <option value="">Select City (Cebu)</option>
                         <option>Bogo City</option>
@@ -1745,28 +1700,16 @@ try {
                         <option>Talisay City</option>
                         <option>Toledo City</option>
                     </select>
-
-                    <input type="date" id="requestDate" required style="width:100%; height:40px; box-sizing:border-box;">
+                    <input type="date" id="requestDate" required style="width:100%;height:40px;box-sizing:border-box;">
                 </div>
-                <small style="color:#666;display:block;margin-top:6px;">
-                    Tip: choose either a City <em>or</em> a Municipality. Province is assumed as Cebu.
-                </small>
+                <small style="color:#666;display:block;margin-top:6px;">Tip: choose either a City <em>or</em> a Municipality. Province is assumed as Cebu.</small>
 
-                <!-- Seedlings dynamic list -->
+                <!-- Seedlings list -->
                 <div style="margin-top:18px">
                     <label style="font-weight:600;display:block;margin-bottom:8px">Seedlings Requested (add more rows as needed)</label>
                     <div id="seedlingList" style="display:flex;flex-direction:column;gap:10px"></div>
-                    <button type="button" id="addSeedlingBtn" class="btn btn-outline" style="margin-top:6px">
-                        <i class="fas fa-plus-circle"></i> Add another seedling
-                    </button>
+                    <button type="button" id="addSeedlingBtn" class="btn btn-outline" style="margin-top:6px"><i class="fas fa-plus-circle"></i> Add another seedling</button>
                 </div>
-
-                <!-- Generate letter -->
-                <!-- <div class="sample-letter-btn" style="margin-top:18px">
-                    <button class="btn btn-primary" id="generateLetter">
-                        <i class="fas fa-file-word"></i> Generate Letter (DOC)
-                    </button>
-                </div> -->
 
                 <!-- Signature pad -->
                 <div class="sig-wrap" style="margin-top:18px">
@@ -1777,14 +1720,10 @@ try {
                         <button type="button" id="sigUndo" class="btn btn-outline">Undo</button>
                     </div>
                 </div>
-
-                <!-- (Optional) Requirements box removed for brevity -->
             </div>
 
             <div class="form-footer">
-                <button class="btn btn-primary" id="submitApplication">
-                    <i class="fas fa-paper-plane"></i> Submit Request
-                </button>
+                <button class="btn btn-primary" id="submitApplication"><i class="fas fa-paper-plane"></i> Submit Request</button>
             </div>
         </div>
     </div>
@@ -1809,51 +1748,23 @@ try {
         </div>
     </div>
 
-    <!-- Sample Letter Content (EXACT FORMAT USED) -->
-    <div id="sampleLetterContent" style="display:none;">
-        <p style="text-align: right;">[Your Address]<br>[City, Province]<br>[Date]</p>
-
-        <p style="text-align: left; margin-top: 30px;">
-            <strong>CENRO Argao</strong><br>
-        </p>
-
-        <p style="margin-top: 30px;"><strong>Subject: Request for Seedlings</strong></p>
-
-        <p style="margin-top: 20px; text-align: justify;">
-            Dear Sir/Madam,
-        </p>
-
-        <p style="text-align: justify; text-indent: 50px;">
-            I am writing to formally request [number] seedlings of [seedling name/species] for [purpose - e.g., reforestation project, backyard planting, etc.]. The seedlings will be planted at [location/address where seedlings will be planted].
-        </p>
-
-        <p style="text-align: justify; text-indent: 50px;">
-            The purpose of this request is [explain purpose in more detail]. This initiative is part of [explain any project or personal initiative if applicable].
-        </p>
-
-        <p style="text-align: justify; text-indent: 50px;">
-            I would be grateful if you could approve this request at your earliest convenience. Please let me know if you require any additional information or documentation to process this request.
-        </p>
-
-        <p style="margin-top: 30px;">
-            Thank you for your time and consideration.
-        </p>
-
-        <p style="margin-top: 50px;">
-            Sincerely,<br><br>
-            _________________________<br>
-            [Your Full Name]<br>
-            [Your Contact Information]<br>
-            [Your Organization, if applicable]
-        </p>
+    <!-- Client decision modal -->
+    <div id="clientDecisionModal" class="modal">
+        <div class="modal-content" style="max-width:480px;text-align:center;">
+            <span id="closeClientDecisionModal" class="close-modal">&times;</span>
+            <h3>Existing Client Found</h3>
+            <p id="clientDecisionText" style="margin:10px 0 16px 0;"></p>
+            <div style="display:flex;gap:10px;justify-content:center;">
+                <button id="useExistingBtn" class="btn btn-primary">Use existing</button>
+                <button id="saveNewBtn" class="btn btn-outline">Save as new</button>
+            </div>
+        </div>
     </div>
 
-    <!-- SignaturePad CDN -->
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.6/dist/signature_pad.umd.min.js"></script>
-
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            /* ───────── Toast (replaces all alert()) ───────── */
+            /* Toast */
             const noteEl = document.getElementById('profile-notification');
 
             function toast(message, opts = {}) {
@@ -1861,20 +1772,12 @@ try {
                     type = 'info', timeout = 3000, html = false
                 } = opts;
                 if (!noteEl) return;
-
                 noteEl.setAttribute('role', 'status');
                 noteEl.setAttribute('aria-live', 'polite');
                 noteEl.setAttribute('aria-atomic', 'true');
                 noteEl.style.transition = 'opacity .2s ease-in-out';
-
-                // Slight dark green for success
-                noteEl.style.background =
-                    type === 'error' ? '#c0392b' :
-                    type === 'success' ? '#2d8a34' : '#323232';
-
-                if (html) noteEl.innerHTML = message;
-                else noteEl.textContent = message;
-
+                noteEl.style.background = type === 'error' ? '#c0392b' : (type === 'success' ? '#2d8a34' : '#323232');
+                noteEl[html ? 'innerHTML' : 'textContent'] = message;
                 noteEl.style.display = 'block';
                 noteEl.style.opacity = '1';
                 clearTimeout(noteEl._hideTimer);
@@ -1887,32 +1790,26 @@ try {
                 }, timeout);
             }
 
-            /* ───────── Mobile menu ───────── */
+            /* Loading overlay */
+            const overlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+
+            function setLoading(show, text = 'Submitting…') {
+                if (!overlay) return;
+                loadingText.textContent = text || 'Submitting…';
+                overlay.style.display = show ? 'flex' : 'none';
+                document.body.style.pointerEvents = show ? 'none' : '';
+            }
+
+            /* Mobile menu */
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    const isActive = navContainer.classList.toggle('active');
-                    document.body.style.overflow = isActive ? 'hidden' : '';
-                });
-            }
+            if (mobileToggle) mobileToggle.addEventListener('click', () => {
+                const isActive = navContainer.classList.toggle('active');
+                document.body.style.overflow = isActive ? 'hidden' : '';
+            });
 
-            /* ───────── Helpers ───────── */
-            function escapeHTML(str) {
-                return String(str ?? '').replace(/[&<>"']/g, c => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                } [c]));
-            }
-
-            function dataURLtoBase64(dataURL) {
-                return (dataURL.split(',')[1] || '').replace(/\s/g, '');
-            }
-
-            /* ───────── Signature Pad ───────── */
+            /* Signature pad */
             const canvas = document.getElementById('sigCanvas');
             const sigPad = new SignaturePad(canvas, {
                 backgroundColor: '#fff',
@@ -1933,18 +1830,17 @@ try {
             setTimeout(resizeCanvas, 0);
             document.getElementById('sigClear').addEventListener('click', () => sigPad.clear());
             document.getElementById('sigUndo').addEventListener('click', () => {
-                const data = sigPad.toData();
-                if (data.length) {
-                    data.pop();
-                    sigPad.fromData(data);
+                const d = sigPad.toData();
+                if (d.length) {
+                    d.pop();
+                    sigPad.fromData(d);
                 }
             });
 
-            /* ───────── Seedlings catalog (from backend) ───────── */
+            /* Seedlings catalog */
             const seedlingList = document.getElementById('seedlingList');
             const addSeedlingBtn = document.getElementById('addSeedlingBtn');
-            let seedlingsCatalog = []; // [{seedlings_id, seedling_name, stock}, ...]
-
+            let seedlingsCatalog = [];
             async function loadSeedlings() {
                 try {
                     const res = await fetch('../backend/users/seedlings/list.php', {
@@ -1981,7 +1877,6 @@ try {
                 return sel;
             }
 
-            // 🔒 Enforced quantity limiter with per-keystroke feedback
             function addSeedlingRow() {
                 const row = document.createElement('div');
                 row.className = 'seedling-row';
@@ -1989,9 +1884,7 @@ try {
                 row.style.gridTemplateColumns = '2fr 1fr auto';
                 row.style.gap = '8px';
                 row.style.width = '700px';
-
                 const sel = buildSeedlingSelect();
-
                 const qty = document.createElement('input');
                 qty.type = 'number';
                 qty.className = 'seedling-qty';
@@ -2003,13 +1896,11 @@ try {
 
                 function syncQtyMeta(showMsg = false) {
                     const opt = sel.options[sel.selectedIndex];
-                    const name = opt?.dataset.name || '';
                     const stock = Number(opt?.dataset.stock || 0);
-
+                    const name = opt?.dataset.name || '';
                     qty.placeholder = stock ? `Available: ${stock}` : 'Available: 0';
                     qty.max = stock ? String(stock) : '';
                     qty.disabled = stock <= 0 || !sel.value;
-
                     if (qty.value && stock && Number(qty.value) > stock) {
                         qty.value = String(stock);
                         if (showMsg) toast(`Maximum available for "${name}" is ${stock}.`, {
@@ -2021,17 +1912,14 @@ try {
 
                 function enforceMaxOnType() {
                     const opt = sel.options[sel.selectedIndex];
-                    const name = opt?.dataset.name || '';
                     const stock = Number(opt?.dataset.stock || 0);
-
+                    const name = opt?.dataset.name || '';
                     if (!sel.value || !stock) {
                         qty.value = '';
                         return;
                     }
-
                     const v = parseInt(qty.value || '0', 10);
                     if (!Number.isFinite(v) || v < 1) return;
-
                     if (v > stock) {
                         qty.value = String(stock);
                         toast(`Maximum available for "${name}" is ${stock}.`, {
@@ -2040,15 +1928,12 @@ try {
                         });
                     }
                 }
-
-                // Optional: prevent accidental scroll changing the number
-                qty.addEventListener('wheel', (e) => e.target.blur(), {
+                qty.addEventListener('wheel', e => e.target.blur(), {
                     passive: true
                 });
-
                 sel.addEventListener('change', () => syncQtyMeta(true));
                 qty.addEventListener('input', enforceMaxOnType);
-                syncQtyMeta(); // initialize
+                syncQtyMeta();
 
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button';
@@ -2065,69 +1950,23 @@ try {
                 seedlingList.appendChild(row);
             }
             addSeedlingBtn.addEventListener('click', addSeedlingRow);
-
-            // Load catalog now
             loadSeedlings();
 
-            /* ───────── Submit flow (CONFIRM → POST) ───────── */
+            /* Confirm → POST (duplicate check) */
             const confirmModal = document.getElementById('confirmModal');
             document.getElementById('closeConfirmModal').addEventListener('click', () => confirmModal.style.display = 'none');
             document.getElementById('cancelSubmitBtn').addEventListener('click', () => confirmModal.style.display = 'none');
 
-            document.getElementById('submitApplication').addEventListener('click', (e) => {
-                e.preventDefault();
-                const firstName = document.getElementById('firstName').value.trim();
-                const lastName = document.getElementById('lastName').value.trim();
-                const purpose = document.getElementById('purpose').value.trim();
-                const reqDate = document.getElementById('requestDate').value;
+            const clientDecisionModal = document.getElementById('clientDecisionModal');
+            const clientDecisionText = document.getElementById('clientDecisionText');
+            document.getElementById('closeClientDecisionModal').addEventListener('click', () => clientDecisionModal.style.display = 'none');
 
-                if (!firstName || !lastName) {
-                    toast('First name and last name are required.', {
-                        type: 'error'
-                    });
-                    return;
-                }
-                if (!purpose) {
-                    toast('Please enter the purpose of your request.', {
-                        type: 'error'
-                    });
-                    return;
-                }
-                if (!reqDate) {
-                    toast('Please choose the date of request.', {
-                        type: 'error'
-                    });
-                    return;
-                }
-                if (sigPad.isEmpty()) {
-                    toast('Please provide your signature.', {
-                        type: 'error'
-                    });
-                    return;
-                }
-
-                const hasSeedling = Array.from(document.querySelectorAll('.seedling-row')).some(row => {
-                    const sel = row.querySelector('select.seedling-name');
-                    const qty = row.querySelector('.seedling-qty');
-                    return sel?.value && Number(qty?.value || 0) > 0;
-                });
-                if (!hasSeedling) {
-                    toast('Add at least one seedling with a valid quantity.', {
-                        type: 'error'
-                    });
-                    return;
-                }
-
-                confirmModal.style.display = 'block';
-            });
-
-            document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
-                confirmModal.style.display = 'none';
-
-                const payload = {
+            function gatherPayload() {
+                return {
                     first_name: document.getElementById('firstName').value.trim(),
                     middle_name: document.getElementById('middleName').value.trim(),
                     last_name: document.getElementById('lastName').value.trim(),
+                    contact_number: document.getElementById('contactNumber').value.trim(),
                     organization: document.getElementById('organization').value.trim(),
                     purpose: document.getElementById('purpose').value.trim(),
                     sitio_street: document.getElementById('sitioStreet').value.trim(),
@@ -2145,8 +1984,16 @@ try {
                         };
                     }).filter(s => s.seedlings_id && s.qty > 0)
                 };
+            }
 
+            async function postRequest(mode, extra = {}, label = 'Submitting…') {
+                setLoading(true, label);
                 try {
+                    const payload = {
+                        ...gatherPayload(),
+                        mode,
+                        ...extra
+                    };
                     const res = await fetch('../backend/users/seedlings/request_seedlings.php', {
                         method: 'POST',
                         headers: {
@@ -2156,29 +2003,65 @@ try {
                         body: JSON.stringify(payload)
                     });
                     const data = await res.json();
-                    if (!data.success) throw new Error(data.error || 'Request failed');
+                    if (!res.ok || !data.success) throw new Error(data.error || 'Request failed');
+                    return data;
+                } finally {
+                    setLoading(false);
+                }
+            }
 
-                    toast('Request submitted successfully', {
-                        type: 'success',
-                        timeout: 4000
-                    });
+            document.getElementById('submitApplication').addEventListener('click', (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('firstName').value.trim();
+                const lastName = document.getElementById('lastName').value.trim();
+                const purpose = document.getElementById('purpose').value.trim();
+                const reqDate = document.getElementById('requestDate').value;
+                if (!firstName || !lastName) return toast('First name and last name are required.', {
+                    type: 'error'
+                });
+                if (!purpose) return toast('Please enter the purpose of your request.', {
+                    type: 'error'
+                });
+                if (!reqDate) return toast('Please choose the date of request.', {
+                    type: 'error'
+                });
+                if (sigPad.isEmpty()) return toast('Please provide your signature.', {
+                    type: 'error'
+                });
 
-                    // Reset form (keep catalog)
-                    try {
-                        document.getElementById('firstName').value = '';
-                        document.getElementById('middleName').value = '';
-                        document.getElementById('lastName').value = '';
-                        document.getElementById('organization').value = '';
-                        document.getElementById('purpose').value = '';
-                        document.getElementById('sitioStreet').value = '';
-                        document.getElementById('barangay').value = '';
-                        document.getElementById('municipality').value = '';
-                        document.getElementById('city').value = '';
-                        sigPad.clear();
-                        seedlingList.innerHTML = '';
-                        addSeedlingRow();
-                    } catch (_) {}
+                const hasSeedling = Array.from(document.querySelectorAll('.seedling-row')).some(row => {
+                    const sel = row.querySelector('select.seedling-name');
+                    const qty = row.querySelector('.seedling-qty');
+                    return sel?.value && Number(qty?.value || 0) > 0;
+                });
+                if (!hasSeedling) return toast('Add at least one seedling with a valid quantity.', {
+                    type: 'error'
+                });
 
+                confirmModal.style.display = 'block';
+            });
+
+            let decisionCtx = null;
+            document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
+                confirmModal.style.display = 'none';
+                try {
+                    const data = await postRequest('auto', {}, 'Checking for existing client…'); // duplicate check
+                    if (data.needs_decision) {
+                        decisionCtx = {
+                            existing: data.existing_client
+                        };
+                        const ex = data.existing_client;
+                        const nm = [ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ');
+                        const addr = [ex.sitio_street, ex.barangay && `Brgy. ${ex.barangay}`, ex.municipality || ex.city].filter(Boolean).join(', ');
+                        clientDecisionText.textContent = `A client record for "${nm}" already exists (${addr || 'no address saved'}). Do you want to use this existing record or save as a new client?`;
+                        clientDecisionModal.style.display = 'block';
+                    } else {
+                        toast('Request submitted successfully', {
+                            type: 'success',
+                            timeout: 4000
+                        });
+                        resetForm();
+                    }
                 } catch (err) {
                     console.error(err);
                     toast('Submission failed: ' + (err?.message || err), {
@@ -2188,28 +2071,76 @@ try {
                 }
             });
 
-            /* ───────── Default date = today ───────── */
+            document.getElementById('useExistingBtn').addEventListener('click', async () => {
+                try {
+                    const cid = decisionCtx?.existing?.client_id;
+                    if (!cid) throw new Error('Missing existing client id.');
+                    await postRequest('reuse', {
+                        existing_client_id: cid
+                    }, 'Submitting with existing client…');
+                    clientDecisionModal.style.display = 'none';
+                    toast('Request submitted (using existing client)', {
+                        type: 'success',
+                        timeout: 4000
+                    });
+                    resetForm();
+                } catch (err) {
+                    console.error(err);
+                    toast('Submission failed: ' + (err?.message || err), {
+                        type: 'error',
+                        timeout: 7000
+                    });
+                }
+            });
+
+            document.getElementById('saveNewBtn').addEventListener('click', async () => {
+                try {
+                    await postRequest('new', {}, 'Submitting as new client…');
+                    clientDecisionModal.style.display = 'none';
+                    toast('Request submitted (saved as new client)', {
+                        type: 'success',
+                        timeout: 4000
+                    });
+                    resetForm();
+                } catch (err) {
+                    console.error(err);
+                    toast('Submission failed: ' + (err?.message || err), {
+                        type: 'error',
+                        timeout: 7000
+                    });
+                }
+            });
+
+            function resetForm() {
+                try {
+                    document.getElementById('firstName').value = '';
+                    document.getElementById('middleName').value = '';
+                    document.getElementById('lastName').value = '';
+                    document.getElementById('contactNumber').value = '';
+                    document.getElementById('organization').value = '';
+                    document.getElementById('purpose').value = '';
+                    document.getElementById('sitioStreet').value = '';
+                    document.getElementById('barangay').value = '';
+                    document.getElementById('municipality').value = '';
+                    document.getElementById('city').value = '';
+                    sigPad.clear();
+                    seedlingList.innerHTML = '';
+                    addSeedlingRow();
+                } catch (_) {}
+            }
+
+            // Default date = today
             const requestDate = document.getElementById('requestDate');
             if (requestDate && !requestDate.value) {
                 const today = new Date();
-                const yyyy = today.getFullYear();
-                const mm = String(today.getMonth() + 1).padStart(2, '0');
-                const dd = String(today.getDate()).padStart(2, '0');
-                requestDate.value = `${yyyy}-${mm}-${dd}`;
+                requestDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
             }
-
-            /* ───────── Demo: Add button (optional) ───────── */
-            const addFilesBtn = document.getElementById('addFilesBtn');
-            if (addFilesBtn) addFilesBtn.addEventListener('click', () => {
-                toast('In a real app, this opens a multi-file picker.');
-            });
         });
     </script>
-
-
-
-
 </body>
+
+
+
 
 
 

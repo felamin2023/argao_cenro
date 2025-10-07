@@ -1,832 +1,2130 @@
 <?php
-// Get the current page name
-$current_page = basename($_SERVER['PHP_SELF']);
+
+/**
+ * applicationstatus.php (Wildlife Admin UI)
+ * - Lists ONLY approvals with request_type = 'wildlife'
+ * - Two-pane View modal (Application fields + Documents)
+ * - Approve / Reject inside the View modal when status = pending (with confirmation modals)
+ * - Writes approved_by (current admin user_id) and approved_at / reject_by / rejected_at
+ * - Marks related notifications is_read=true when a row’s View is opened
+ * - Success toast (2 seconds) after approve/reject
+ * - Hides "Additional Information" field from UI
+ * - Fixes document preview height (full tall drawer)
+ * - Shows loading overlay while approve/reject is saving
+ * - ADMIN BELL UI: same top nav as home (menu, bell, profile).
+ * - View modal opens instantly with skeleton loading state
+ * - NEW: “Mark all as read” now works (server + JS) for:
+ *        • public.notifications where "to" ILIKE 'wildlife'
+ *        • public.incident_report where category ILIKE 'wildlife monitoring'
+ */
+
+declare(strict_types=1);
+session_start();
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
+    header('Location: ../superlogin.php');
+    exit();
+}
+
+require_once __DIR__ . '/../backend/connection.php';
+
+$user_id = (string)$_SESSION['user_id'];
+try {
+    $st = $pdo->prepare("
+        SELECT first_name, last_name, email, role, department, status
+        FROM public.users
+        WHERE user_id = :id
+        LIMIT 1
+    ");
+    $st->execute([':id' => $user_id]);
+    $me = $st->fetch(PDO::FETCH_ASSOC);
+
+    $isAdmin    = $me && strtolower((string)$me['role']) === 'admin';
+    $isWildlife = $me && strtolower((string)$me['department']) === 'wildlife';
+
+    if (!$isAdmin || !$isWildlife) {
+        header('Location: ../superlogin.php');
+        exit();
+    }
+} catch (Throwable $e) {
+    error_log('[WILD-ADMIN GUARD] ' . $e->getMessage());
+    header('Location: ../superlogin.php');
+    exit();
+}
+
+function h(?string $s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+function notempty($v): bool
+{
+    return $v !== null && trim((string)$v) !== '' && $v !== 'null';
+}
+
+function time_elapsed_string($datetime, $full = false): string
+{
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
+    $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $parts = [];
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+$FILE_BASE = '';
+function normalize_url(string $v, string $base): string
+{
+    $v = trim($v);
+    if ($v === '') return '';
+    if (preg_match('~^https?://~i', $v)) return $v;
+    if ($base !== '') {
+        $base = rtrim($base, '/');
+        $v = ltrim($v, '/');
+        return $base . '/' . $v;
+    }
+    return '';
+}
+
+/* ---------------- AJAX (mark single read) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
+    header('Content-Type: application/json');
+    $notifId    = $_POST['notif_id'] ?? '';
+    $incidentId = $_POST['incident_id'] ?? '';
+    if (!$notifId && !$incidentId) {
+        echo json_encode(['ok' => false, 'error' => 'missing notif_id or incident_id']);
+        exit();
+    }
+    try {
+        if ($notifId)     $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id")->execute([':id' => $notifId]);
+        if ($incidentId)  $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id")->execute([':id' => $incidentId]);
+        echo json_encode(['ok' => true]);
+    } catch (Throwable $e) {
+        error_log('[WILD-APPSTAT MARK_READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (MARK ALL READ) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_all_read') {
+    header('Content-Type: application/json');
+    try {
+        $pdo->beginTransaction();
+
+        $updPermits = $pdo->prepare("
+            UPDATE public.notifications
+               SET is_read = true
+             WHERE LOWER(COALESCE(\"to\", '')) = 'wildlife'
+               AND is_read = false
+        ");
+        $updPermits->execute();
+        $countPermits = $updPermits->rowCount();
+
+        $updInc = $pdo->prepare("
+            UPDATE public.incident_report
+               SET is_read = true
+             WHERE LOWER(COALESCE(category, '')) = 'wildlife monitoring'
+               AND is_read = false
+        ");
+        $updInc->execute();
+        $countInc = $updInc->rowCount();
+
+        $pdo->commit();
+        echo json_encode(['ok' => true, 'updated' => ['permits' => $countPermits, 'incidents' => $countInc]]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[WILD-APPSTAT MARK_ALL_READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (details) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
+    header('Content-Type: application/json');
+    $approvalId = $_GET['approval_id'] ?? '';
+    if (!$approvalId) {
+        echo json_encode(['ok' => false, 'error' => 'missing approval_id']);
+        exit;
+    }
+
+    try {
+        $st = $pdo->prepare("
+          SELECT a.approval_id,
+                 LOWER(COALESCE(a.request_type,'')) AS request_type,
+                 COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
+                 COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
+                 a.submitted_at,
+                 a.application_id,
+                 a.requirement_id,
+                 c.first_name, c.last_name
+          FROM public.approval a
+          LEFT JOIN public.client c ON c.client_id = a.client_id
+          WHERE a.approval_id = :aid
+            AND LOWER(COALESCE(a.request_type,'')) = 'wildlife'
+          LIMIT 1
+        ");
+        $st->execute([':aid' => $approvalId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            echo json_encode(['ok' => false, 'error' => 'not found']);
+            exit;
+        }
+
+        $appFields = [];
+        if (notempty($row['application_id'])) {
+            $st2 = $pdo->prepare("SELECT * FROM public.application_form WHERE application_id=:app LIMIT 1");
+            $st2->execute([':app' => $row['application_id']]);
+            $app = $st2->fetch(PDO::FETCH_ASSOC) ?: [];
+            foreach ($app as $k => $v) {
+                $lk = strtolower((string)$k);
+                if (in_array($lk, ['id', 'client_id', 'additional_information', 'additional_info', 'additionalinformation', 'additional'], true)) continue;
+                if (!notempty($v)) continue;
+                $label = ucwords(str_replace('_', ' ', $k));
+                $val   = (string)$v;
+                $kind  = 'text';
+                $trim = ltrim($val);
+                if ($trim !== '' && ($trim[0] === '{' || $trim[0] === '[')) {
+                    $decoded = json_decode($val, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $kind = 'json';
+                        $val = $decoded;
+                    }
+                } elseif (preg_match('~^https?://~i', $val)) {
+                    $kind = 'link';
+                }
+                $appFields[] = ['label' => $label, 'key' => $k, 'kind' => $kind, 'value' => $val];
+            }
+        }
+
+        $files = [];
+        if (notempty($row['requirement_id'])) {
+            $st3 = $pdo->prepare("SELECT * FROM public.requirements WHERE requirement_id=:rid LIMIT 1");
+            $st3->execute([':rid' => $row['requirement_id']]);
+            $req = $st3->fetch(PDO::FETCH_ASSOC) ?: [];
+            foreach ($req as $k => $v) {
+                if (in_array($k, ['id', 'requirement_id'], true)) continue;
+                if (!notempty($v)) continue;
+                $url = normalize_url((string)$v, $FILE_BASE);
+                if ($url === '') continue;
+                $label = ucwords(str_replace('_', ' ', $k));
+                $path  = parse_url($url, PHP_URL_PATH) ?? '';
+                $ext   = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                $files[] = ['name' => $label, 'url' => $url, 'ext' => $ext];
+            }
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'meta' => [
+                'client'       => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
+                'request_type' => $row['request_type'] ?? '',
+                'permit_type'  => $row['permit_type'] ?? '',
+                'status'       => $row['approval_status'] ?? '',
+                'submitted_at' => $row['submitted_at'] ?? null,
+            ],
+            'application' => $appFields,
+            'files'       => $files
+        ]);
+    } catch (Throwable $e) {
+        error_log('[WILD-DETAILS AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (decide) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
+    header('Content-Type: application/json');
+    $approvalId = $_POST['approval_id'] ?? '';
+    $action     = strtolower(trim((string)($_POST['action'] ?? '')));
+    $reason     = trim((string)($_POST['reason'] ?? ''));
+
+    if (!$approvalId || !in_array($action, ['approve', 'reject'], true)) {
+        echo json_encode(['ok' => false, 'error' => 'invalid params']);
+        exit();
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $st = $pdo->prepare("
+            SELECT a.approval_id, a.approval_status, a.request_type, a.client_id
+            FROM public.approval a
+            WHERE a.approval_id=:aid AND LOWER(COALESCE(a.request_type,''))='wildlife'
+            FOR UPDATE
+        ");
+        $st->execute([':aid' => $approvalId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'approval not found']);
+            exit;
+        }
+        if (strtolower((string)$row['approval_status']) !== 'pending') {
+            $pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'already decided']);
+            exit;
+        }
+
+        $adminId  = $user_id;
+        $fromDept = isset($me['department']) ? (string)$me['department'] : null;
+        $toUserId = null;
+        if (!empty($row['client_id'])) {
+            $stCli = $pdo->prepare("SELECT user_id FROM public.client WHERE client_id=:cid LIMIT 1");
+            $stCli->execute([':cid' => $row['client_id']]);
+            $toUserId = $stCli->fetchColumn() ?: null;
+        }
+
+        if ($action === 'approve') {
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='approved',
+                       approved_at=now(), approved_by=:by,
+                       rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
+                 WHERE approval_id=:aid
+            ")->execute([':by' => $adminId, ':aid' => $approvalId]);
+
+            $pdo->prepare("
+                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+            ")->execute([
+                ':aid' => $approvalId,
+                ':msg' => 'Your wildlife permit request was approved.',
+                ':fromDept' => $fromDept,
+                ':toUser' => $toUserId
+            ]);
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'status' => 'approved']);
+        } else {
+            if ($reason === '') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'reason required']);
+                exit;
+            }
+
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='rejected',
+                       rejected_at=now(), reject_by=:by, rejection_reason=:reason
+                 WHERE approval_id=:aid
+            ")->execute([':by' => $adminId, ':reason' => $reason, ':aid' => $approvalId]);
+
+            $pdo->prepare("
+                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+            ")->execute([
+                ':aid' => $approvalId,
+                ':msg' => 'Your wildlife permit request was rejected. Reason: ' . $reason,
+                ':fromDept' => $fromDept,
+                ':toUser' => $toUserId
+            ]);
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'status' => 'rejected']);
+        }
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[WILD-DECIDE AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (mark notifications for approval) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
+    header('Content-Type: application/json');
+    $aid = $_POST['approval_id'] ?? '';
+    if (!$aid) {
+        echo json_encode(['ok' => false, 'error' => 'missing approval_id']);
+        exit;
+    }
+    try {
+        $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE approval_id=:aid AND is_read=false")->execute([':aid' => $aid]);
+        echo json_encode(['ok' => true]);
+    } catch (Throwable $e) {
+        error_log('[WILD-MARK-READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- NOTIFS for header ---------------- */
+$wildNotifs = [];
+$unreadWildlife = 0;
+try {
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last,
+               NULL::text AS incident_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $wildNotifs = $notifRows;
+
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife' AND n.is_read=false
+    ")->fetchColumn();
+
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadWildlife = $unreadPermits + $unreadIncidents;
+
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE lower(COALESCE(category,''))='wildlife monitoring'
+        ORDER BY created_at DESC LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+    error_log('[WILDHOME NOTIFS-FOR-NAV] ' . $e->getMessage());
+    $wildNotifs = [];
+    $unreadWildlife = 0;
+}
+
+/* ---------------- Page data ---------------- */
+$rows = [];
+try {
+    $rows = $pdo->query("
+        SELECT a.approval_id,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
+               a.submitted_at,
+               c.first_name
+        FROM public.approval a
+        LEFT JOIN public.client c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(a.request_type,''))='wildlife'
+        ORDER BY a.submitted_at DESC NULLS LAST, a.approval_id DESC
+        LIMIT 200
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[WILD-ADMIN LIST] ' . $e->getMessage());
+}
+
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wood Processing Records</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-     <link rel="stylesheet" href="/denr/superadmin/css/woodprocessing.css">
-   
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>Wildlife Approvals</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/denr/superadmin/css/wildhome.css" />
+
+    <style>
+        :root {
+            color-scheme: light;
+        }
+
+        body {
+            background: #f3f4f6 !important;
+            color: #111827;
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        body::before {
+            content: none !important;
+        }
+
+        .nav-item .badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+        }
+
+        .nav-item.dropdown.open .badge {
+            display: none;
+        }
+
+        .dropdown-menu.notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0
+        }
+
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none
+        }
+
+        .notification-item {
+            padding: 18px;
+            background: #f8faf7
+        }
+
+        .notification-item.unread {
+            background: #eef7ee
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20
+        }
+
+        .notification-link {
+            display: flex;
+            text-decoration: none;
+            color: inherit
+        }
+
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px
+        }
+
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px
+        }
+
+        .notification-message {
+            color: #234
+        }
+
+        .main-content {
+            padding: 10px 16px 24px;
+            max-width: 1200px;
+            margin: 0 auto
+        }
+
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            margin: 1rem 0;
+            flex-wrap: wrap
+        }
+
+        .title-wrap h1 {
+            margin: 0;
+            color: #2b6625
+        }
+
+        .filters {
+            display: flex;
+            gap: .75rem;
+            align-items: flex-end;
+            flex-wrap: wrap
+        }
+
+        .filter-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px
+        }
+
+        .input {
+            padding: 10px 12px;
+            min-width: 12rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fff;
+            color: #111827
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            background: #111827;
+            color: #fff;
+            cursor: pointer;
+            text-decoration: none
+        }
+
+        .btn.ghost {
+            background: #fff;
+            color: #111827
+        }
+
+        .btn.small {
+            padding: 7px 10px;
+            font-size: .92rem
+        }
+
+        .btn.success {
+            background: #065f46;
+            border-color: #065f46
+        }
+
+        .btn.danger {
+            background: #991b1b;
+            border-color: #991b1b
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden
+        }
+
+        .card-header,
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .75rem 1rem;
+            border-bottom: 1px solid #f3f4f6
+        }
+
+        .card-footer {
+            border-top: 1px solid #f3f4f6;
+            border-bottom: none
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .table th,
+        .table td {
+            padding: .75rem;
+            border-bottom: 1px solid #f3f4f6;
+            text-align: left;
+            background: #fff
+        }
+
+        .table thead th {
+            font-weight: 600;
+            color: #374151;
+            background: #fafafa
+        }
+
+        .pill {
+            display: inline-block;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: .85rem;
+            white-space: nowrap
+        }
+
+        .pill.neutral {
+            background: #f3f4f6;
+            color: #374151
+        }
+
+        /* Status plain text (no animation) */
+        .status-val {
+            display: inline-block;
+            font-weight: 600;
+            color: #111827;
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            line-height: 1.2;
+            white-space: nowrap;
+            min-width: 100px;
+            animation: none !important;
+            transform: none !important
+        }
+
+        .status-val.approved {
+            color: #065f46
+        }
+
+        .status-val.pending {
+            color: #9a3412
+        }
+
+        .status-val.rejected {
+            color: #991b1b
+        }
+
+        .badge.status {
+            animation: none !important;
+            transform: none !important;
+            background: transparent !important;
+            color: inherit !important;
+            padding: 0 !important;
+            min-width: 0 !important;
+            border-radius: 0 !important
+        }
+
+        .table th:nth-child(4),
+        .table td:nth-child(4) {
+            width: 120px
+        }
+
+        /* Modal / Drawer / Skeleton (same as before) */
+        .modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1050
+        }
+
+        .modal.show {
+            display: flex
+        }
+
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, .55)
+        }
+
+        .modal-panel {
+            position: relative;
+            z-index: 1;
+            background: #fff;
+            width: min(1200px, 96vw);
+            max-height: 92vh;
+            border-radius: 16px;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, .2)
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6
+        }
+
+        .icon-btn {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            padding: 6px;
+            border-radius: 8px;
+            cursor: pointer
+        }
+
+        .meta-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            padding: 10px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            background: #fafafa
+        }
+
+        .meta .label {
+            display: block;
+            font-size: .75rem;
+            color: #6b7280
+        }
+
+        .meta .value {
+            font-weight: 600
+        }
+
+        .status-text {
+            font-weight: 700;
+            color: #111827
+        }
+
+        .modal-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            min-height: 420px
+        }
+
+        .pane {
+            display: flex;
+            flex-direction: column;
+            min-height: 0
+        }
+
+        .pane.left {
+            border-right: 1px solid #f3f4f6
+        }
+
+        .pane-title {
+            margin: 0;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6
+        }
+
+        .scroll-area {
+            padding: 12px 16px;
+            overflow: auto;
+            max-height: calc(90vh - 210px)
+        }
+
+        .deflist {
+            margin: 0
+        }
+
+        .defrow {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px dashed #f3f4f6
+        }
+
+        .defrow dt {
+            color: #6b7280
+        }
+
+        .defrow dd {
+            margin: 0;
+            word-break: break-word
+        }
+
+        .file-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            cursor: pointer
+        }
+
+        .file-item:hover {
+            background: #f9fafb
+        }
+
+        .file-item .name {
+            font-weight: 500
+        }
+
+        .file-item .hint {
+            margin-left: auto;
+            color: #6b7280;
+            font-size: .85rem
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 20px;
+            padding: 10px 16px;
+            border-top: 1px solid #f3f4f6;
+            background: #fff;
+            justify-content: center;
+            position: sticky;
+            bottom: 0;
+            z-index: 1
+        }
+
+        .preview-drawer {
+            position: fixed;
+            top: 2%;
+            right: 2%;
+            width: min(720px, 96vw);
+            height: 96vh;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            overflow: hidden;
+            z-index: 1100;
+            display: none;
+            flex-direction: column;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, .2)
+        }
+
+        .preview-drawer.show {
+            display: flex
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f3f4f6;
+            flex: 0 0 56px
+        }
+
+        .truncate {
+            max-width: 75%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .preview-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            height: calc(96vh - 56px);
+            overflow: auto
+        }
+
+        #previewImageWrap,
+        #previewFrameWrap,
+        #previewLinkWrap {
+            height: 100%
+        }
+
+        #previewImage {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain
+        }
+
+        #previewFrame {
+            width: 100%;
+            height: 100%;
+            border: 0
+        }
+
+        .json-pre {
+            white-space: pre-wrap;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px;
+            overflow: auto
+        }
+
+        .mini-table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .mini-table th,
+        .mini-table td {
+            border: 1px solid #e5e7eb;
+            padding: 6px;
+            font-size: .9rem
+        }
+
+        .mini-table thead th {
+            background: #fafafa;
+            color: #374151
+        }
+
+        .toast {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: #111827;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .2);
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+            transition: opacity .2s, transform .2s;
+            z-index: 1400
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .toast.success {
+            background: #065f46
+        }
+
+        .toast.error {
+            background: #991b1b
+        }
+
+        .blocker {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, .65);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            z-index: 1500
+        }
+
+        .blocker.show {
+            display: flex
+        }
+
+        .lds {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 3px solid #d1d5db;
+            border-top-color: #2b6625;
+            animation: spin 1s linear infinite
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .confirm-wrap {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1300
+        }
+
+        .confirm-wrap.show {
+            display: flex
+        }
+
+        .confirm-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, .45)
+        }
+
+        .confirm-panel {
+            position: relative;
+            z-index: 1;
+            width: min(520px, 92vw);
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px
+        }
+
+        .confirm-title {
+            margin: 0 0 6px
+        }
+
+        .input-textarea {
+            width: 100%;
+            min-height: 110px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px;
+            font: inherit;
+            resize: vertical
+        }
+
+        .confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 6px
+        }
+
+        @media (max-width:980px) {
+            .modal-content {
+                grid-template-columns: 1fr
+            }
+
+            .pane.left {
+                border-right: 0;
+                border-bottom: 1px solid #f3f4f6
+            }
+
+            .meta-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr))
+            }
+
+            .defrow {
+                grid-template-columns: 1fr
+            }
+        }
+
+        /* Skeleton */
+        .s-wrap.hidden {
+            display: none !important
+        }
+
+        .s-wrap {
+            padding: 12px 16px 16px
+        }
+
+        .s-meta {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 8px
+        }
+
+        .s-body {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            min-height: 420px
+        }
+
+        .s-pane {
+            border-top: 1px solid #f3f4f6
+        }
+
+        .s-pane+.s-pane {
+            border-left: 1px solid #f3f4f6
+        }
+
+        .s-title {
+            height: 18px;
+            width: 40%;
+            margin: 12px 0 6px 0
+        }
+
+        .s-list {
+            padding: 12px 16px;
+            display: grid;
+            gap: 10px;
+            max-height: calc(90vh - 210px);
+            overflow: auto
+        }
+
+        .sk {
+            position: relative;
+            overflow: hidden;
+            border-radius: 6px;
+            background: #e5e7eb
+        }
+
+        .sk::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .6), rgba(255, 255, 255, 0));
+            animation: shimmer 1.1s infinite
+        }
+
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%)
+            }
+        }
+
+        .sk.sm {
+            height: 12px
+        }
+
+        .sk.md {
+            height: 14px
+        }
+
+        .sk.lg {
+            height: 16px
+        }
+
+        .sk.row {
+            height: 14px;
+            width: 100%
+        }
+
+        .sk.w25 {
+            width: 25%
+        }
+
+        .sk.w35 {
+            width: 35%
+        }
+
+        .sk.w45 {
+            width: 45%
+        }
+
+        .sk.w60 {
+            width: 60%
+        }
+
+        .sk.w80 {
+            width: 80%
+        }
+
+        .sk.w100 {
+            width: 100%
+        }
+
+        .s-defrow {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 12px
+        }
+
+        @media (max-width:980px) {
+            .s-meta {
+                grid-template-columns: repeat(2, 1fr)
+            }
+
+            .s-body {
+                grid-template-columns: 1fr
+            }
+
+            .s-pane+.s-pane {
+                border-left: 0;
+                border-top: 1px solid #f3f4f6
+            }
+
+            .s-defrow {
+                grid-template-columns: 1fr
+            }
+        }
+
+        .logo::after {
+            content: none
+        }
+
+        /* --- Active state for dropdown items (Wildlife Permit) --- */
+        .dropdown-menu .dropdown-item {
+            position: relative;
+        }
+
+        .dropdown-menu .dropdown-item.active {
+            background: #eef7ee;
+            /* soft green */
+            font-weight: 700;
+            color: #1b5e20;
+        }
+
+        .dropdown-menu .dropdown-item.active i {
+            color: #1b5e20;
+        }
+
+        .dropdown-menu .dropdown-item.active::before {
+            content: "";
+            position: absolute;
+            left: 8px;
+            /* little accent bar on the left */
+            top: 8px;
+            bottom: 8px;
+            width: 4px;
+            border-radius: 4px;
+            background: #1b5e20;
+        }
+    </style>
 </head>
+
 <body>
 
-<header>
-    <div class="logo">
-        <a href="wildhome.php">
-            <img src="seal.png" alt="Site Logo">
-        </a>
-    </div>
-    
-    <!-- Mobile menu toggle -->
-    <button class="mobile-toggle" aria-label="Toggle menu">
-        <i class="fas fa-bars"></i>
-    </button>
-    
-    <!-- Navigation on the right -->
-    <div class="nav-container">
-        <!-- Dashboard Dropdown -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon active" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-bars"></i>
-            </div>
-            <div class="dropdown-menu center">
-                <a href="breedingreport.php" class="dropdown-item">
-                    <i class="fas fa-plus-circle"></i>
-                    <span>Add Record</span>
-                </a>  
+    <header>
+        <div class="logo"><a href="wildhome.php"><img src="seal.png" alt="Site Logo"></a></div>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><i class="fas fa-bars"></i></button>
 
-                 <a href="wildpermit.php" class="dropdown-item active-page">
-                    <i class="fas fa-paw"></i>
-                    <span>Wildlife Permit</span>
-                </a>
+        <div class="nav-container">
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
+                <div class="dropdown-menu center">
+                    <a href="breedingreport.php" class="dropdown-item">
+                        <i class="fas fa-plus-circle"></i><span>Add Record</span>
+                    </a>
 
-                
-                <a href="reportaccident.php" class="dropdown-item">
-                    <i class="fas fa-file-invoice"></i>
-                    <span>Incident Reports</span>
-                </a>
-            </div>
-        </div>
+                    <!-- Make this ACTIVE on this page -->
+                    <a href="wildpermit.php" class="dropdown-item active" aria-current="page">
+                        <i class="fas fa-paw"></i><span>Wildlife Permit</span>
+                    </a>
 
-        <!-- Messages Icon -->
-        <div class="nav-item">
-            <div class="nav-icon">
-                <a href="wildmessage.php" aria-label="Messages">
-                    <i class="fas fa-envelope" style="color: black;"></i>
-                </a>
-            </div>
-        </div>
-        
-        <!-- Notifications -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-bell"></i>
-                <span class="badge">1</span>
-            </div>
-            <div class="dropdown-menu notifications-dropdown">
-                <div class="notification-header">
-                    <h3>Notifications</h3>
-                    <a href="#" class="mark-all-read">Mark all as read</a>
-                </div>
-                <div class="notification-item unread">
-                    <a href="wildeach.php?id=1" class="notification-link">
-                        <div class="notification-icon">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="notification-content">
-                            <div class="notification-title">Wildlife Incident Reported</div>
-                            <div class="notification-message">A large monitor lizard approximately 1.2 meters in length was spotted near a residential backyard early in the morning.</div>
-                            <div class="notification-time">15 minutes ago</div>
-                        </div>
+                    <a href="reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
                 </div>
-                <div class="notification-footer">
-                    <a href="wildnotification.php" class="view-all">View All Notifications</a>
+
+            </div>
+
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadWildlife ?></span>
+                </div>
+                <div class="dropdown-menu notifications-dropdown">
+                    <div class="notification-header">
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
+                    </div>
+                    <div class="notification-list" id="wildNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits
+                        foreach ($wildNotifs as $nf) {
+                            $combined[] = [
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                            ];
+                        }
+
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No wildlife notifications</div>
+                                </div>
+                            </div>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
+                    </div>
+
+                    <div class="notification-footer"><a href="wildnotification.php" class="view-all">View All Notifications</a></div>
+                </div>
+            </div>
+
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon <?php echo $current_page === 'forestry-profile' ? 'active' : ''; ?>"><i class="fas fa-user-circle"></i></div>
+                <div class="dropdown-menu">
+                    <a href="wildprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
-        
-        <!-- Profile Dropdown -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-user-circle"></i>
-            </div>
-            <div class="dropdown-menu">
-                <a href="wildprofile.php" class="dropdown-item">
-                    <i class="fas fa-user-edit"></i>
-                    <span>Edit Profile</span>
-                </a>
-                <a href="../superlogin.php" class="dropdown-item">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
+    </header>
 
-
-    <div class="wood-processing-records">
-        <div class="container">
-            <div class="header">
-                <h1 class="title">WILDLIFE PERMIT RECORDS</h1>
+    <div class="main-content">
+        <section class="page-header">
+            <div class="title-wrap">
+                <h1>Wildlife Approvals</h1>
+                <p class="subtitle">All requests of type <strong>wildlife</strong></p>
             </div>
-
-            <!-- Controls Section -->
-            <div class="controls">
-               
-                <div class="search">
-                    <input type="text" placeholder="SEARCH HERE" class="search-input">
-                    <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon">
+            <div class="filters">
+                <div class="filter-row">
+                    <label for="filterStatus">Status</label>
+                    <select id="filterStatus" class="input">
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
                 </div>
-                <div class="export"> 
-                    <button class="export-button">  
-                        <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon"> 
-                    </button> 
-                    <span class="export-label">Export as CSV</span>
-                </div> 
+                <div class="filter-row">
+                    <label for="searchName">Search Client</label>
+                    <input id="searchName" class="input" type="text" placeholder="First name…">
+                </div>
+                <button id="btnClearFilters" class="btn ghost" type="button"><i class="fas fa-eraser"></i> Clear</button>
+            </div>
+        </section>
+
+        <main class="card">
+            <div class="card-header">
+                <h2>Requests</h2>
+                <div class="right-actions"><span id="rowsCount" class="muted"><?= count($rows) ?> results</span></div>
             </div>
 
-            <!-- Table Section -->
-            <div class="table-container">
-                <table class="wood-table">
+            <div class="table-wrap">
+                <table class="table">
                     <thead>
                         <tr>
-                            <th>LDP ID</th>
-                            <th>FIRST NAME</th>
-                            <th>LAST NAME</th>
-                            <th>TYPE</th>
-                            <th>DATE APPLIED</th>
-                            <th>STATUS</th>
-                            <th>ACTIONS</th>
+                            <th>Client First Name</th>
+                            <th>Request Type</th>
+                            <th>Permit Type</th>
+                            <th>Status</th>
+                            <th>Submitted At</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td>1</td>
-                            <td>Juan</td>
-                            <td>Dela Cruz</td>
-                            <td>New Permit</td>
-                            <td>2023-08-18</td>
-                            <td>Approved</td>
-                           
-                            <td>
-                                <button class="view-btn" onclick="openModal('1', 'view')">👁️</button>
-                                <button class="edit-btn" onclick="openModal('1', 'edit')">✎</button>
-                            
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>2</td>
-                            <td>Maria</td>
-                            <td>Santos</td>
-                            <td>Renewal</td>
-                            <td>2023-09-05</td>
-                            <td>Pending</td>
-                           
-                            <td>
-                                <button class="view-btn" onclick="openModal('2', 'view')">👁️</button>
-                                <button class="edit-btn" onclick="openModal('2', 'edit')">✎</button>
-                            </td>
-                        </tr>
-                        
+                    <tbody id="statusTableBody">
+                        <?php foreach ($rows as $r):
+                            $st = strtolower((string)($r['approval_status'] ?? 'pending'));
+                            $cls = $st === 'approved' ? 'approved' : ($st === 'rejected' ? 'rejected' : 'pending'); ?>
+                            <tr data-approval-id="<?= h($r['approval_id']) ?>">
+                                <td><?= h($r['first_name'] ?? '—') ?></td>
+                                <td><span class="pill">wildlife</span></td>
+                                <td><span class="pill neutral"><?= h(strtolower((string)$r['permit_type'])) ?></span></td>
+                                <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
+                                <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
+                                <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
+                            </tr>
+                        <?php endforeach; ?>
                     </tbody>
                 </table>
-            </div>
 
-            <!-- Save Button -->
-            <div class="actions">
-                <button class="add-record">SAVE</button>
+                <?php if (!$rows): ?>
+                    <div class="empty"><i class="far fa-folder-open"></i>
+                        <p>No wildlife requests yet.</p>
+                    </div>
+                <?php endif; ?>
             </div>
-        </div>
+        </main>
     </div>
 
-    <!-- Modal for detailed view -->
-    <div id="detailModal" class="modal">
-        <div class="modal-content">
+    <!-- View Modal -->
+    <div id="viewModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-backdrop" data-close-modal></div>
+        <div class="modal-panel" role="document">
             <div class="modal-header">
-                <h2 id="modalTitle">WILDLIFE PERMIT - SUBMITTED REQUIREMENTS</h2>
-                <span class="close" onclick="closeModal()">&times;</span>
+                <h3 id="modalTitle">Request Details</h3>
+                <button class="icon-btn" type="button" aria-label="Close" data-close-modal><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body" id="modalBody">
-                <!-- Details will be populated here by JavaScript -->
+
+            <!-- Skeleton while loading -->
+            <div id="modalSkeleton" class="s-wrap hidden" aria-hidden="true">
+                <div class="s-meta">
+                    <div class="sk sm w60"></div>
+                    <div class="sk sm w45"></div>
+                    <div class="sk sm w35"></div>
+                    <div class="sk sm w25"></div>
+                </div>
+                <div class="s-body">
+                    <div class="s-pane">
+                        <div class="s-title sk md"></div>
+                        <div class="s-list">
+                            <div class="s-defrow">
+                                <div class="sk sm w60"></div>
+                                <div class="sk sm w80"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w35"></div>
+                                <div class="sk sm w100"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w45"></div>
+                                <div class="sk sm w80"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w25"></div>
+                                <div class="sk sm w60"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w45"></div>
+                                <div class="sk sm w100"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w35"></div>
+                                <div class="sk sm w80"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="s-pane">
+                        <div class="s-title sk md"></div>
+                        <div class="s-list">
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-actions" id="modalActions">
-                <!-- Action buttons will be populated here by JavaScript -->
+
+            <!-- Real content -->
+            <div class="meta-strip" id="metaStrip">
+                <div class="meta"><span class="label">Client</span><span id="metaClientName" class="value">—</span></div>
+                <div class="meta"><span class="label">Request Type</span><span id="metaRequestType" class="pill">—</span></div>
+                <div class="meta"><span class="label">Permit Type</span><span id="metaPermitType" class="pill neutral">—</span></div>
+                <div class="meta"><span class="label">Status</span><span id="metaStatus" class="status-text">—</span></div>
+            </div>
+
+            <div class="modal-content" id="modalContent">
+                <section class="pane left">
+                    <h4 class="pane-title"><i class="fas fa-list"></i> Application Form</h4>
+                    <div id="formScroll" class="scroll-area">
+                        <dl id="applicationFields" class="deflist"></dl>
+                        <div id="formEmpty" class="hidden" style="text-align:center;color:#6b7280;">No form data.</div>
+                    </div>
+                </section>
+
+                <section class="pane right">
+                    <h4 class="pane-title"><i class="fas fa-paperclip"></i> Documents</h4>
+                    <div id="filesScroll" class="scroll-area">
+                        <ul id="filesList" class="file-list"></ul>
+                        <div id="filesEmpty" class="hidden" style="text-align:center;color:#6b7280;">No documents uploaded.</div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="modal-actions" id="modalActions"></div>
+        </div>
+
+        <!-- Preview Drawer -->
+        <div id="filePreviewDrawer" class="preview-drawer" aria-live="polite" aria-hidden="true">
+            <div class="preview-header">
+                <span id="previewTitle" class="truncate">Document</span>
+                <button class="icon-btn" type="button" aria-label="Close preview" data-close-preview><i class="fas fa-times"></i></button>
+            </div>
+            <div class="preview-body">
+                <div id="previewImageWrap" class="hidden"><img id="previewImage" alt="Preview"></div>
+                <div id="previewFrameWrap" class="hidden"><iframe id="previewFrame" title="Document preview" loading="lazy"></iframe></div>
+                <div id="previewLinkWrap" class="hidden" style="padding:16px;text-align:center">
+                    <p class="muted">Preview not available. Open or download the file instead.</p>
+                    <a id="previewDownload" class="btn" href="#" target="_blank" rel="noopener"><i class="fas fa-download"></i> Open / Download</a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- File Preview Modal -->
-    <div id="filePreviewModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <h3 id="modal-title">File Preview</h3>
-            <iframe id="filePreviewFrame" class="file-preview" src="about:blank"></iframe>
+    <!-- Approve/Reject confirms + toast/blocker -->
+    <div id="approveConfirm" class="confirm-wrap" role="dialog" aria-modal="true">
+        <div class="confirm-backdrop" data-close-confirm></div>
+        <div class="confirm-panel">
+            <h4 class="confirm-title">Approve this wildlife request?</h4>
+            <p>This action will mark the request as <strong>Approved</strong> and notify the client.</p>
+            <div class="confirm-actions">
+                <button class="btn ghost" data-cancel-confirm>Cancel</button>
+                <button class="btn success" id="approveConfirmBtn"><i class="fas fa-check"></i> Confirm</button>
+            </div>
         </div>
     </div>
 
-        <!-- JavaScript for functionality -->
-        <script>
-        // Sample data - in a real app, you would fetch this from your database
-        const recordData = {
-            '1': {
-                'LDP ID': '1',
-                'NAME': 'Juan Dela Cruz',
-                'TYPE': 'New Permit',
-                'LDP NUMBER': 'RVII-01-2023',
-                'LOCATION BUSINESS': 'Cebu City, Cebu',
-                'DATE APPLIED': '2023-08-18',
-                'DATE APPROVED': '2023-08-24',
-                'APPROVED BY': 'Paquito D.Melicor, Jr, Regional Executive Director',
-                'STATUS': 'approved',
-                'requirements': {
-                    'application_form': { uploaded: true, file: 'application_form.pdf' },
-                    'supply_contract': { uploaded: true, file: 'supply_contract.pdf' },
-                    'business_plan': { uploaded: true, file: 'business_plan.pdf' },
-                    'mayors_permit': { uploaded: true, file: 'mayors_permit.pdf' },
-                    'registration_cert': { uploaded: true, file: 'registration_cert.pdf' },
-                    'tax_return': { uploaded: true, file: 'tax_return.pdf' },
-                    'official_receipt': { uploaded: true, file: 'official_receipt.pdf' },
-                    'payment_order': { uploaded: true, file: 'payment_order.pdf' }
-                }
-            },
-            '2': {
-                'LDP ID': '2',
-                'NAME': 'Maria Santos',
-                'TYPE': 'Renewal',
-                'LDP NUMBER': 'RVII-02-2023',
-                'LOCATION BUSINESS': 'Mandaue City, Cebu',
-                'DATE APPLIED': '2023-09-05',
-                'STATUS': 'pending',
-                'requirements': {
-                    'application_form': { uploaded: true, file: 'application_form.pdf' },
-                    'supply_contract': { uploaded: true, file: 'supply_contract.pdf' },
-                    'business_plan': { uploaded: false, file: '' },
-                    'mayors_permit': { uploaded: true, file: 'mayors_permit.pdf' },
-                    'tax_return': { uploaded: false, file: '' },
-                    'official_receipt': { uploaded: false, file: '' },
-                    'payment_order': { uploaded: false, file: '' }
-                }
-            }
-        };
+    <div id="rejectConfirm" class="confirm-wrap" role="dialog" aria-modal="true">
+        <div class="confirm-backdrop" data-close-confirm></div>
+        <div class="confirm-panel">
+            <h4 class="confirm-title">Reject this wildlife request?</h4>
+            <label for="rejectReason" style="font-size:.9rem;color:#374151;">Reason for rejection</label>
+            <textarea id="rejectReason" class="input-textarea" placeholder="Provide a short reason…" spellcheck="false"></textarea>
+            <div class="confirm-actions">
+                <button class="btn ghost" data-cancel-confirm>Cancel</button>
+                <button class="btn danger" id="rejectConfirmBtn"><i class="fas fa-times"></i> Confirm</button>
+            </div>
+        </div>
+    </div>
 
-        let currentRecordId = null;
-        let currentMode = 'view';
-        let originalData = {};
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="screenBlocker" class="blocker">
+        <div class="lds"></div><span>Updating…</span>
+    </div>
 
-        document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    navContainer.classList.toggle('active');
-                });
-            }
-            
-            // Improved dropdown functionality
-            const dropdowns = document.querySelectorAll('.dropdown');
-            
-            dropdowns.forEach(dropdown => {
-                const toggle = dropdown.querySelector('.nav-icon');
-                const menu = dropdown.querySelector('.dropdown-menu');
-                
-                // Show menu on hover
-                dropdown.addEventListener('mouseenter', () => {
+            mobileToggle?.addEventListener('click', () => navContainer.classList.toggle('active'));
+
+            /* Dropdowns */
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+            const isTouch = matchMedia('(pointer: coarse)').matches;
+            dropdowns.forEach(dd => {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                if (!trigger || !menu) return;
+
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger.setAttribute('aria-expanded', 'true');
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
-                });
-                
-                // Hide menu when leaving both button and menu
-                dropdown.addEventListener('mouseleave', (e) => {
-                    // Check if we're leaving the entire dropdown area
-                    if (!dropdown.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
-                    }
-                });
-                
-                // Additional check for menu mouseleave
-                menu.addEventListener('mouseleave', (e) => {
-                    if (!dropdown.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
-                    }
-                });
-            });
-            
-            // Close dropdowns when clicking outside (for mobile)
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger.setAttribute('aria-expanded', 'false');
+                    menu.style.opacity = '0';
+                    menu.style.visibility = 'hidden';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                    if (isTouch) menu.style.display = 'none';
+                };
+
+                if (!isTouch) {
+                    dd.addEventListener('mouseenter', open);
+                    dd.addEventListener('mouseleave', (e) => {
+                        if (!dd.contains(e.relatedTarget)) close();
                     });
-                }
-            });
-            
-            // Mobile dropdown toggle
-            if (window.innerWidth <= 992) {
-                dropdowns.forEach(dropdown => {
-                    const toggle = dropdown.querySelector('.nav-icon');
-                    const menu = dropdown.querySelector('.dropdown-menu');
-                    
-                    toggle.addEventListener('click', (e) => {
+                } else {
+                    trigger.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
-                        // Close other dropdowns
-                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) {
-                                otherMenu.style.display = 'none';
-                            }
+                        const openNow = dd.classList.contains('open');
+                        document.querySelectorAll('[data-dropdown].open').forEach(o => {
+                            if (o !== dd) o.classList.remove('open');
                         });
-                        
-                        // Toggle current dropdown
-                        if (menu.style.display === 'block') {
-                            menu.style.display = 'none';
-                        } else {
+                        if (openNow) close();
+                        else {
                             menu.style.display = 'block';
+                            open();
                         }
                     });
-                });
-            }
-
-            // Mark all notifications as read
-            const markAllRead = document.querySelector('.mark-all-read');
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                        item.classList.remove('unread');
+                }
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-dropdown]')) {
+                    document.querySelectorAll('[data-dropdown].open').forEach(dd => {
+                        const menu = dd.querySelector('.dropdown-menu');
+                        dd.classList.remove('open');
+                        if (menu) {
+                            menu.style.opacity = '0';
+                            menu.style.visibility = 'hidden';
+                            menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                            if (matchMedia('(pointer: coarse)').matches) menu.style.display = 'none';
+                        }
                     });
-                    document.querySelector('.badge').style.display = 'none';
-                });
-            }
+                }
+            });
 
-            // Delete buttons functionality
-            const deleteButtons = document.querySelectorAll(".delete-btn");
+            /* MARK ALL AS READ (works now via this same file) */
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
 
-            deleteButtons.forEach(button => {
-                button.addEventListener("click", () => {
-                    const confirmDelete = confirm("Are you sure you want to delete this record?");
-                    if (confirmDelete) {
-                        alert("Record deleted successfully!");
-                        // Add code to delete the row from database here
+                // Optimistically update UI
+                document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+
+                    if (!res || res.ok !== true) {
+                        // If server failed, reload to keep state consistent
+                        location.reload();
                     }
-                });
+                } catch (_) {
+                    // If network failed, reload to keep state consistent
+                    location.reload();
+                }
             });
-        });
-        
-        // Open modal in either view or edit mode
-        function openModal(id, mode) {
-            currentRecordId = id;
-            currentMode = mode;
-            const modal = document.getElementById('detailModal');
-            const modalContent = modal.querySelector('.modal-content');
-            const modalBody = document.getElementById('modalBody');
-            const modalTitle = document.getElementById('modalTitle');
+
+            /* Click any single notification → mark read server-side */
+            document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                const item = link.closest('.notification-item');
+                if (!item) return;
+                e.preventDefault();
+                const href = link.getAttribute('href') || 'wildnotification.php';
+                const notifId = item.getAttribute('data-notif-id') || '';
+                const incidentId = item.getAttribute('data-incident-id') || '';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+                    await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch (_) {}
+
+                item.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
+
+            /* Toast + blocker helpers */
+            function showToast(msg, type = 'success') {
+                const t = document.getElementById('toast');
+                t.textContent = msg;
+                t.className = 'toast show ' + (type === 'error' ? 'error' : 'success');
+                setTimeout(() => {
+                    t.className = 'toast';
+                    t.textContent = '';
+                }, 2000);
+            }
+            const blocker = document.getElementById('screenBlocker');
+            const block = (on) => blocker.classList.toggle('show', !!on);
+
+            /* Modal + Skeleton helpers */
+            const modalEl = document.getElementById('viewModal');
+            const modalSkeleton = document.getElementById('modalSkeleton');
+            const modalContent = document.getElementById('modalContent');
+            const metaStrip = document.getElementById('metaStrip');
             const modalActions = document.getElementById('modalActions');
-            
-            // Get the data for the selected record
-            const record = recordData[id] || {};
-            originalData = {...record};
-            
-            // Set modal title based on mode
-            modalTitle.textContent = mode === 'edit' ? 
-                'EDIT LUMBER DEALERS PERMIT' : 
-                'WILDLIFE - SUBMITTED REQUIREMENTS';
-            
-            // Toggle edit mode class on modal content
-            if (mode === 'edit') {
-                modalContent.classList.add('edit-mode');
-            } else {
-                modalContent.classList.remove('edit-mode');
+
+            function showModalSkeleton() {
+                modalSkeleton.classList.remove('hidden');
+                modalContent.classList.add('hidden');
+                metaStrip.classList.add('hidden');
+                modalActions.classList.add('hidden');
             }
-            
-            // Build the HTML for the modal content
-            let html = '';
-            
-            if (mode === 'view') {
-                // View mode - show requirements list
-                html = `
-                    <div class="requirements-list">
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">1</span>
-                                    Application Form filed-up with 2 copies of photo of the applicant/s
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.application_form?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.application_form?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">2</span>
-                                    SEC/CDA Registration (Security and Exchange Commission/Cooperative Development Authority) DTI, if for commercial purposes
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.sec_registration?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.sec_registration?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">3</span>
-                                    Proof of Scientific Expertise (Veterinary Certificate)
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.veterinary_cert?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.veterinary_cert?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">4</span>
-                                    Financial Plan for Breeding (Financial/Bank Statement)
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.financial_plan?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.financial_plan?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">5</span>
-                                    Proposed Facility Design (Photo of Facility)
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.facility_design?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.facility_design?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">6</span>
-                                    Prior Clearance of affected communities (Municipal or Barangay Clearance)
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.community_clearance?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.community_clearance?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">7</span>
-                                    Vicinity Map of the area/site (Ex. Google map Sketch map)
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.vicinity_map?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.vicinity_map?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">8</span>
-                                    Legal Acquisition of Wildlife:
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="sub-requirement">
-                                    <p style="margin-bottom: 10px; font-weight: 500;">- Proof of Purchase (Official Receipt/Deed of Sale or Captive Bred Certificate)</p>
-                                    <div class="uploaded-files">
-                                        <div class="file-item">
-                                            <div class="file-info">
-                                                <i class="fas fa-file-pdf file-icon"></i>
-                                                <span>${record.requirements?.proof_of_purchase?.file || 'Not uploaded'}</span>
-                                            </div>
-                                            <div class="file-actions">
-                                                <button class="file-action-btn view-file" data-file="${record.requirements?.proof_of_purchase?.file || ''}" title="View">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                                <button class="file-action-btn" title="Download">
-                                                    <i class="fas fa-download"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="sub-requirement" style="margin-top: 15px;">
-                                    <p style="margin-bottom: 10px; font-weight: 500;">- Deed of Donation with Notary</p>
-                                    <div class="uploaded-files">
-                                        <div class="file-item">
-                                            <div class="file-info">
-                                                <i class="fas fa-file-pdf file-icon"></i>
-                                                <span>${record.requirements?.deed_of_donation?.file || 'Not uploaded'}</span>
-                                            </div>
-                                            <div class="file-actions">
-                                                <button class="file-action-btn view-file" data-file="${record.requirements?.deed_of_donation?.file || ''}" title="View">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                                <button class="file-action-btn" title="Download">
-                                                    <i class="fas fa-download"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="requirement-item">
-                            <div class="requirement-header">
-                                <div class="requirement-title">
-                                    <span class="requirement-number">9</span>
-                                    Inspection Report conducted by concerned CENRO
-                                </div>
-                            </div>
-                            <div class="file-upload">
-                                <div class="uploaded-files">
-                                    <div class="file-item">
-                                        <div class="file-info">
-                                            <i class="fas fa-file-pdf file-icon"></i>
-                                            <span>${record.requirements?.inspection_report?.file || 'Not uploaded'}</span>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button class="file-action-btn view-file" data-file="${record.requirements?.inspection_report?.file || ''}" title="View">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="file-action-btn" title="Download">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Fee Information -->
-                        <div class="fee-info">
-                            <p><strong>Application and Processing Fee:</strong> ₱500.00</p>
-                            <p><strong>Permit Fee:</strong> ₱2,500.00</p>
-                            <p><strong>Total Fee:</strong> ₱3,000.00</p>
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Edit mode - show editable fields
-                html = `
-                    <div class="edit-fields">
-                        <div class="detail-row">
-                            <div class="detail-label">STATUS:</div>
-                            <select id="STATUS" class="detail-value-edit">
-                                <option value="pending" ${record.STATUS === 'pending' ? 'selected' : ''}>Pending</option>
-                                <option value="approved" ${record.STATUS === 'approved' ? 'selected' : ''}>Approved</option>
-                                <option value="rejected" ${record.STATUS === 'rejected' ? 'selected' : ''}>Rejected</option>
-                                <option value="expired" ${record.STATUS === 'expired' ? 'selected' : ''}>Expired</option>
-                            </select>
-                        </div>
-                    </div>
-                `;
+            function hideModalSkeleton() {
+                modalSkeleton.classList.add('hidden');
+                metaStrip.classList.remove('hidden');
+                modalContent.classList.remove('hidden');
             }
-            
-            modalBody.innerHTML = html;
-            
-            // Set up action buttons based on mode
-            let actionButtons = '';
-            if (mode === 'view') {
-                actionButtons = ``;
-                modalBody.classList.add('view-mode');
-                modalBody.classList.remove('edit-mode');
-            } else {
-                actionButtons = `
-                    <button class="modal-btn modal-btn-save" onclick="saveChanges()">Save Changes</button>
-                    <button class="modal-btn modal-btn-cancel" onclick="cancelEdit()">Cancel</button>
-                `;
-                modalBody.classList.add('edit-mode');
-                modalBody.classList.remove('view-mode');
+
+            function openViewModal() {
+                modalEl.classList.add('show');
             }
-            
-            modalActions.innerHTML = actionButtons;
-            modal.style.display = 'block';
-            
-            // Add event listeners for file preview
-            document.querySelectorAll('.view-file').forEach(btn => {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const fileName = this.getAttribute('data-file');
-                    if (!fileName) return;
-                    
-                    const modal = document.getElementById('filePreviewModal');
-                    const modalFrame = document.getElementById('filePreviewFrame');
-                    
-                    document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
-                    modalFrame.srcdoc = `
-                        <html>
-                            <head>
-                                <style>
-                                    body { 
-                                        font-family: Arial, sans-serif; 
-                                        display: flex; 
-                                        justify-content: center; 
-                                        align-items: center; 
-                                        height: 100vh; 
-                                        margin: 0; 
-                                        background-color: #f5f5f5;
-                                    }
-                                    .preview-content {
-                                        text-align: center;
-                                        padding: 20px;
-                                    }
-                                    .file-icon {
-                                        font-size: 48px;
-                                        color: #2b6625;
-                                        margin-bottom: 20px;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="preview-content">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file-pdf"></i>
-                                    </div>
-                                    <h2>${fileName}</h2>
-                                    <p>This is a preview of the uploaded file.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `;
-                    modal.style.display = "block";
-                });
-            });
-        }
-        
-        function saveChanges() {
-            // Collect all the edited values
-            const status = document.getElementById('STATUS').value;
-            
-            const updatedData = {
-                'STATUS': status
-            };
-            
-            // In a real app, you would send this data to the server
-            console.log('Updated data:', updatedData);
-            
-            // Update the table with the new data (in a real app, you would refresh from server)
-            Object.assign(recordData[currentRecordId], updatedData);
-            
-            // Update the table row
-            const tableRow = document.querySelector(`.view-btn[onclick*="'${currentRecordId}'"]`).closest('tr');
-            tableRow.cells[5].textContent = updatedData['STATUS'] || recordData[currentRecordId]['STATUS'];
-            
-            alert('Changes saved successfully!');
-            closeModal();
-        }
-        
-        function cancelEdit() {
-            // Restore original data
-            if (confirm('Are you sure you want to cancel? All unsaved changes will be lost.')) {
-                closeModal();
+
+            function closeViewModal() {
+                modalEl.classList.remove('show');
+                closePreview();
             }
-        }
-        
-        function closeModal() {
-            const modal = document.getElementById('detailModal');
-            modal.style.display = 'none';
-        }
-        
-        // Close modal when clicking outside of it
-        window.onclick = function(event) {
-            const modal = document.getElementById('detailModal');
-            if (event.target == modal) {
-                if (currentMode === 'edit') {
-                    cancelEdit();
+            document.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeViewModal));
+            document.querySelector('.modal-backdrop')?.addEventListener('click', closeViewModal);
+
+            /* File preview */
+            function closePreview() {
+                const dr = document.getElementById('filePreviewDrawer');
+                dr.classList.remove('show');
+                document.getElementById('previewImage').src = '';
+                document.getElementById('previewFrame').src = '';
+            }
+
+            function showPreview(name, url, ext) {
+                const drawer = document.getElementById('filePreviewDrawer');
+                const imgWrap = document.getElementById('previewImageWrap');
+                const frameWrap = document.getElementById('previewFrameWrap');
+                const linkWrap = document.getElementById('previewLinkWrap');
+                document.getElementById('previewTitle').textContent = name;
+                imgWrap.classList.add('hidden');
+                frameWrap.classList.add('hidden');
+                linkWrap.classList.add('hidden');
+                const imgExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                const offExt = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+                const txtExt = ['txt', 'csv', 'json', 'md', 'log'];
+                if (imgExt.includes(ext) && url) {
+                    document.getElementById('previewImage').src = url;
+                    imgWrap.classList.remove('hidden');
+                } else if (ext === 'pdf' && url) {
+                    document.getElementById('previewFrame').src = url;
+                    frameWrap.classList.remove('hidden');
+                } else if (offExt.includes(ext) && url) {
+                    const viewer = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(url);
+                    document.getElementById('previewFrame').src = viewer;
+                    frameWrap.classList.remove('hidden');
+                } else if (txtExt.includes(ext) && url) {
+                    const gview = 'https://docs.google.com/gview?embedded=1&url=' + encodeURIComponent(url);
+                    document.getElementById('previewFrame').src = gview;
+                    frameWrap.classList.remove('hidden');
                 } else {
-                    closeModal();
+                    const a = document.getElementById('previewDownload');
+                    a.href = url || '#';
+                    linkWrap.classList.remove('hidden');
+                }
+                drawer.classList.add('show');
+            }
+            document.getElementById('filesList')?.addEventListener('click', (e) => {
+                const li = e.target.closest('.file-item');
+                if (!li) return;
+                showPreview(li.dataset.fileName || 'Document', li.dataset.fileUrl || '#', (li.dataset.fileExt || '').toLowerCase());
+            });
+            document.querySelector('[data-close-preview]')?.addEventListener('click', closePreview);
+
+            /* View button -> open modal instantly + fetch details */
+            let currentApprovalId = null;
+            document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-action="view"]');
+                if (!btn) return;
+                const tr = btn.closest('tr');
+                currentApprovalId = tr?.dataset.approvalId;
+                if (!currentApprovalId) return;
+
+                showModalSkeleton();
+
+                // Reset placeholders
+                document.getElementById('metaClientName').textContent = '—';
+                document.getElementById('metaRequestType').textContent = '—';
+                document.getElementById('metaPermitType').textContent = '—';
+                document.getElementById('metaStatus').textContent = '—';
+                document.getElementById('applicationFields').innerHTML = '';
+                document.getElementById('formEmpty').classList.add('hidden');
+                document.getElementById('filesList').innerHTML = '';
+                document.getElementById('filesEmpty').classList.add('hidden');
+                modalActions.innerHTML = '';
+
+                openViewModal();
+
+                // Fire-and-forget: mark related notifs read
+                fetch('<?php echo basename(__FILE__); ?>?ajax=mark_notifs_for_approval', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        approval_id: currentApprovalId
+                    }).toString()
+                }).catch(() => {});
+
+                // Fetch details
+                const res = await fetch(`<?php echo basename(__FILE__); ?>?ajax=details&approval_id=${encodeURIComponent(currentApprovalId)}`, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }).then(r => r.json()).catch(() => ({
+                    ok: false
+                }));
+
+                if (!res.ok) {
+                    hideModalSkeleton();
+                    document.getElementById('metaStatus').textContent = 'Error';
+                    document.getElementById('applicationFields').innerHTML = '';
+                    document.getElementById('formEmpty').classList.remove('hidden');
+                    document.getElementById('filesList').innerHTML = '';
+                    document.getElementById('filesEmpty').classList.remove('hidden');
+                    alert('Failed to load details.');
+                    return;
+                }
+
+                // Meta
+                const meta = res.meta || {};
+                document.getElementById('metaClientName').textContent = meta.client || '—';
+                document.getElementById('metaRequestType').textContent = meta.request_type || '—';
+                document.getElementById('metaPermitType').textContent = meta.permit_type || '—';
+                const st = (meta.status || '').trim().toLowerCase();
+                const ms = document.getElementById('metaStatus');
+                ms.textContent = st ? st[0].toUpperCase() + st.slice(1) : '—';
+                ms.className = 'status-text';
+
+                // Application fields
+                const list = document.getElementById('applicationFields');
+                const empty = document.getElementById('formEmpty');
+                list.innerHTML = '';
+
+                function isPlainObject(v) {
+                    return v && typeof v === 'object' && !Array.isArray(v);
+                }
+
+                function renderJSON(val) {
+                    let data = val;
+                    if (typeof data === 'string') {
+                        try {
+                            data = JSON.parse(data);
+                        } catch {}
+                    }
+                    if (Array.isArray(data) && data.length && data.every(isPlainObject)) {
+                        const keys = [...new Set(data.flatMap(o => Object.keys(o)))];
+                        const table = document.createElement('table');
+                        table.className = 'mini-table';
+                        const thead = document.createElement('thead');
+                        const trh = document.createElement('tr');
+                        keys.forEach(k => {
+                            const th = document.createElement('th');
+                            th.textContent = k;
+                            trh.appendChild(th);
+                        });
+                        thead.appendChild(trh);
+                        table.appendChild(thead);
+                        const tb = document.createElement('tbody');
+                        data.forEach(o => {
+                            const tr = document.createElement('tr');
+                            keys.forEach(k => {
+                                const td = document.createElement('td');
+                                td.textContent = o[k] ?? '';
+                                tr.appendChild(td);
+                            });
+                            tb.appendChild(tr);
+                        });
+                        table.appendChild(tb);
+                        return table;
+                    }
+                    const pre = document.createElement('pre');
+                    pre.className = 'json-pre';
+                    try {
+                        pre.textContent = JSON.stringify(data, null, 2);
+                    } catch {
+                        pre.textContent = String(val);
+                    }
+                    return pre;
+                }
+                if (Array.isArray(res.application) && res.application.length) {
+                    empty.classList.add('hidden');
+                    res.application.forEach(item => {
+                        const {
+                            label,
+                            value,
+                            kind
+                        } = item;
+                        const row = document.createElement('div');
+                        row.className = 'defrow';
+                        const dt = document.createElement('dt');
+                        dt.textContent = label;
+                        const dd = document.createElement('dd');
+                        if (kind === 'link') {
+                            const a = document.createElement('a');
+                            a.href = value;
+                            a.target = '_blank';
+                            a.rel = 'noopener';
+                            a.textContent = value;
+                            dd.appendChild(a);
+                        } else if (kind === 'json') {
+                            dd.appendChild(renderJSON(value));
+                        } else {
+                            dd.textContent = value;
+                        }
+                        row.appendChild(dt);
+                        row.appendChild(dd);
+                        list.appendChild(row);
+                    });
+                } else {
+                    empty.classList.remove('hidden');
+                }
+
+                // Files
+                const filesList = document.getElementById('filesList');
+                const filesEmpty = document.getElementById('filesEmpty');
+                filesList.innerHTML = '';
+                if (Array.isArray(res.files) && res.files.length) {
+                    filesEmpty.classList.add('hidden');
+                    res.files.forEach(f => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        li.tabIndex = 0;
+                        li.dataset.fileUrl = f.url || '';
+                        li.dataset.fileName = f.name || 'Document';
+                        li.dataset.fileExt = (f.ext || '').toLowerCase();
+                        li.innerHTML = `<i class="far fa-file"></i><span class="name">${f.name}</span><span class="hint">${(f.ext||'').toUpperCase()}</span>`;
+                        filesList.appendChild(li);
+                    });
+                } else {
+                    filesEmpty.classList.remove('hidden');
+                }
+
+                // Actions (only for pending)
+                modalActions.innerHTML = '';
+                if (st === 'pending') {
+                    const approveBtn = document.createElement('button');
+                    approveBtn.className = 'btn success';
+                    approveBtn.innerHTML = '<i class="fas fa-check"></i> Approve';
+                    approveBtn.addEventListener('click', () => openConfirm('approve'));
+
+                    const rejectBtn = document.createElement('button');
+                    rejectBtn.className = 'btn danger';
+                    rejectBtn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                    rejectBtn.addEventListener('click', () => openConfirm('reject'));
+
+                    modalActions.appendChild(approveBtn);
+                    modalActions.appendChild(rejectBtn);
+                    modalActions.classList.remove('hidden');
+                } else {
+                    modalActions.classList.add('hidden');
+                }
+
+                // Reveal content
+                hideModalSkeleton();
+            });
+
+            /* Approve / Reject flow */
+            let pendingAction = null;
+
+            function openConfirm(which) {
+                pendingAction = which;
+                if (which === 'approve') document.getElementById('approveConfirm').classList.add('show');
+                else {
+                    document.getElementById('rejectConfirm').classList.add('show');
+                    document.getElementById('rejectReason').value = '';
                 }
             }
-        }
-        
-        // Close file preview modal
-        document.querySelector('.close-modal').addEventListener('click', function() {
-            document.getElementById('filePreviewModal').style.display = 'none';
-        });
-        
-        window.addEventListener('click', function(event) {
-            if (event.target == document.getElementById('filePreviewModal')) {
-                document.getElementById('filePreviewModal').style.display = 'none';
+
+            function closeAllConfirms() {
+                document.getElementById('approveConfirm').classList.remove('show');
+                document.getElementById('rejectConfirm').classList.remove('show');
+            }
+            document.querySelectorAll('[data-close-confirm],[data-cancel-confirm]').forEach(el => el.addEventListener('click', closeAllConfirms));
+
+            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'approve') return;
+                block(true);
+                const res = await sendDecision('approve');
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to approve');
+                    return;
+                }
+                applyDecisionUI('approved');
+                closeAllConfirms();
+                showToast('Request approved', 'success');
+            });
+
+            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'reject') return;
+                const reason = (document.getElementById('rejectReason').value || '').trim();
+                if (!reason) {
+                    alert('Please provide a reason.');
+                    return;
+                }
+                block(true);
+                const res = await sendDecision('reject', reason);
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to reject');
+                    return;
+                }
+                applyDecisionUI('rejected');
+                closeAllConfirms();
+                showToast('Request rejected', 'success');
+            });
+
+            async function sendDecision(action, reason = '') {
+                if (!currentApprovalId) return {
+                    ok: false,
+                    error: 'Missing approval id'
+                };
+                const form = new URLSearchParams();
+                form.set('approval_id', currentApprovalId);
+                form.set('action', action);
+                if (action === 'reject') form.set('reason', reason);
+                return fetch('<?php echo basename(__FILE__); ?>?ajax=decide', {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: form.toString()
+                }).then(r => r.json()).catch(() => ({
+                    ok: false,
+                    error: 'network error'
+                }));
+            }
+
+            function applyDecisionUI(status) {
+                const ms = document.getElementById('metaStatus');
+                ms.textContent = status[0].toUpperCase() + status.slice(1);
+                ms.className = 'status-text';
+                document.getElementById('modalActions').innerHTML = '';
+
+                const tr = document.querySelector(`tr[data-approval-id="${CSS.escape(currentApprovalId)}"]`);
+                if (tr) {
+                    const tdStatus = tr.children[3];
+                    if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
+                }
+            }
+
+            /* Filters */
+            const filterStatus = document.getElementById('filterStatus');
+            const searchName = document.getElementById('searchName');
+            const rowsCount = document.getElementById('rowsCount');
+            document.getElementById('btnClearFilters')?.addEventListener('click', () => {
+                filterStatus.value = '';
+                searchName.value = '';
+                applyFilters();
+            });
+            [filterStatus, searchName].forEach(el => el.addEventListener('input', applyFilters));
+
+            function applyFilters() {
+                const st = (filterStatus.value || '').toLowerCase();
+                const q = (searchName.value || '').trim().toLowerCase();
+                let shown = 0;
+                document.querySelectorAll('#statusTableBody tr').forEach(tr => {
+                    const name = (tr.children[0]?.textContent || '').trim().toLowerCase();
+                    const stat = (tr.children[3]?.textContent || '').trim().toLowerCase();
+                    let ok = true;
+                    if (st && stat !== st) ok = false;
+                    if (q && !name.includes(q)) ok = false;
+                    tr.style.display = ok ? '' : 'none';
+                    if (ok) shown++;
+                });
+                rowsCount.textContent = `${shown} result${shown===1?'':'s'}`;
             }
         });
     </script>
 </body>
+
 </html>

@@ -1,829 +1,1952 @@
 <?php
 
+/**
+ * seedlingpermit.php (Seedling Requests Admin UI)
+ * - Lists approvals with request_type = 'seedling'
+ * - Two-pane View modal:
+ *      LEFT  → Request Info (Client, Request Type, Permit Type, Status)
+ *      RIGHT → Documents (with tall preview drawer)
+ * - NO meta strip/header inside the modal (removed because info is in the left pane)
+ * - Uses skeleton "bone" loaders while details are loading
+ * - Approve / Reject inside the View modal when status = pending (with confirmation modals)
+ * - Writes approved_by (current admin user_id) and approved_at / reject_by / rejected_at
+ * - Marks related notifications is_read=true when a row’s View is opened (and updates bell)
+ * - Success toast (2 seconds) after approve/reject
+ * - ADMIN BELL UI:
+ *      • Shows only notifications where "to" ILIKE 'Seedling'
+ *      • Also shows incident_report rows where category ILIKE 'Tree Cutting'
+ * - “Mark all as read” marks:
+ *      • public.notifications where "to" ILIKE 'Seedling'
+ *      • public.incident_report where category ILIKE 'Tree Cutting'
+ * - Email icon removed from header
+ */
+
 declare(strict_types=1);
-
 session_start();
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 
-// Must be logged in and an Admin
 if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
     header('Location: ../superlogin.php');
     exit();
 }
 
-require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Postgres)
+require_once __DIR__ . '/../backend/connection.php';
 
-// Current user (UUID)
 $user_id = (string)$_SESSION['user_id'];
-
-// Guard admin belongs to SEEDLING
 try {
     $st = $pdo->prepare("
-        SELECT role, department, status
+        SELECT first_name, last_name, email, role, department, status
         FROM public.users
         WHERE user_id = :id
         LIMIT 1
     ");
     $st->execute([':id' => $user_id]);
-    $u = $st->fetch(PDO::FETCH_ASSOC);
+    $me = $st->fetch(PDO::FETCH_ASSOC);
 
-    $isAdmin  = $u && strtolower((string)$u['role']) === 'admin';
-    $isSeed   = $u && strtolower((string)$u['department']) === 'seedling';
+    $isAdmin = $me && strtolower((string)$me['role']) === 'admin';
+    $dept    = strtolower((string)($me['department'] ?? ''));
+    // allow seedling variants
+    $isSeed  = in_array($dept, ['seedling', 'seedlings', 'nursery', 'seedling section'], true);
+
     if (!$isAdmin || !$isSeed) {
         header('Location: ../superlogin.php');
         exit();
     }
 } catch (Throwable $e) {
-    error_log('[SEEDLING-GUARD] ' . $e->getMessage());
+    error_log('[SEEDLING-ADMIN GUARD] ' . $e->getMessage());
     header('Location: ../superlogin.php');
     exit();
 }
 
-// Get current page for header active state
-$current_page = basename($_SERVER['PHP_SELF']);
-$quantities = [
-    'total_received' => 1250,
-    'plantable_seedlings' => 980,
-    'total_released' => 720,
-    'total_discarded' => 150,
-    'total_balance' => 380,
-    'all_records' => 2150
-];
+function h(?string $s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+function notempty($v): bool
+{
+    return $v !== null && trim((string)$v) !== '' && $v !== 'null';
+}
+
+function time_elapsed_string($datetime, $full = false): string
+{
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
+    $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $parts = [];
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+$FILE_BASE = '';
+function normalize_url(string $v, string $base): string
+{
+    $v = trim($v);
+    if ($v === '') return '';
+    if (preg_match('~^https?://~i', $v)) return $v;
+    if ($base !== '') {
+        $base = rtrim($base, '/');
+        $v = ltrim($v, '/');
+        return $base . '/' . $v;
+    }
+    return '';
+}
+function is_image_url(string $url): bool
+{
+    $path = parse_url($url, PHP_URL_PATH) ?? '';
+    $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    return in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'], true);
+}
+
+/* ---------------- AJAX (mark single read) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
+    header('Content-Type: application/json');
+    $notifId    = $_POST['notif_id'] ?? '';
+    $incidentId = $_POST['incident_id'] ?? '';
+    if (!$notifId && !$incidentId) {
+        echo json_encode(['ok' => false, 'error' => 'missing notif_id or incident_id']);
+        exit();
+    }
+    try {
+        if ($notifId)    $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id")->execute([':id' => $notifId]);
+        if ($incidentId) $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id")->execute([':id' => $incidentId]);
+        echo json_encode(['ok' => true]);
+    } catch (Throwable $e) {
+        error_log('[SEEDLING MARK_READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (MARK ALL READ) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_all_read') {
+    header('Content-Type: application/json');
+    try {
+        $pdo->beginTransaction();
+
+        $updPermits = $pdo->prepare("
+            UPDATE public.notifications
+               SET is_read = true
+             WHERE LOWER(COALESCE(\"to\", '')) = 'seedling'
+               AND is_read = false
+        ");
+        $updPermits->execute();
+        $countPermits = $updPermits->rowCount();
+
+        $updInc = $pdo->prepare("
+            UPDATE public.incident_report
+               SET is_read = true
+             WHERE LOWER(COALESCE(category, '')) = 'tree cutting'
+               AND is_read = false
+        ");
+        $updInc->execute();
+        $countInc = $updInc->rowCount();
+
+        $pdo->commit();
+        echo json_encode(['ok' => true, 'updated' => ['permits' => (int)$countPermits, 'incidents' => (int)$countInc]]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[SEEDLING MARK_ALL_READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (details) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
+    header('Content-Type: application/json');
+    $approvalId = $_GET['approval_id'] ?? '';
+    if (!$approvalId) {
+        echo json_encode(['ok' => false, 'error' => 'missing approval_id']);
+        exit;
+    }
+
+    try {
+        $st = $pdo->prepare("
+          SELECT a.approval_id,
+                 LOWER(COALESCE(a.request_type,'')) AS request_type,
+                 COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
+                 COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
+                 a.submitted_at,
+                 a.application_id,
+                 a.requirement_id,
+                 c.first_name, c.last_name
+          FROM public.approval a
+          LEFT JOIN public.client c ON c.client_id = a.client_id
+          WHERE a.approval_id = :aid
+            AND LOWER(COALESCE(a.request_type,'')) IN ('seedling')
+          LIMIT 1
+        ");
+        $st->execute([':aid' => $approvalId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            echo json_encode(['ok' => false, 'error' => 'not found']);
+            exit;
+        }
+
+        $files = [];
+        if (notempty($row['requirement_id'])) {
+            $st3 = $pdo->prepare("SELECT * FROM public.requirements WHERE requirement_id=:rid LIMIT 1");
+            $st3->execute([':rid' => $row['requirement_id']]);
+            $req = $st3->fetch(PDO::FETCH_ASSOC) ?: [];
+            foreach ($req as $k => $v) {
+                if (in_array($k, ['id', 'requirement_id'], true)) continue;
+                if (!notempty($v)) continue;
+                $url = normalize_url((string)$v, $FILE_BASE);
+                if ($url === '') continue;
+                $label = ucwords(str_replace('_', ' ', $k));
+                $path  = parse_url($url, PHP_URL_PATH) ?? '';
+                $ext   = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                $files[] = ['name' => $label, 'url' => $url, 'ext' => $ext];
+            }
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'meta' => [
+                'client'       => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
+                'request_type' => $row['request_type'] ?? '',
+                'permit_type'  => $row['permit_type'] ?? '',
+                'status'       => $row['approval_status'] ?? '',
+                'submitted_at' => $row['submitted_at'] ?? null,
+            ],
+            'files' => $files
+        ]);
+    } catch (Throwable $e) {
+        error_log('[SEEDLING-DETAILS AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (decide) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
+    header('Content-Type: application/json');
+    $approvalId = $_POST['approval_id'] ?? '';
+    $action     = strtolower(trim((string)$_POST['action'] ?? ''));
+    $reason     = trim((string)($_POST['reason'] ?? ''));
+
+    if (!$approvalId || !in_array($action, ['approve', 'reject'], true)) {
+        echo json_encode(['ok' => false, 'error' => 'invalid params']);
+        exit();
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $st = $pdo->prepare("
+            SELECT a.approval_id, a.approval_status, a.request_type, a.client_id
+            FROM public.approval a
+            WHERE a.approval_id=:aid
+              AND LOWER(COALESCE(a.request_type,'')) IN ('seedling')
+            FOR UPDATE
+        ");
+        $st->execute([':aid' => $approvalId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'approval not found']);
+            exit;
+        }
+        if (strtolower((string)$row['approval_status']) !== 'pending') {
+            $pdo->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'already decided']);
+            exit;
+        }
+
+        $adminId  = $user_id;
+        $fromDept = $me['department'] ?? null;
+        $toUserId = null;
+        if (!empty($row['client_id'])) {
+            $stCli = $pdo->prepare("SELECT user_id FROM public.client WHERE client_id=:cid LIMIT 1");
+            $stCli->execute([':cid' => $row['client_id']]);
+            $toUserId = $stCli->fetchColumn() ?: null;
+        }
+
+        if ($action === 'approve') {
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='approved',
+                       approved_at=now(), approved_by=:by,
+                       rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
+                 WHERE approval_id=:aid
+            ")->execute([':by' => $adminId, ':aid' => $approvalId]);
+
+            $pdo->prepare("
+                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+            ")->execute([
+                ':aid'      => $approvalId,
+                ':msg'      => 'Your seedling request was approved.',
+                ':fromDept' => $fromDept,
+                ':toUser'   => $toUserId
+            ]);
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'status' => 'approved']);
+        } else {
+            if ($reason === '') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'reason required']);
+                exit;
+            }
+
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='rejected',
+                       rejected_at=now(), reject_by=:by, rejection_reason=:reason
+                 WHERE approval_id=:aid
+            ")->execute([':by' => $adminId, ':reason' => $reason, ':aid' => $approvalId]);
+
+            $pdo->prepare("
+                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+            ")->execute([
+                ':aid'      => $approvalId,
+                ':msg'      => 'Your seedling request was rejected. Reason: ' . $reason,
+                ':fromDept' => $fromDept,
+                ':toUser'   => $toUserId
+            ]);
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'status' => 'rejected']);
+        }
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[SEEDLING-DECIDE AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- AJAX (mark notifications for approval) ---------------- */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
+    header('Content-Type: application/json');
+    $aid = $_POST['approval_id'] ?? '';
+    if (!$aid) {
+        echo json_encode(['ok' => false, 'error' => 'missing approval_id']);
+        exit;
+    }
+    try {
+        $st = $pdo->prepare("
+            UPDATE public.notifications
+               SET is_read = true
+             WHERE approval_id = :aid
+               AND is_read = false
+        ");
+        $st->execute([':aid' => $aid]);
+        echo json_encode(['ok' => true, 'count' => (int)$st->rowCount()]);
+    } catch (Throwable $e) {
+        error_log('[SEEDLING-MARK-READ] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit();
+}
+
+/* ---------------- NOTIFS for header ---------------- */
+$seedNotifs = [];
+$unreadSeed = 0;
+try {
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last,
+               NULL::text AS incident_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", ''))='seedling'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $seedNotifs = $notifRows;
+
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", ''))='seedling' AND n.is_read=false
+    ")->fetchColumn();
+
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadSeed = $unreadPermits + $unreadIncidents;
+
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE lower(COALESCE(category,''))='tree cutting'
+        ORDER BY created_at DESC LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+    error_log('[SEEDLING NOTIFS-FOR-NAV] ' . $e->getMessage());
+    $seedNotifs = [];
+    $unreadSeed = 0;
+    $incRows = [];
+}
+
+/* ---------------- Page data ---------------- */
+$rows = [];
+try {
+    $rows = $pdo->query("
+        SELECT a.approval_id,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
+               a.submitted_at,
+               c.first_name
+        FROM public.approval a
+        LEFT JOIN public.client c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(a.request_type,'')) IN ('seedling')
+        ORDER BY a.submitted_at DESC NULLS LAST, a.approval_id DESC
+        LIMIT 200
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[SEEDLING-ADMIN LIST] ' . $e->getMessage());
+}
+
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seedlings Monitoring</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>Seedling Requests</title>
 
-    <link rel="stylesheet" href="/denr/superadmin/css/user_requestseedlings.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/denr/superadmin/css/wildhome.css" />
 
+    <style>
+        :root {
+            color-scheme: light;
+        }
 
-</head>
+        body {
+            background: #f3f4f6 !important;
+            color: #111827;
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
 
-<style>
-    /* Add the new styles from the seedling request page */
-    .requirements-form {
-        margin-top: 20px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-        border: 1px solid #ddd;
-    }
+        .hidden {
+            display: none !important;
+        }
 
-    .form-header {
-        background-color: #2b6625;
-        color: white;
-        padding: 20px 30px;
-        border-bottom: 1px solid #1e4a1a;
-    }
+        body::before {
+            content: none !important;
+        }
 
-    .form-header h2 {
-        text-align: center;
-        font-size: 1.5rem;
-        margin: 0;
-    }
+        .nav-item .badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+        }
 
-    .form-body {
-        padding: 30px;
-    }
+        .nav-item.dropdown.open .badge {
+            display: none;
+        }
 
-    .requirements-list {
-        display: grid;
-        gap: 20px;
-    }
+        .dropdown-menu.notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0
+        }
 
-    .requirement-item {
-        display: flex;
-        flex-direction: column;
-        gap: 15px;
-        padding: 20px;
-        background: #f5f5f5;
-        border-radius: 8px;
-        border-left: 4px solid #2b6625;
-    }
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb
+        }
 
-    .requirement-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff
+        }
 
-    .requirement-title {
-        font-weight: 600;
-        color: #1e4a1a;
-        font-size: 1.1rem;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px
+        }
 
-    .requirement-number {
-        background: #2b6625;
-        color: white;
-        width: 25px;
-        height: 25px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.9rem;
-    }
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none
+        }
 
-    .file-upload {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
+        .notification-item {
+            padding: 18px;
+            background: #f8faf7
+        }
 
-    .uploaded-files {
-        margin-top: 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
+        .notification-item.unread {
+            background: #eef7ee
+        }
 
-    .file-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-    }
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1
+        }
 
-    .file-info {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        overflow: hidden;
-    }
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20
+        }
 
-    .file-icon {
-        color: #2b6625;
-        flex-shrink: 0;
-    }
+        .notification-link {
+            display: flex;
+            text-decoration: none;
+            color: inherit
+        }
 
-    .file-actions {
-        display: flex;
-        gap: 8px;
-        flex-shrink: 0;
-    }
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px
+        }
 
-    .file-action-btn {
-        background: none;
-        border: none;
-        color: #666;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        padding: 5px;
-    }
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px
+        }
 
-    .file-action-btn:hover {
-        color: #2b6625;
-    }
+        .notification-message {
+            color: #234
+        }
 
-    .fee-info {
-        margin-top: 20px;
-        padding: 15px;
-        background: rgba(43, 102, 37, 0.1);
-        border-radius: 8px;
-        border-left: 4px solid #2b6625;
-    }
+        .main-content {
+            padding: 10px 16px 24px;
+            max-width: 1200px;
+            margin: 0 auto
+        }
 
-    .fee-info p {
-        margin: 5px 0;
-        color: #1e4a1a;
-        font-weight: 500;
-    }
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            margin: 1rem 0;
+            flex-wrap: wrap
+        }
 
-    .modal-btn {
-        padding: 10px 20px;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: none;
-    }
+        .title-wrap h1 {
+            margin: 0;
+            color: #2b6625
+        }
 
-    .modal-btn-save {
-        background: #2b6625;
-        color: white;
-    }
+        .filters {
+            display: flex;
+            gap: .75rem;
+            align-items: flex-end;
+            flex-wrap: wrap
+        }
 
-    .modal-btn-save:hover {
-        background: #1e4a1a;
-    }
+        .filter-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px
+        }
 
-    .modal-btn-cancel {
-        background: #f5f5f5;
-        color: #333;
-        margin-left: 10px;
-    }
+        .input {
+            padding: 10px 12px;
+            min-width: 12rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fff;
+            color: #111827
+        }
 
-    .modal-btn-cancel:hover {
-        background: #e0e0e0;
-    }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            background: #111827;
+            color: #fff;
+            cursor: pointer;
+            text-decoration: none
+        }
 
-    .wood-table thead th {
-        white-space: nowrap;
-    }
+        .btn.ghost {
+            background: #fff;
+            color: #111827
+        }
 
-    .modal {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, .45);
-        z-index: 1000;
-    }
+        .btn.small {
+            padding: 7px 10px;
+            font-size: .92rem
+        }
 
-    .modal .modal-content {
-        background: #fff;
-        max-width: 900px;
-        width: 95%;
-        margin: 60px auto;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 12px 24px rgba(0, 0, 0, .25);
-    }
+        .btn.success {
+            background: #065f46;
+            border-color: #065f46
+        }
 
-    .modal-header {
-        padding: 14px 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-bottom: 1px solid #eee;
-    }
+        .btn.danger {
+            background: #991b1b;
+            border-color: #991b1b
+        }
 
-    .modal-header h2 {
-        margin: 0;
-        font-size: 20px;
-    }
+        .card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden
+        }
 
-    .modal-body {
-        padding: 16px;
-    }
+        .card-header,
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .75rem 1rem;
+            border-bottom: 1px solid #f3f4f6
+        }
 
-    .modal-actions {
-        display: flex;
-        gap: 10px;
-        padding: 16px;
-        border-top: 1px solid #eee;
-    }
+        .card-footer {
+            border-top: 1px solid #f3f4f6;
+            border-bottom: none
+        }
 
-    .close {
-        cursor: pointer;
-        font-size: 24px;
-        line-height: 1;
-    }
+        .table {
+            width: 100%;
+            border-collapse: collapse
+        }
 
-    .file-preview {
-        width: 100%;
-        height: 420px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-    }
+        .table th,
+        .table td {
+            padding: .75rem;
+            border-bottom: 1px solid #f3f4f6;
+            text-align: left;
+            background: #fff
+        }
 
-    .grid-2 {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-    }
+        .table thead th {
+            font-weight: 600;
+            color: #374151;
+            background: #fafafa
+        }
 
-    .pair label {
-        font-weight: 600;
-        display: block;
-        margin-bottom: 4px;
-        color: #222;
-    }
+        .pill {
+            display: inline-block;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: .85rem;
+            white-space: nowrap
+        }
 
-    .pair div,
-    .pair a {
-        font-size: 14px;
-        word-break: break-word;
-    }
+        .pill.neutral {
+            background: #f3f4f6;
+            color: #374151
+        }
 
-    .status-pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 3px 8px;
-        border-radius: 999px;
-        font-size: 12px;
-        text-transform: uppercase;
-    }
+        .status-val {
+            display: inline-block;
+            font-weight: 600;
+            color: #111827;
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            line-height: 1.2;
+            white-space: nowrap;
+            min-width: 100px
+        }
 
-    .status-pending {
-        /* background: #fff3cd; */
-        color: #856404;
-        border: 1px solid #ffeeba;
-    }
+        .status-val.approved {
+            color: #065f46
+        }
 
-    .status-approved {
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-    }
+        .status-val.pending {
+            color: #9a3412
+        }
 
-    .status-rejected {
-        background: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-    }
+        .status-val.rejected {
+            color: #991b1b
+        }
 
-    .btn-ghost {
-        border: 1px solid #ccc;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-    }
+        .badge.status {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+            min-width: 0;
+            border-radius: 0
+        }
 
-    .btn-primary {
-        background: #005117;
-        color: #fff;
-        border: 0;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-    }
+        /* Ensure status text in modal is styled */
+        .status-text {
+            font-weight: 700;
+            color: #111827
+        }
 
-    .btn-danger {
-        background: #b91c1c;
-        color: #fff;
-        border: 0;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-    }
+        /* Modal / Drawer */
+        .modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1050
+        }
 
-    #detailModal {
-        z-index: 1000;
-    }
+        .modal.show {
+            display: flex
+        }
 
-    #docModal {
-        z-index: 1100;
-    }
-</style>
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, .55)
+        }
+
+        .modal-panel {
+            position: relative;
+            z-index: 1;
+            background: #fff;
+            width: min(1200px, 96vw);
+            max-height: 92vh;
+            border-radius: 16px;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, .2)
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6
+        }
+
+        .icon-btn {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            padding: 6px;
+            border-radius: 8px;
+            cursor: pointer
+        }
+
+        .modal-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            min-height: 420px
+        }
+
+        .pane {
+            display: flex;
+            flex-direction: column;
+            min-height: 0
+        }
+
+        .pane.left {
+            border-right: 1px solid #f3f4f6
+        }
+
+        .pane-title {
+            margin: 0;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6
+        }
+
+        .scroll-area {
+            padding: 12px 16px;
+            overflow: auto;
+            max-height: calc(90vh - 210px)
+        }
+
+        .deflist {
+            margin: 0
+        }
+
+        .defrow {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px dashed #f3f4f6
+        }
+
+        .defrow dt {
+            color: #6b7280
+        }
+
+        .defrow dd {
+            margin: 0;
+            word-break: break-word
+        }
+
+        .file-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            cursor: pointer
+        }
+
+        .file-item:hover {
+            background: #f9fafb
+        }
+
+        .file-item .name {
+            font-weight: 500
+        }
+
+        .file-item .hint {
+            margin-left: auto;
+            color: #6b7280;
+            font-size: .85rem
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 20px;
+            padding: 10px 16px;
+            border-top: 1px solid #f3f4f6;
+            background: #fff;
+            justify-content: center;
+            position: sticky;
+            bottom: 0;
+            z-index: 1
+        }
+
+        .preview-drawer {
+            position: fixed;
+            top: 2%;
+            right: 2%;
+            width: min(720px, 96vw);
+            height: 96vh;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            overflow: hidden;
+            z-index: 1100;
+            display: none;
+            flex-direction: column;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, .2)
+        }
+
+        .preview-drawer.show {
+            display: flex
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f3f4f6;
+            flex: 0 0 56px
+        }
+
+        .truncate {
+            max-width: 75%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .preview-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            height: calc(96vh - 56px);
+            overflow: auto
+        }
+
+        #previewImageWrap,
+        #previewFrameWrap,
+        #previewLinkWrap {
+            height: 100%
+        }
+
+        #previewImage {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain
+        }
+
+        #previewFrame {
+            width: 100%;
+            height: 100%;
+            border: 0
+        }
+
+        /* Skeleton (bone) */
+        .s-wrap {
+            padding: 12px 16px 16px
+        }
+
+        .s-wrap.hidden {
+            display: none !important;
+        }
+
+        .s-body {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            min-height: 420px
+        }
+
+        .s-pane {
+            border-top: 1px solid #f3f4f6
+        }
+
+        .s-pane+.s-pane {
+            border-left: 1px solid #f3f4f6
+        }
+
+        .s-title.sk {
+            height: 18px;
+            width: 40%;
+            margin: 12px 0 6px 0
+        }
+
+        .s-list {
+            padding: 12px 16px;
+            display: grid;
+            gap: 10px;
+            max-height: calc(90vh - 210px);
+            overflow: auto
+        }
+
+        .sk {
+            position: relative;
+            overflow: hidden;
+            border-radius: 6px;
+            background: #e5e7eb
+        }
+
+        .sk::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .6), rgba(255, 255, 255, 0));
+            animation: shimmer 1.1s infinite
+        }
+
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%)
+            }
+        }
+
+        .sk.sm {
+            height: 12px
+        }
+
+        .sk.md {
+            height: 14px
+        }
+
+        .sk.row {
+            height: 14px;
+            width: 100%
+        }
+
+        .sk.w25 {
+            width: 25%
+        }
+
+        .sk.w35 {
+            width: 35%
+        }
+
+        .sk.w45 {
+            width: 45%
+        }
+
+        .sk.w60 {
+            width: 60%
+        }
+
+        .sk.w80 {
+            width: 80%
+        }
+
+        .sk.w100 {
+            width: 100%
+        }
+
+        .s-defrow {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 12px
+        }
+
+        @media (max-width:980px) {
+            .modal-content {
+                grid-template-columns: 1fr
+            }
+
+            .pane.left {
+                border-right: 0;
+                border-bottom: 1px solid #f3f4f6
+            }
+
+            .defrow {
+                grid-template-columns: 1fr
+            }
+
+            .s-body {
+                grid-template-columns: 1fr
+            }
+
+            .s-pane+.s-pane {
+                border-left: 0;
+                border-top: 1px solid #f3f4f6
+            }
+
+            .s-defrow {
+                grid-template-columns: 1fr
+            }
+        }
+
+        .logo::after {
+            content: none
+        }
+
+        .dropdown-menu .dropdown-item {
+            position: relative
+        }
+
+        .dropdown-menu .dropdown-item.active {
+            background: #eef7ee;
+            font-weight: 700;
+            color: #1b5e20
+        }
+
+        .dropdown-menu .dropdown-item.active i {
+            color: #1b5e20
+        }
+
+        .dropdown-menu .dropdown-item.active::before {
+            content: "";
+            position: absolute;
+            left: 8px;
+            top: 8px;
+            bottom: 8px;
+            width: 4px;
+            border-radius: 4px;
+            background: #1b5e20
+        }
+
+        /* ****** FIX: overlays & toast/blocker ****** */
+        .confirm-wrap {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1300
+        }
+
+        .confirm-wrap.show {
+            display: flex
+        }
+
+        .confirm-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, .45)
+        }
+
+        .confirm-panel {
+            position: relative;
+            z-index: 1;
+            width: min(520px, 92vw);
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px
+        }
+
+        .confirm-title {
+            margin: 0 0 6px
+        }
+
+        .input-textarea {
+            width: 100%;
+            min-height: 110px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px;
+            font: inherit;
+            resize: vertical
+        }
+
+        .confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 6px
+        }
+
+        .toast {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: #111827;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .2);
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+            transition: opacity .2s, transform .2s;
+            z-index: 1400
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .toast.success {
+            background: #065f46
+        }
+
+        .toast.error {
+            background: #991b1b
+        }
+
+        .blocker {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, .65);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            z-index: 1500
+        }
+
+        .blocker.show {
+            display: flex
+        }
+
+        .lds {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 3px solid #d1d5db;
+            border-top-color: #2b6625;
+            animation: spin 1s linear infinite
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        /* ******************************************* */
+    </style>
 </head>
 
 <body>
-    <div id="profile-notification" style="display:none;position:fixed;top:5px;left:50%;transform:translateX(-50%);background:#323232;color:#fff;padding:16px 32px;border-radius:8px;font-size:1.1rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-align:center;min-width:220px;max-width:90vw;"></div>
-
     <header>
-        <div class="logo">
-            <a href="seedlingshome.php"><img src="seal.png" alt="Site Logo"></a>
-        </div>
-
-        <button class="mobile-toggle"><i class="fas fa-bars"></i></button>
+        <div class="logo"><a href="seedlingshome.php"><img src="seal.png" alt="Site Logo"></a></div>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><i class="fas fa-bars"></i></button>
 
         <div class="nav-container">
-            <div class="nav-item dropdown">
-                <div class="nav-icon active"><i class="fas fa-bars"></i></div>
+            <!-- App / hamburger -->
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="incoming.php" class="dropdown-item">
-                        <i class="fas fa-seedling"></i><span class="item-text">Seedlings Received</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_received'] ?></span>
+                    <a href="seedlingpermit.php" class="dropdown-item active" aria-current="page">
+                        <i class="fas fa-seedling"></i><span>Seedling Requests</span>
                     </a>
-                    <a href="releasedrecords.php" class="dropdown-item">
-                        <i class="fas fa-truck"></i><span class="item-text">Seedlings Released</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_released'] ?></span>
-                    </a>
-                    <a href="discardedrecords.php" class="dropdown-item">
-                        <i class="fas fa-trash-alt"></i><span class="item-text">Seedlings Discarded</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_discarded'] ?></span>
-                    </a>
-                    <a href="balancerecords.php" class="dropdown-item">
-                        <i class="fas fa-calculator"></i><span class="item-text">Seedlings Left</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_balance'] ?></span>
-                    </a>
-
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
-
-                    <a href="user_requestseedlings.php" class="dropdown-item active-page">
-                        <i class="fas fa-paper-plane"></i><span>Seedlings Request</span>
-                    </a>
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon"><a href="seedlingsmessage.php"><i class="fas fa-envelope" style="color:black;"></i></a></div>
-            </div>
-
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
+            <!-- Bell (Seedling notifs + Tree Cutting incidents) -->
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadSeed ?></span>
+                </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="seedlingseach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Seedlings Disposal Alert</div>
-                                <div class="notification-message">Report of seedlings being improperly discarded.</div>
-                                <div class="notification-time">15 minutes ago</div>
+                    <div class="notification-list" id="treeNotifList">
+                        <?php
+                        $combined = [];
+                        foreach ($seedNotifs as $nf) {
+                            $combined[] = [
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => 'seedlingpermit.php'
+                            ];
+                        }
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Seedling notification' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
+                    <div class="notification-footer"><a href="reportaccident.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon <?= $current_page === 'forestry-profile.php' ? 'active' : '' ?>"><i class="fas fa-user-circle"></i></div>
+            <!-- Profile -->
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon <?php echo $current_page === 'seedling-profile' ? 'active' : ''; ?>"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
-                    <a href="seedlingsprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span class="item-text">Edit Profile</span></a>
-                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span class="item-text">Logout</span></a>
+                    <a href="seedlingsprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
     </header>
 
-    <div class="wood-processing-records">
-        <div class="container">
-            <div class="header">
-                <h1 class="title">SEEDLINGS REQUEST RECORDS</h1>
+    <div class="main-content">
+        <section class="page-header">
+            <div class="title-wrap">
+                <h1>Seedling Requests</h1>
+                <p class="subtitle">Requests of type <strong>seedling</strong></p>
+            </div>
+            <div class="filters">
+                <div class="filter-row">
+                    <label for="filterStatus">Status</label>
+                    <select id="filterStatus" class="input">
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div class="filter-row">
+                    <label for="searchName">Search Client</label>
+                    <input id="searchName" class="input" type="text" placeholder="First name…">
+                </div>
+                <button id="btnClearFilters" class="btn ghost" type="button"><i class="fas fa-eraser"></i> Clear</button>
+            </div>
+        </section>
+
+        <main class="card">
+            <div class="card-header">
+                <h2>Requests</h2>
+                <div class="right-actions"><span id="rowsCount" class="muted"><?= count($rows) ?> results</span></div>
             </div>
 
-            <div class="controls">
-                <div class="search">
-                    <input type="text" id="search-input" placeholder="SEARCH HERE" class="search-input">
-                    <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon" id="search-icon">
-                </div>
-                <div class="export">
-                    <button class="export-button" id="export-button">
-                        <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon">
-                    </button>
-                    <span class="export-label">Export as CSV</span>
-                </div>
-            </div>
-
-            <div class="table-container">
-                <table class="wood-table" id="req-table">
+            <div class="table-wrap">
+                <table class="table">
                     <thead>
                         <tr>
-                            <th>APPROVAL ID</th>
-                            <th>FIRST NAME</th>
-                            <th>LAST NAME</th>
-                            <th>TYPE</th>
-                            <th>DATE</th>
-                            <th>STATUS</th>
-                            <th>ACTIONS</th>
+                            <th>Client First Name</th>
+                            <th>Request Type</th>
+                            <th>Permit Type</th>
+                            <th>Status</th>
+                            <th>Submitted At</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody id="req-tbody">
-                        <tr>
-                            <td colspan="7">Loading…</td>
-                        </tr>
+                    <tbody id="statusTableBody">
+                        <?php foreach ($rows as $r):
+                            $st  = strtolower((string)($r['approval_status'] ?? 'pending'));
+                            $cls = $st === 'approved' ? 'approved' : ($st === 'rejected' ? 'rejected' : 'pending');
+                            $req = strtolower((string)($r['request_type'] ?? ''));
+                        ?>
+                            <tr data-approval-id="<?= h($r['approval_id']) ?>">
+                                <td><?= h($r['first_name'] ?? '—') ?></td>
+                                <td><span class="pill"><?= h($req) ?></span></td>
+                                <td><span class="pill neutral"><?= h(strtolower((string)$r['permit_type'])) ?></span></td>
+                                <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
+                                <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
+                                <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
+                            </tr>
+                        <?php endforeach; ?>
                     </tbody>
                 </table>
-            </div>
 
-            <div class="actions">
-                <button class="add-record btn-primary" id="refreshBtn">REFRESH</button>
+                <?php if (!$rows): ?>
+                    <div class="empty"><i class="far fa-folder-open"></i>
+                        <p>No seedling requests yet.</p>
+                    </div>
+                <?php endif; ?>
             </div>
-        </div>
+        </main>
     </div>
 
-    <!-- Detail/Edit Modal -->
-    <div id="detailModal" class="modal" style="z-index:1000;">
-        <div class="modal-content">
+    <!-- View Modal -->
+    <div id="viewModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-backdrop" data-close-modal></div>
+        <div class="modal-panel" role="document">
             <div class="modal-header">
-                <h2 id="modalTitle">SEEDLING REQUEST DETAILS</h2>
-                <span class="close" id="closeDetailModal">&times;</span>
+                <h3 id="modalTitle">Request Details</h3>
+                <button class="icon-btn" type="button" aria-label="Close" data-close-modal><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body">
-                <div class="grid-2" id="detailGrid"><!-- filled by JS --></div>
 
-                <!-- Only a button here. No iframe to avoid auto-downloads. -->
-                <div style="margin-top:14px;">
-                    <button class="btn-ghost" id="viewDocBtn" disabled>View application form</button>
+            <!-- Skeleton (bone) -->
+            <div id="modalSkeleton" class="s-wrap hidden" aria-hidden="true">
+                <div class="s-body">
+                    <div class="s-pane">
+                        <div class="s-title sk md"></div>
+                        <div class="s-list">
+                            <div class="s-defrow">
+                                <div class="sk sm w60"></div>
+                                <div class="sk sm w80"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w35"></div>
+                                <div class="sk sm w60"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w35"></div>
+                                <div class="sk sm w35"></div>
+                            </div>
+                            <div class="s-defrow">
+                                <div class="sk sm w25"></div>
+                                <div class="sk sm w45"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="s-pane">
+                        <div class="s-title sk md"></div>
+                        <div class="s-list">
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                            <div class="sk row"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-actions">
-                <!-- <button class="btn-ghost" id="viewOnlyBtn">View</button> -->
-                <button class="btn-primary" id="saveStatusBtn">Save Status</button>
-                <!-- <button class="btn-danger" id="rejectBtn">Reject</button> -->
+
+            <!-- Real content -->
+            <div class="modal-content" id="modalContent">
+                <!-- LEFT: Request Info -->
+                <section class="pane left">
+                    <h4 class="pane-title"><i class="fas fa-circle-info"></i> Request Info</h4>
+                    <div class="scroll-area">
+                        <dl class="deflist">
+                            <div class="defrow">
+                                <dt>Client</dt>
+                                <dd id="infoClientName">—</dd>
+                            </div>
+                            <div class="defrow">
+                                <dt>Request Type</dt>
+                                <dd><span class="pill" id="infoRequestType">—</span></dd>
+                            </div>
+                            <div class="defrow">
+                                <dt>Permit Type</dt>
+                                <dd><span class="pill neutral" id="infoPermitType">—</span></dd>
+                            </div>
+                            <div class="defrow">
+                                <dt>Status</dt>
+                                <dd><span class="status-text" id="infoStatus">—</span></dd>
+                            </div>
+                        </dl>
+                    </div>
+                </section>
+
+                <!-- RIGHT: Documents -->
+                <section class="pane right">
+                    <h4 class="pane-title"><i class="fas fa-paperclip"></i> Documents</h4>
+                    <div id="filesScroll" class="scroll-area">
+                        <ul id="filesList" class="file-list"></ul>
+                        <div id="filesEmpty" class="hidden" style="text-align:center;color:#6b7280;">No documents uploaded.</div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="modal-actions" id="modalActions"></div>
+        </div>
+
+        <!-- Preview Drawer -->
+        <div id="filePreviewDrawer" class="preview-drawer" aria-live="polite" aria-hidden="true">
+            <div class="preview-header">
+                <span id="previewTitle" class="truncate">Document</span>
+                <button class="icon-btn" type="button" aria-label="Close preview" data-close-preview><i class="fas fa-times"></i></button>
+            </div>
+            <div class="preview-body">
+                <div id="previewImageWrap" class="hidden"><img id="previewImage" alt="Preview"></div>
+                <div id="previewFrameWrap" class="hidden"><iframe id="previewFrame" title="Document preview" loading="lazy"></iframe></div>
+                <div id="previewLinkWrap" class="hidden" style="padding:16px;text-align:center">
+                    <p class="muted">Preview not available. Open or download the file instead.</p>
+                    <a id="previewDownload" class="btn" href="#" target="_blank" rel="noopener"><i class="fas fa-download"></i> Open / Download</a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Stacked Document Viewer Modal (sits above detail modal) -->
-    <div id="docModal" class="modal" style="z-index:1100;">
-        <div class="modal-content" style="max-width:960px;width:95%;position:relative;">
-            <span class="close" id="closeDocModal" style="position:absolute;right:16px;top:10px;font-size:24px;cursor:pointer;">&times;</span>
-            <iframe id="docFrame" class="file-preview" src="about:blank"></iframe>
+    <!-- Approve/Reject confirms + toast/blocker -->
+    <div id="approveConfirm" class="confirm-wrap" role="dialog" aria-modal="true">
+        <div class="confirm-backdrop" data-close-confirm></div>
+        <div class="confirm-panel">
+            <h4 class="confirm-title">Approve this request?</h4>
+            <p>This action will mark the request as <strong>Approved</strong> and notify the client.</p>
+            <div class="confirm-actions">
+                <button class="btn ghost" data-cancel-confirm>Cancel</button>
+                <button class="btn success" id="approveConfirmBtn"><i class="fas fa-check"></i> Confirm</button>
+            </div>
         </div>
+    </div>
+
+    <div id="rejectConfirm" class="confirm-wrap" role="dialog" aria-modal="true">
+        <div class="confirm-backdrop" data-close-confirm></div>
+        <div class="confirm-panel">
+            <h4 class="confirm-title">Reject this request?</h4>
+            <label for="rejectReason" style="font-size:.9rem;color:#374151;">Reason for rejection</label>
+            <textarea id="rejectReason" class="input-textarea" placeholder="Provide a short reason…" spellcheck="false"></textarea>
+            <div class="confirm-actions">
+                <button class="btn ghost" data-cancel-confirm>Cancel</button>
+                <button class="btn danger" id="rejectConfirmBtn"><i class="fas fa-times"></i> Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="screenBlocker" class="blocker">
+        <div class="lds"></div><span>Updating…</span>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            /* Toast */
-            const noteEl = document.getElementById('profile-notification');
+            const mobileToggle = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
+            mobileToggle?.addEventListener('click', () => navContainer.classList.toggle('active'));
 
-            function toast(msg, type = 'info', timeout = 3000) {
-                if (!noteEl) return;
-                noteEl.style.background = type === 'error' ? '#c0392b' : (type === 'success' ? '#2d8a34' : '#323232');
-                noteEl.textContent = msg;
-                noteEl.style.display = 'block';
-                clearTimeout(noteEl._t);
-                noteEl._t = setTimeout(() => noteEl.style.display = 'none', timeout);
-            }
+            /* Dropdowns */
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+            const isTouch = matchMedia('(pointer: coarse)').matches;
+            dropdowns.forEach(dd => {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                if (!trigger || !menu) return;
 
-            /* Elements */
-            const tbody = document.getElementById('req-tbody');
-            const refreshBtn = document.getElementById('refreshBtn');
-            const searchInput = document.getElementById('search-input');
-            const searchIcon = document.getElementById('search-icon');
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger.setAttribute('aria-expanded', 'true');
+                    menu.style.opacity = '1';
+                    menu.style.visibility = 'visible';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger.setAttribute('aria-expanded', 'false');
+                    menu.style.opacity = '0';
+                    menu.style.visibility = 'hidden';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                    if (isTouch) menu.style.display = 'none';
+                };
 
-            const detailModal = document.getElementById('detailModal');
-            const closeDetailModal = document.getElementById('closeDetailModal');
-            const detailGrid = document.getElementById('detailGrid');
-            const saveStatusBtn = document.getElementById('saveStatusBtn');
-            const rejectBtn = document.getElementById('rejectBtn');
-            const viewDocBtn = document.getElementById('viewDocBtn');
-
-            // Document viewer modal elements
-            const docModal = document.getElementById('docModal');
-            const closeDocModal = document.getElementById('closeDocModal');
-            const docFrame = document.getElementById('docFrame');
-
-            let rowsCache = [];
-            let currentApprovalId = null;
-            let currentStatusSelect = null;
-            let currentDocUrl = '';
-
-            function statusPill(status) {
-                const s = (status || '').toLowerCase();
-                const cls = s === 'approved' ? 'status-approved' : s === 'rejected' ? 'status-rejected' : 'status-pending';
-                return `<span class="status-pill ${cls}">${(status||'').toUpperCase()}</span>`;
-            }
-
-            function renderRows(rows) {
-                if (!rows || !rows.length) {
-                    tbody.innerHTML = `<tr><td colspan="7">No requests found.</td></tr>`;
-                    return;
-                }
-                const html = rows.map(r => {
-                    const id = r.approval_id || '';
-                    const fn = r.first_name || '';
-                    const ln = r.last_name || '';
-                    const ty = r.request_type || '';
-                    const dt = r.submitted_at ? new Date(r.submitted_at).toISOString().slice(0, 10) : '';
-                    const st = r.approval_status || '';
-                    return `
-            <tr data-id="${id}">
-              <td>${id}</td>
-              <td>${fn}</td>
-              <td>${ln}</td>
-              <td>${ty}</td>
-              <td>${dt}</td>
-              <td>${statusPill(st)}</td>
-              <td>
-                <!-- View button intentionally commented -->
-                <!-- <button class="btn-ghost view-btn">View</button> -->
-                <button class="btn-ghost edit-btn">Edit</button>
-              </td>
-            </tr>
-          `;
-                }).join('');
-                tbody.innerHTML = html;
-            }
-
-            async function fetchRows(q = '') {
-                try {
-                    const url = new URL('../backend/admins/seedlingsRequest/list.php', location.href);
-                    if (q) url.searchParams.set('q', q);
-                    const res = await fetch(url, {
-                        credentials: 'same-origin'
+                if (!isTouch) {
+                    dd.addEventListener('mouseenter', open);
+                    dd.addEventListener('mouseleave', (e) => {
+                        if (!dd.contains(e.relatedTarget)) close();
                     });
-                    const data = await res.json();
-                    if (!data.success) throw new Error(data.error || 'Failed');
-                    rowsCache = data.rows || [];
-                    renderRows(rowsCache);
-                } catch (e) {
-                    console.error(e);
-                    toast('Failed to load requests', 'error');
-                    tbody.innerHTML = `<tr><td colspan="7">Error loading data</td></tr>`;
-                }
-            }
-
-            function doSearch() {
-                const term = (searchInput.value || '').toLowerCase();
-                if (!term) {
-                    renderRows(rowsCache);
-                    return;
-                }
-                const filtered = rowsCache.filter(r =>
-                    String(r.approval_id || '').toLowerCase().includes(term) ||
-                    String(r.first_name || '').toLowerCase().includes(term) ||
-                    String(r.last_name || '').toLowerCase().includes(term) ||
-                    String(r.approval_status || '').toLowerCase().includes(term)
-                );
-                renderRows(filtered);
-            }
-
-            // Build a viewer URL to avoid downloads (Office viewer for Word docs; raw for PDFs)
-            function viewerURL(rawUrl) {
-                if (!rawUrl) return 'about:blank';
-                const clean = String(rawUrl);
-                const ext = clean.split('?')[0].split('.').pop()?.toLowerCase() || '';
-                if (ext === 'pdf') return clean;
-                return 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(clean);
-            }
-
-            /* Open modal for edit (does NOT auto-load the document) */
-            async function openEdit(approval_id) {
-                try {
-                    const url = new URL('../backend/admins/seedlingsRequest/get_request.php', location.href);
-                    url.searchParams.set('approval_id', approval_id);
-                    const res = await fetch(url, {
-                        credentials: 'same-origin'
+                } else {
+                    trigger.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const openNow = dd.classList.contains('open');
+                        document.querySelectorAll('[data-dropdown].open').forEach(o => {
+                            if (o !== dd) o.classList.remove('open');
+                        });
+                        if (openNow) close();
+                        else {
+                            menu.style.display = 'block';
+                            open();
+                        }
                     });
-                    const out = await res.json();
-                    if (!out.success) throw new Error(out.error || 'Failed');
-
-                    currentApprovalId = approval_id;
-
-                    const a = out.approval || {};
-                    const s = out.seedling || {};
-                    currentDocUrl = a.application_form || '';
-
-                    detailGrid.innerHTML = `
-            <div class="pair">
-              <label>Approval ID</label>
-              <div>${a.approval_id || ''}</div>
-            </div>
-            <div class="pair">
-              <label>Client Name</label>
-              <div>${(a.first_name || '')} ${(a.last_name || '')}</div>
-            </div>
-            <div class="pair">
-              <label>Request Type</label>
-              <div>${a.request_type || ''}</div>
-            </div>
-            <div class="pair">
-              <label>Date Submitted</label>
-              <div>${a.submitted_at ? new Date(a.submitted_at).toLocaleString() : ''}</div>
-            </div>
-            <div class="pair">
-              <label>Seedling</label>
-              <div>${s.seedling_name ? `${s.seedling_name} (${s.quantity || 0})` : '—'}</div>
-            </div>
-            <div class="pair">
-              <label>Status</label>
-              <div>
-                <select id="edit-status">
-                  <option value="pending"  ${String(a.approval_status||'').toLowerCase()==='pending'  ? 'selected':''}>Pending</option>
-                  <option value="approved" ${String(a.approval_status||'').toLowerCase()==='approved' ? 'selected':''}>Approved</option>
-                  <option value="rejected" ${String(a.approval_status||'').toLowerCase()==='rejected' ? 'selected':''}>Rejected</option>
-                </select>
-              </div>
-            </div>
-            <div class="pair" style="grid-column:1 / -1;">
-              <label>Rejection Reason (if rejecting)</label>
-              <textarea id="edit-reason" rows="3" style="width:100%;"></textarea>
-            </div>
-          `;
-
-                    // Enable/disable the view button based on URL presence
-                    viewDocBtn.disabled = !currentDocUrl;
-                    viewDocBtn.style.opacity = currentDocUrl ? '1' : '.6';
-
-                    // Show edit modal
-                    detailModal.style.display = 'block';
-                    document.body.style.overflow = 'hidden';
-                } catch (e) {
-                    console.error(e);
-                    toast('Failed to load details', 'error');
                 }
-            }
-
-            async function saveStatus() {
-                const status = (document.getElementById('edit-status')?.value || 'pending').toLowerCase();
-                const reason = (document.getElementById('edit-reason')?.value || '').trim();
-
-                if (status === 'rejected' && !reason) {
-                    toast('Please provide a rejection reason.', 'error');
-                    return;
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-dropdown]')) {
+                    document.querySelectorAll('[data-dropdown].open').forEach(dd => {
+                        const menu = dd.querySelector('.dropdown-menu');
+                        dd.classList.remove('open');
+                        if (menu) {
+                            menu.style.opacity = '0';
+                            menu.style.visibility = 'hidden';
+                            menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                            if (matchMedia('(pointer: coarse)').matches) menu.style.display = 'none';
+                        }
+                    });
                 }
+            });
+
+            /* MARK ALL AS READ */
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                document.querySelectorAll('#treeNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
                 try {
-                    const res = await fetch('../backend/admins/seedlingsRequest/update_status.php', {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        credentials: 'same-origin',
-                        body: JSON.stringify({
-                            approval_id: currentApprovalId,
-                            status: status,
-                            rejection_reason: status === 'rejected' ? reason : null
-                        })
-                    });
-                    const out = await res.json();
-                    if (!out.success) throw new Error(out.error || 'Update failed');
-
-                    toast('Status updated', 'success');
-                    detailModal.style.display = 'none';
-                    document.body.style.overflow = 'auto';
-                    await fetchRows();
-                } catch (e) {
-                    console.error(e);
-                    toast('Failed to update status', 'error');
-                }
-            }
-
-            function closeEditModal() {
-                detailModal.style.display = 'none';
-                document.body.style.overflow = 'auto';
-            }
-
-            /* Events */
-            refreshBtn?.addEventListener('click', () => fetchRows());
-            searchIcon?.addEventListener('click', doSearch);
-            searchInput?.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') doSearch();
-            });
-
-            closeDetailModal?.addEventListener('click', closeEditModal);
-            window.addEventListener('click', (e) => {
-                if (e.target === detailModal) closeEditModal();
-            });
-
-            saveStatusBtn?.addEventListener('click', saveStatus);
-            rejectBtn?.addEventListener('click', () => {
-                const sel = document.getElementById('edit-status');
-                if (sel) sel.value = 'rejected';
-                toast('Set status to Rejected. Provide a reason and click Save Status.', 'info', 4000);
-            });
-
-            // Table action: Edit
-            document.addEventListener('click', (e) => {
-                const row = e.target.closest('tr[data-id]');
-                if (!row) return;
-                const id = row.getAttribute('data-id');
-                if (!id) return;
-                if (e.target.classList.contains('edit-btn')) {
-                    openEdit(id);
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch (_) {
+                    location.reload();
                 }
             });
 
-            // Document viewer: open
-            viewDocBtn?.addEventListener('click', (e) => {
+            /* Click any single notification → mark read */
+            document.getElementById('treeNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                const item = link.closest('.notification-item');
+                if (!item) return;
                 e.preventDefault();
-                if (!currentDocUrl) return;
-                docFrame.src = viewerURL(currentDocUrl);
-                docModal.style.display = 'block'; // sits above edit modal
-                // keep edit modal open underneath
-            });
+                const href = link.getAttribute('href') || 'reportaccident.php';
+                const notifId = item.getAttribute('data-notif-id') || '';
+                const incidentId = item.getAttribute('data-incident-id') || '';
 
-            // Document viewer: close by X
-            closeDocModal?.addEventListener('click', () => {
-                docModal.style.display = 'none';
-                docFrame.src = 'about:blank';
-            });
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+                    await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch (_) {}
 
-            // Document viewer: close by clicking overlay (but keep edit modal open)
-            docModal?.addEventListener('click', (e) => {
-                if (e.target === docModal) {
-                    docModal.style.display = 'none';
-                    docFrame.src = 'about:blank';
+                item.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
                 }
+                window.location.href = href;
             });
 
-            // Export CSV
-            document.getElementById('export-button')?.addEventListener('click', () => {
-                let csv = 'APPROVAL ID,FIRST NAME,LAST NAME,TYPE,DATE,STATUS\r\n';
-                const rows = tbody.querySelectorAll('tr');
-                rows.forEach(tr => {
-                    const tds = tr.querySelectorAll('td');
-                    if (tds.length < 6) return;
-                    const vals = [
-                        tds[0]?.textContent || '',
-                        tds[1]?.textContent || '',
-                        tds[2]?.textContent || '',
-                        tds[3]?.textContent || '',
-                        tds[4]?.textContent || '',
-                        (tds[5]?.textContent || '').trim()
-                    ].map(s => `"${(s||'').replace(/"/g,'""')}"`);
-                    csv += vals.join(',') + '\r\n';
+            /* Toast + blocker helpers */
+            function showToast(msg, type = 'success') {
+                const t = document.getElementById('toast');
+                t.textContent = msg;
+                t.className = 'toast show ' + (type === 'error' ? 'error' : 'success');
+                setTimeout(() => {
+                    t.className = 'toast';
+                    t.textContent = '';
+                }, 2000);
+            }
+            const blocker = document.getElementById('screenBlocker');
+            const block = (on) => blocker.classList.toggle('show', !!on);
+
+            /* Modal helpers */
+            const modalEl = document.getElementById('viewModal');
+            const modalSkeleton = document.getElementById('modalSkeleton');
+            const modalContent = document.getElementById('modalContent');
+            const modalActions = document.getElementById('modalActions');
+
+            function showModalSkeleton() {
+                modalSkeleton.classList.remove('hidden');
+                modalContent.classList.add('hidden');
+                modalActions.classList.add('hidden');
+            }
+
+            function hideModalSkeleton() {
+                modalSkeleton.classList.add('hidden');
+                modalContent.classList.remove('hidden');
+            }
+
+            function openViewModal() {
+                modalEl.classList.add('show');
+            }
+
+            function closeViewModal() {
+                modalEl.classList.remove('show');
+                closePreview();
+            }
+            document.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeViewModal));
+            document.querySelector('.modal-backdrop')?.addEventListener('click', closeViewModal);
+
+            /* File preview */
+            function closePreview() {
+                const dr = document.getElementById('filePreviewDrawer');
+                dr.classList.remove('show');
+                document.getElementById('previewImage').src = '';
+                document.getElementById('previewFrame').src = '';
+            }
+
+            function showPreview(name, url, ext) {
+                const drawer = document.getElementById('filePreviewDrawer');
+                const imgWrap = document.getElementById('previewImageWrap');
+                const frameWrap = document.getElementById('previewFrameWrap');
+                const linkWrap = document.getElementById('previewLinkWrap');
+                document.getElementById('previewTitle').textContent = name;
+                imgWrap.classList.add('hidden');
+                frameWrap.classList.add('hidden');
+                linkWrap.classList.add('hidden');
+                const imgExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                const offExt = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+                const txtExt = ['txt', 'csv', 'json', 'md', 'log'];
+                if (imgExt.includes(ext) && url) {
+                    document.getElementById('previewImage').src = url;
+                    imgWrap.classList.remove('hidden');
+                } else if (ext === 'pdf' && url) {
+                    document.getElementById('previewFrame').src = url;
+                    frameWrap.classList.remove('hidden');
+                } else if (offExt.includes(ext) && url) {
+                    const viewer = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(url);
+                    document.getElementById('previewFrame').src = viewer;
+                    frameWrap.classList.remove('hidden');
+                } else if (txtExt.includes(ext) && url) {
+                    const gview = 'https://docs.google.com/gview?embedded=1&url=' + encodeURIComponent(url);
+                    document.getElementById('previewFrame').src = gview;
+                    frameWrap.classList.remove('hidden');
+                } else {
+                    const a = document.getElementById('previewDownload');
+                    a.href = url || '#';
+                    linkWrap.classList.remove('hidden');
+                }
+                drawer.classList.add('show');
+            }
+            document.getElementById('filesList')?.addEventListener('click', (e) => {
+                const li = e.target.closest('.file-item');
+                if (!li) return;
+                showPreview(li.dataset.fileName || 'Document', li.dataset.fileUrl || '#', (li.dataset.fileExt || '').toLowerCase());
+            });
+            document.querySelector('[data-close-preview]')?.addEventListener('click', closePreview);
+
+            /* View button -> open modal + fetch details + mark notifs read */
+            let currentApprovalId = null;
+            document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-action="view"]');
+                if (!btn) return;
+                const tr = btn.closest('tr');
+                currentApprovalId = tr?.dataset.approvalId;
+                if (!currentApprovalId) return;
+
+                showModalSkeleton();
+
+                // Reset placeholders
+                document.getElementById('infoClientName').textContent = '—';
+                document.getElementById('infoRequestType').textContent = '—';
+                document.getElementById('infoPermitType').textContent = '—';
+                document.getElementById('infoStatus').textContent = '—';
+                document.getElementById('filesList').innerHTML = '';
+                document.getElementById('filesEmpty').classList.add('hidden');
+                modalActions.innerHTML = '';
+
+                openViewModal();
+
+                // Mark related notifs read & update bell
+                try {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_notifs_for_approval', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: new URLSearchParams({
+                            approval_id: currentApprovalId
+                        }).toString()
+                    }).then(r => r.json());
+                    if (res && res.ok) {
+                        const badge = document.querySelector('#notifDropdown .badge');
+                        if (badge) {
+                            const n = parseInt(badge.textContent || '0', 10) || 0;
+                            const dec = parseInt(res.count || 0, 10) || 0;
+                            const next = Math.max(0, n - dec);
+                            badge.textContent = String(next);
+                            if (next <= 0) badge.style.display = 'none';
+                        }
+                        document.querySelectorAll('#treeNotifList .notification-item.unread').forEach(el => {
+                            const a = el.querySelector('a.notification-link');
+                            if (a && a.getAttribute('href') === 'seedlingpermit.php') el.classList.remove('unread');
+                        });
+                    }
+                } catch (_) {}
+
+                // Fetch details
+                const res = await fetch(`<?php echo basename(__FILE__); ?>?ajax=details&approval_id=${encodeURIComponent(currentApprovalId)}`, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }).then(r => r.json()).catch(() => ({
+                    ok: false
+                }));
+
+                if (!res.ok) {
+                    hideModalSkeleton();
+                    document.getElementById('infoStatus').textContent = 'Error';
+                    document.getElementById('filesList').innerHTML = '';
+                    document.getElementById('filesEmpty').classList.remove('hidden');
+                    alert('Failed to load details.');
+                    return;
+                }
+
+                // LEFT Request Info
+                const meta = res.meta || {};
+                document.getElementById('infoClientName').textContent = meta.client || '—';
+                document.getElementById('infoRequestType').textContent = meta.request_type || '—';
+                document.getElementById('infoPermitType').textContent = meta.permit_type || '—';
+                const st = (meta.status || '').trim().toLowerCase();
+                const msLeft = document.getElementById('infoStatus');
+                msLeft.textContent = st ? st[0].toUpperCase() + st.slice(1) : '—';
+                msLeft.className = 'status-text';
+
+                // Files
+                const filesList = document.getElementById('filesList');
+                const filesEmpty = document.getElementById('filesEmpty');
+                filesList.innerHTML = '';
+                if (Array.isArray(res.files) && res.files.length) {
+                    filesEmpty.classList.add('hidden');
+                    res.files.forEach(f => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        li.tabIndex = 0;
+                        li.dataset.fileUrl = f.url || '';
+                        li.dataset.fileName = f.name || 'Document';
+                        li.dataset.fileExt = (f.ext || '').toLowerCase();
+                        li.innerHTML = `<i class="far fa-file"></i><span class="name">${f.name}</span><span class="hint">${(f.ext||'').toUpperCase()}</span>`;
+                        filesList.appendChild(li);
+                    });
+                } else {
+                    filesEmpty.classList.remove('hidden');
+                }
+
+                // Actions (only for pending)
+                modalActions.innerHTML = '';
+                if (st === 'pending') {
+                    const approveBtn = document.createElement('button');
+                    approveBtn.className = 'btn success';
+                    approveBtn.innerHTML = '<i class="fas fa-check"></i> Approve';
+                    approveBtn.addEventListener('click', () => openConfirm('approve'));
+
+                    const rejectBtn = document.createElement('button');
+                    rejectBtn.className = 'btn danger';
+                    rejectBtn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                    rejectBtn.addEventListener('click', () => openConfirm('reject'));
+
+                    modalActions.appendChild(approveBtn);
+                    modalActions.appendChild(rejectBtn);
+                    modalActions.classList.remove('hidden');
+                } else {
+                    modalActions.classList.add('hidden');
+                }
+
+                hideModalSkeleton();
+            });
+
+            /* Approve / Reject flow */
+            let pendingAction = null;
+
+            function openConfirm(which) {
+                pendingAction = which;
+                if (which === 'approve') document.getElementById('approveConfirm').classList.add('show');
+                else {
+                    document.getElementById('rejectConfirm').classList.add('show');
+                    document.getElementById('rejectReason').value = '';
+                }
+            }
+
+            function closeAllConfirms() {
+                document.getElementById('approveConfirm').classList.remove('show');
+                document.getElementById('rejectConfirm').classList.remove('show');
+            }
+            document.querySelectorAll('[data-close-confirm],[data-cancel-confirm]').forEach(el => el.addEventListener('click', closeAllConfirms));
+
+            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'approve') return;
+                block(true);
+                const res = await sendDecision('approve');
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to approve');
+                    return;
+                }
+                applyDecisionUI('approved');
+                closeAllConfirms();
+                showToast('Request approved', 'success');
+            });
+
+            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'reject') return;
+                const reason = (document.getElementById('rejectReason').value || '').trim();
+                if (!reason) {
+                    alert('Please provide a reason.');
+                    return;
+                }
+                block(true);
+                const res = await sendDecision('reject', reason);
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to reject');
+                    return;
+                }
+                applyDecisionUI('rejected');
+                closeAllConfirms();
+                showToast('Request rejected', 'success');
+            });
+
+            async function sendDecision(action, reason = '') {
+                if (!currentApprovalId) return {
+                    ok: false,
+                    error: 'Missing approval id'
+                };
+                const form = new URLSearchParams();
+                form.set('approval_id', currentApprovalId);
+                form.set('action', action);
+                if (action === 'reject') form.set('reason', reason);
+                return fetch('<?php echo basename(__FILE__); ?>?ajax=decide', {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: form.toString()
+                }).then(r => r.json()).catch(() => ({
+                    ok: false,
+                    error: 'network error'
+                }));
+            }
+
+            function applyDecisionUI(status) {
+                const msLeft = document.getElementById('infoStatus');
+                msLeft.textContent = status[0].toUpperCase() + status.slice(1);
+                msLeft.className = 'status-text';
+                document.getElementById('modalActions').innerHTML = '';
+
+                const tr = document.querySelector(`tr[data-approval-id="${CSS.escape(currentApprovalId)}"]`);
+                if (tr) {
+                    const tdStatus = tr.children[3];
+                    if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
+                }
+            }
+
+            /* Filters */
+            const filterStatus = document.getElementById('filterStatus');
+            const searchName = document.getElementById('searchName');
+            const rowsCount = document.getElementById('rowsCount');
+            document.getElementById('btnClearFilters')?.addEventListener('click', () => {
+                filterStatus.value = '';
+                searchName.value = '';
+                applyFilters();
+            });
+            [filterStatus, searchName].forEach(el => el.addEventListener('input', applyFilters));
+
+            function applyFilters() {
+                const st = (filterStatus.value || '').toLowerCase();
+                const q = (searchName.value || '').trim().toLowerCase();
+                let shown = 0;
+                document.querySelectorAll('#statusTableBody tr').forEach(tr => {
+                    const name = (tr.children[0]?.textContent || '').trim().toLowerCase();
+                    const stat = (tr.children[3]?.textContent || '').trim().toLowerCase();
+                    let ok = true;
+                    if (st && stat !== st) ok = false;
+                    if (q && !name.includes(q)) ok = false;
+                    tr.style.display = ok ? '' : 'none';
+                    if (ok) shown++;
                 });
-                const a = document.createElement('a');
-                a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-                a.download = 'seedling_requests_' + new Date().toISOString().slice(0, 10) + '.csv';
-                a.click();
-            });
-
-            // Initial load
-            fetchRows();
+                rowsCount.textContent = `${shown} result${shown===1?'':'s'}`;
+            }
         });
     </script>
 </body>
-
 
 </html>

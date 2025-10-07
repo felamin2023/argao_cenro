@@ -127,13 +127,13 @@ $quantities = [
 
 
             <!-- Messages Icon -->
-            <div class="nav-item">
+            <!-- <div class="nav-item">
                 <div class="nav-icon">
                     <a href="seedlingsmessage.php">
                         <i class="fas fa-envelope" style="color: black;"></i>
                     </a>
                 </div>
-            </div>
+            </div> -->
 
             <!-- Notifications -->
             <div class="nav-item dropdown">
