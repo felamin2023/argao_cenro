@@ -1,21 +1,16 @@
 <?php
 
 /**
- * applicationstatus.php (Wildlife Admin UI)
- * - Lists ONLY approvals with request_type = 'wildlife'
- * - Two-pane View modal (Application fields + Documents)
- * - Approve / Reject inside the View modal when status = pending (with confirmation modals)
- * - Writes approved_by (current admin user_id) and approved_at / reject_by / rejected_at
- * - Marks related notifications is_read=true when a row’s View is opened
- * - Success toast (2 seconds) after approve/reject
- * - Hides "Additional Information" field from UI
- * - Fixes document preview height (full tall drawer)
- * - Shows loading overlay while approve/reject is saving
- * - ADMIN BELL UI: same top nav as home (menu, bell, profile).
- * - View modal opens instantly with skeleton loading state
- * - NEW: “Mark all as read” now works (server + JS) for:
- *        • public.notifications where "to" ILIKE 'wildlife'
- *        • public.incident_report where category ILIKE 'wildlife monitoring'
+ * wildlife/wildpermit.php — TOP (PHP only, before <!DOCTYPE html>)
+ * - Auth guard (Admin + Wildlife dept)
+ * - Supabase Storage upload (approved_docs bucket)
+ * - Server-side PDF generation (Dompdf)
+ * - AJAX endpoints:
+ *     • mark_read
+ *     • mark_all_read
+ *     • details
+ *     • decide  (approve => generate PDF → upload → save URL in public.approved_docs)
+ *     • mark_notifs_for_approval
  */
 
 declare(strict_types=1);
@@ -23,12 +18,21 @@ session_start();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
+date_default_timezone_set('Asia/Manila');
+
+/* ---------- Auth guard (Admin + Wildlife) ---------- */
 if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
     header('Location: ../superlogin.php');
     exit();
 }
 
 require_once __DIR__ . '/../backend/connection.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Dompdf\Dompdf;
+use Dompdf\Options;
+
+/* ---------- Helpers ---------- */
 
 $user_id = (string)$_SESSION['user_id'];
 try {
@@ -62,7 +66,6 @@ function notempty($v): bool
 {
     return $v !== null && trim((string)$v) !== '' && $v !== 'null';
 }
-
 function time_elapsed_string($datetime, $full = false): string
 {
     if (!$datetime) return '';
@@ -95,6 +98,308 @@ function normalize_url(string $v, string $base): string
     return '';
 }
 
+/* ---------- Supabase Storage (approved_docs) ---------- */
+$STORAGE_BUCKET = 'approved_docs';
+
+/* read from env first, then constants from connection.php */
+$SUPABASE_URL = getenv('SUPABASE_URL')
+    ?: (defined('SUPABASE_URL') ? SUPABASE_URL : '');
+
+$SUPABASE_SERVICE_ROLE = getenv('SUPABASE_SERVICE_ROLE_KEY')
+    ?: (defined('SUPABASE_SERVICE_ROLE_KEY') ? constant('SUPABASE_SERVICE_ROLE_KEY')
+        : (defined('SUPABASE_SERVICE_KEY') ? SUPABASE_SERVICE_KEY : ''));
+
+
+/** Upload raw bytes to Supabase Storage and return public URL */
+function supabase_storage_upload(string $bucket, string $objectPath, string $bytes, string $contentType = 'application/pdf'): ?string
+{
+    global $SUPABASE_URL, $SUPABASE_SERVICE_ROLE;
+    if (!$SUPABASE_URL || !$SUPABASE_SERVICE_ROLE) return null;
+
+    $url = rtrim($SUPABASE_URL, '/') . "/storage/v1/object/" . rawurlencode($bucket) . "/" .
+        implode('/', array_map('rawurlencode', explode('/', $objectPath)));
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST  => 'POST',
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bearer ' . $SUPABASE_SERVICE_ROLE,
+            'apikey: ' . $SUPABASE_SERVICE_ROLE,
+            'Content-Type: ' . $contentType,
+            'x-upsert: true',
+            'Cache-Control: public, max-age=31536000',
+        ],
+        CURLOPT_POSTFIELDS     => $bytes,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 60,
+    ]);
+    $res  = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($res === false || $http < 200 || $http >= 300) {
+        error_log('[SUPABASE UPLOAD] HTTP ' . $http . ' ERR: ' . curl_error($ch) . ' BODY: ' . substr((string)$res, 0, 300));
+        curl_close($ch);
+        return null;
+    }
+    curl_close($ch);
+
+    $publicPath = implode('/', array_map('rawurlencode', explode('/', $objectPath)));
+    return rtrim($SUPABASE_URL, '/') . "/storage/v1/object/public/" . rawurlencode($bucket) . "/" . $publicPath;
+}
+
+/* ---------- PDF builder utilities ---------- */
+function img_data_uri(string $path): string
+{
+    if (!is_file($path)) return '';
+    $mime = @mime_content_type($path) ?: 'image/png';
+    $bin  = @file_get_contents($path);
+    if ($bin === false) return '';
+    return 'data:' . $mime . ';base64,' . base64_encode($bin);
+}
+
+function build_permit_html(array $d): string
+{
+    $denr = img_data_uri(__DIR__ . '/denr.png');
+    $ph   = img_data_uri(__DIR__ . '/pilipinas.png');
+    $e = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+    $rows  = '';
+    $total = 0;
+    foreach ($d['animals'] as $a) {
+        $cn  = $a['commonName']     ?? $a['common']     ?? '';
+        $sn  = $a['scientificName'] ?? $a['scientific'] ?? '';
+        $qty = (int)($a['quantity'] ?? 0);
+        $total += $qty;
+        $rows .= '<tr><td>' . $e($cn) . '</td><td>' . $e($sn) . '</td><td>' . $qty . '</td></tr>';
+    }
+
+    return '
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;font-family:"Times New Roman",serif}
+body{margin:0;background:#fff}
+
+/* Put the physical margins on the page itself */
+@page{ size:letter; margin:.5in }
+
+.container{position:relative;width:100%;min-height:11in;margin:0 auto;background:#fff;padding:0}
+
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px;padding:10px 12px 10px 12px;border-bottom:4px solid #f00}
+.left-section{display:flex;gap:15px;align-items:flex-start}
+.logo{width:80px;height:80px;border-radius:5px;overflow:hidden}
+.logo img{width:100%;height:100%;object-fit:contain}
+.right-logo{width:110px;height:110px;border-radius:5px;overflow:hidden;margin-left:15px}
+.right-logo img{width:100%;height:100%;object-fit:contain}
+.denr-info h1{font-size:17px;margin:0 0 4px}
+.denr-info p{font-size:13px;margin:0}
+.permit-number{font-size:15px;margin:12px 12px}
+.permit-title{text-align:center;margin:15px 0;font-size:20px;font-weight:700;text-decoration:underline}
+.subtitle{text-align:center;margin-bottom:15px;font-size:16px}
+.underline-field,.small-underline,.inline-underline{border-bottom:1px solid #000;display:inline-block;margin:0 3px;padding:0 3px}
+.underline-field{min-width:280px}.inline-underline{min-width:200px}.small-underline{min-width:140px}
+.permit-body{font-size:14px;line-height:1.5;color:#000;padding:0 12px 12px 12px}
+.info-table{width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;table-layout:fixed}
+.info-table th,.info-table td{border:1px solid #000;padding:8px;text-align:left;word-break:break-word}
+.info-table th{background:#f0f0f0}
+.nothing-follows{text-align:center;margin-top:10px}
+.contact-info{text-align:center;font-size:13px;margin-top:25px}
+
+/* APPROVE stamp: smaller, oval, centered text, no inner ring */
+.stamp{
+  position:absolute;
+  top:.12in;           /* safely inside the .5in page margin */
+  right:.12in;
+  width:1.10in;        /* oval: width != height */
+  height:.90in;
+  border-radius:50%;   /* ellipse because of non-equal sides */
+  background:#173a7a;
+  color:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);
+}
+.stamp .label{
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%); /* perfectly centered text */
+  font-weight:900;
+  font-size:18px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+}
+</style></head><body>
+<div class="container" id="permit">
+  <div class="stamp"><div class="label">APPROVED</div></div>
+
+  <div class="header">
+    <div class="left-section">
+      <div class="logo"><img src="' . $e($denr) . '" alt="DENR"></div>
+      <div class="denr-info">
+        <h1>Department of Environment and Natural Resources</h1>
+        <p>Region 7</p>
+      </div>
+    </div>
+    <div class="right-logo"><img src="' . $e($ph) . '" alt="Philippines Flag"></div>
+  </div>
+
+  <div class="permit-details">
+    <div class="permit-number">
+      NEW PERMIT<br>
+      WFP No. <span class="small-underline">' . $e($d['wfp_no']) . '</span><br>
+      SERIES OF ' . $e($d['series']) . '<br>
+      Date Issued: <span class="small-underline">' . $e($d['date_issued_fmt']) . '</span><br>
+      Expiry Date: <span class="small-underline">' . $e($d['expiry_date_fmt']) . '</span>
+    </div>
+  </div>
+
+  <div class="permit-title">WILDLIFE FARM PERMIT</div>
+  <div class="subtitle">(Small Scale Farming)</div>
+
+  <div class="permit-body">
+    <p>
+      Pursuant to the provisions of Republic Act No. 9147 otherwise known as the
+      "Wildlife Resources Conservation and Protection Act" of 2001, as implemented by the
+      Joint DENR-DA-PCSD Administrative Order No. 1, Series of 2004 and in consonance with
+      the provisions of Section 5-9 of DENR Administrative Order No. 2004-55 dated August 31, 2004,
+      and upon the recommendation of the Regional Wildlife Committee during its meeting on
+      <strong>' . $e($d['meeting_date_fmt']) . '</strong> through RWC Resolution No. 04-' . $e($d['series']) . ',
+    </p>
+
+    <div>
+      <span class="underline-field">' . $e($d['establishment_name']) . '</span>
+      represented by <span class="inline-underline">' . $e($d['client_name']) . '</span>
+      with facility located at <span class="inline-underline">' . $e($d['establishment_address']) . '</span>
+      is hereby granted a Wildlife Farm Permit (WFP) subject to the terms, conditions and restrictions herein specified:
+      valid until <strong>' . $e($d['expiry_date_fmt']) . '</strong>.
+    </div>
+
+    <ol class="terms-list">
+      <li>
+        The Permittee shall maintain and operate a wildlife breeding farm facility in
+        <span class="underline-field">' . $e($d['establishment_address']) . '</span>
+        with wildlife species for breeding, educational and trading/commercial purposes.
+      </li>
+
+      <table class="info-table">
+        <tr><th>Common Name</th><th>Scientific Name</th><th>Quantity</th></tr>' . $rows . '
+        <tr><td><strong>TOTAL</strong></td><td></td><td><strong>' . $e((string)$total) . '</strong></td></tr>
+      </table>
+
+      <p class="nothing-follows">NOTHING FOLLOWS</p>
+
+      <li>The Permittee shall allow, upon notice, any DENR authorized representative(s) to visit and/or inspect the farm facility or premises and conduct an inventory of existing stocks;</li>
+      <li>The Permittee shall submit monthly production and quarterly reports to the DENR Region 7 …</li>
+      <li>… (retain full terms from your original) …</li>
+    </ol>
+
+    <div class="contact-info">
+      <p>National Government Center, Sudlon, Lahug, Cebu City, Philippines 6000</p>
+      <p>Tel. Nos: (+6332) 346-9612, 328-3335 Fax No: 328-3336</p>
+      <p>E-mail: t7@denr.gov.ph / redeenr7@yahoo.com</p>
+    </div>
+  </div>
+</div>
+</body></html>';
+}
+
+
+
+
+/**
+ * Generate PDF, upload to Supabase Storage, insert row in public.approved_docs, return URL/filename.
+ * Storage key: approved_docs/wildlife/new permit/{client_id}/{approved_id}/files/{filename}.pdf
+ * Expects $inputs = ['wfp_no','series','meeting_date' (YYYY-MM-DD)]
+ */
+function generate_and_store_permit(PDO $pdo, string $approvalId, array $inputs): array
+{
+    global $STORAGE_BUCKET;
+
+    // Fetch application & client
+    $st = $pdo->prepare("
+        SELECT a.application_id, a.client_id,
+               af.additional_information,
+               c.first_name, c.last_name
+        FROM public.approval a
+        LEFT JOIN public.application_form af ON af.application_id = a.application_id
+        LEFT JOIN public.client c            ON c.client_id       = a.client_id
+        WHERE a.approval_id=:aid
+        LIMIT 1
+    ");
+    $st->execute([':aid' => $approvalId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $clientId = (string)($row['client_id'] ?? '');
+    $ai = [];
+    if (!empty($row['additional_information'])) {
+        $tmp = json_decode((string)$row['additional_information'], true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($tmp)) $ai = $tmp;
+    }
+
+    // Dates
+    $dateIssued  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $expiryDate  = (clone $dateIssued)->modify('+2 years');
+    $meetingDate = DateTime::createFromFormat('Y-m-d', (string)($inputs['meeting_date'] ?? ''))
+        ?: new DateTime('now', new DateTimeZone('Asia/Manila'));
+
+    // Data for template (no sample values)
+    $data = [
+        'wfp_no'                => (string)($inputs['wfp_no'] ?? ''),
+        'series'                => (string)($inputs['series'] ?? ''),
+        'meeting_date_fmt'      => $meetingDate->format('F j, Y'),
+        'date_issued_fmt'       => $dateIssued->format('F j, Y'),
+        'expiry_date_fmt'       => $expiryDate->format('F j, Y'),
+        'establishment_name'    => $ai['establishment_name']    ?? ($ai['establishmentName'] ?? ''),
+        'establishment_address' => $ai['establishment_address'] ?? ($ai['establishmentAddress'] ?? ''),
+        'client_name'           => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
+        'animals'               => is_array($ai['animals'] ?? null) ? $ai['animals'] : [],
+    ];
+
+    // Render HTML → PDF
+    $opts = new Options();
+    $opts->set('isRemoteEnabled', true);
+    $opts->set('isHtml5ParserEnabled', true);
+    $dompdf = new Dompdf($opts);
+    $dompdf->loadHtml(build_permit_html($data), 'UTF-8');
+    $dompdf->setPaper('letter', 'portrait');
+    $dompdf->render();
+    $pdf = $dompdf->output();
+
+    // Insert approved_docs row FIRST to get approved_id
+    $ins = $pdo->prepare("
+        INSERT INTO public.approved_docs
+            (approval_id, approved_document, date_issued, expiry_date, wfp_no, series, meeting_date)
+        VALUES
+            (:aid, ''::text, :issued, :expiry, :wfp, :series, :meet)
+        RETURNING approved_id
+    ");
+    $ins->execute([
+        ':aid'    => $approvalId,
+        ':issued' => $dateIssued->format('Y-m-d'),
+        ':expiry' => $expiryDate->format('Y-m-d'),
+        ':wfp'    => (string)$inputs['wfp_no'],
+        ':series' => (string)$inputs['series'],
+        ':meet'   => $meetingDate->format('Y-m-d'),
+    ]);
+    $approvedId = (string)$ins->fetchColumn();
+    if (!$approvedId) {
+        throw new RuntimeException('Failed to get approved_id.');
+    }
+
+    // Compose storage key per required structure
+    $safeBase = preg_replace('/[^A-Za-z0-9_\-]/', '_', (string)$inputs['wfp_no'] . '_' . (string)$inputs['series']);
+    $filename = 'WFP_' . $safeBase . '_' . date('Ymd_His') . '.pdf';
+    $objectKey = "wildlife/new permit/{$clientId}/{$approvedId}/{$filename}";
+
+
+    // Upload to Supabase Storage
+    $publicUrl = supabase_storage_upload($STORAGE_BUCKET, $objectKey, $pdf, 'application/pdf');
+    if (!$publicUrl) {
+        throw new RuntimeException('Supabase upload failed.');
+    }
+
+    // Update row with public URL
+    $pdo->prepare("UPDATE public.approved_docs SET approved_document=:u WHERE approved_id=:id")
+        ->execute([':u' => $publicUrl, ':id' => $approvedId]);
+
+    return ['url' => $publicUrl, 'filename' => $filename, 'approved_id' => $approvedId];
+}
+
 /* ---------------- AJAX (mark single read) ---------------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
     header('Content-Type: application/json');
@@ -105,8 +410,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
         exit();
     }
     try {
-        if ($notifId)     $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id")->execute([':id' => $notifId]);
-        if ($incidentId)  $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id")->execute([':id' => $incidentId]);
+        if ($notifId)    $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id")->execute([':id' => $notifId]);
+        if ($incidentId) $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id")->execute([':id' => $incidentId]);
         echo json_encode(['ok' => true]);
     } catch (Throwable $e) {
         error_log('[WILD-APPSTAT MARK_READ] ' . $e->getMessage());
@@ -286,6 +591,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
         }
 
         if ($action === 'approve') {
+            // Required inputs from confirmation modal
+            $wfpNo  = trim((string)($_POST['wfp_no'] ?? ''));
+            $series = trim((string)($_POST['series'] ?? ''));
+            $meet   = trim((string)($_POST['meeting_date'] ?? '')); // YYYY-MM-DD
+
+            if ($wfpNo === '' || $series === '' || $meet === '') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'Missing WFP No., Series, or Meeting Date']);
+                exit;
+            }
+
+            // Flip status
             $pdo->prepare("
                 UPDATE public.approval
                    SET approval_status='approved',
@@ -294,18 +611,27 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                  WHERE approval_id=:aid
             ")->execute([':by' => $adminId, ':aid' => $approvalId]);
 
+            // Generate PDF & insert/update approved_docs
+            $docInfo = generate_and_store_permit($pdo, $approvalId, [
+                'wfp_no'       => $wfpNo,
+                'series'       => $series,
+                'meeting_date' => $meet,
+            ]);
+            $docUrl = $docInfo['url'] ?? null;
+
+            // Notify client
             $pdo->prepare("
                 INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
                 VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
             ")->execute([
-                ':aid' => $approvalId,
-                ':msg' => 'Your wildlife permit request was approved.',
+                ':aid'      => $approvalId,
+                ':msg'      => 'Your wildlife permit was approved. You can download you permit now.',
                 ':fromDept' => $fromDept,
-                ':toUser' => $toUserId
+                ':toUser'   => $toUserId
             ]);
 
             $pdo->commit();
-            echo json_encode(['ok' => true, 'status' => 'approved']);
+            echo json_encode(['ok' => true, 'status' => 'approved', 'document_url' => $docUrl]);
         } else {
             if ($reason === '') {
                 $pdo->rollBack();
@@ -342,6 +668,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
 }
 
 /* ---------------- AJAX (mark notifications for approval) ---------------- */
+/* ---------------- AJAX (mark notifications for approval) ---------------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
     header('Content-Type: application/json');
     $aid = $_POST['approval_id'] ?? '';
@@ -350,7 +677,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
         exit;
     }
     try {
-        $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE approval_id=:aid AND is_read=false")->execute([':aid' => $aid]);
+        $pdo->prepare("
+            UPDATE public.notifications
+               SET is_read = true
+             WHERE approval_id = :aid
+               AND is_read = false
+               AND LOWER(BTRIM(COALESCE(\"to\", ''))) = 'wildlife'
+        ")->execute([':aid' => $aid]);
+
         echo json_encode(['ok' => true]);
     } catch (Throwable $e) {
         error_log('[WILD-MARK-READ] ' . $e->getMessage());
@@ -358,6 +692,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
     }
     exit();
 }
+
 
 /* ---------------- NOTIFS for header ---------------- */
 $wildNotifs = [];
@@ -428,6 +763,10 @@ try {
 
 $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -1308,7 +1647,6 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
                 </div>
-
             </div>
 
             <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
@@ -1384,7 +1722,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 <div class="nav-icon <?php echo $current_page === 'forestry-profile' ? 'active' : ''; ?>"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
                     <a href="wildprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
-                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+                    <a href="../superlogin.php" class="dropdown-item"><i class="fas a-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
@@ -1550,7 +1888,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
         <div id="filePreviewDrawer" class="preview-drawer" aria-live="polite" aria-hidden="true">
             <div class="preview-header">
                 <span id="previewTitle" class="truncate">Document</span>
-                <button class="icon-btn" type="button" aria-label="Close preview" data-close-preview><i class="fas fa-times"></i></button>
+                <button class="icon-btn" type="button" aria-label="Close" data-close-preview><i class="fas fa-times"></i></button>
             </div>
             <div class="preview-body">
                 <div id="previewImageWrap" class="hidden"><img id="previewImage" alt="Preview"></div>
@@ -1590,10 +1928,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
     <div id="screenBlocker" class="blocker">
         <div class="lds"></div><span>Updating…</span>
     </div>
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const mobileToggle = document.querySelector('.mobile-toggle');
@@ -1660,11 +1998,11 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }
             });
 
-            /* MARK ALL AS READ (works now via this same file) */
+            /* MARK ALL AS READ */
             document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
                 e.preventDefault();
 
-                // Optimistically update UI
+                // Optimistic UI
                 document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
                 const badge = document.querySelector('#notifDropdown .badge');
                 if (badge) {
@@ -1679,18 +2017,13 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             'X-Requested-With': 'XMLHttpRequest'
                         }
                     }).then(r => r.json());
-
-                    if (!res || res.ok !== true) {
-                        // If server failed, reload to keep state consistent
-                        location.reload();
-                    }
+                    if (!res || res.ok !== true) location.reload();
                 } catch (_) {
-                    // If network failed, reload to keep state consistent
                     location.reload();
                 }
             });
 
-            /* Click any single notification → mark read server-side */
+            /* Single notification → mark read */
             document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
                 const link = e.target.closest('.notification-link');
                 if (!link) return;
@@ -1818,7 +2151,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             });
             document.querySelector('[data-close-preview]')?.addEventListener('click', closePreview);
 
-            /* View button -> open modal instantly + fetch details */
+            /* View button -> open modal + fetch details */
             let currentApprovalId = null;
             document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
                 const btn = e.target.closest('[data-action="view"]');
@@ -1934,6 +2267,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     }
                     return pre;
                 }
+
                 if (Array.isArray(res.application) && res.application.length) {
                     empty.classList.add('hidden');
                     res.application.forEach(item => {
@@ -2007,17 +2341,50 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     modalActions.classList.add('hidden');
                 }
 
-                // Reveal content
                 hideModalSkeleton();
             });
 
-            /* Approve / Reject flow */
+            /* Approve / Reject flow (with WFP inputs on approve) */
             let pendingAction = null;
+
+            // Inject inputs into approve modal if not present (NOTE: no expiry-date note)
+            function ensureApproveInputs() {
+                const panel = document.querySelector('#approveConfirm .confirm-panel');
+                if (!panel || document.getElementById('fieldWfpNo')) return;
+
+                const block = document.createElement('div');
+                block.className = 'confirm-form';
+                block.style.display = 'grid';
+                block.style.gridTemplateColumns = '1fr 1fr';
+                block.style.gap = '10px';
+                block.style.marginTop = '8px';
+
+                const thisYear = new Date().getFullYear();
+                const todayISO = new Date().toISOString().slice(0, 10);
+
+                block.innerHTML = `
+            <div style="grid-column:1/-1;">
+                <label for="fieldWfpNo" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">WFP No.</label>
+                <input id="fieldWfpNo" class="input" type="text" placeholder="e.g., WFP-${thisYear}-00001" />
+            </div>
+            <div>
+                <label for="fieldSeries" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Series</label>
+                <input id="fieldSeries" class="input" type="text" value="${thisYear}" />
+            </div>
+            <div>
+                <label for="fieldMeetingDate" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Meeting Date</label>
+                <input id="fieldMeetingDate" class="input" type="date" value="${todayISO}" />
+            </div>
+        `;
+                panel.insertBefore(block, panel.querySelector('.confirm-actions'));
+            }
 
             function openConfirm(which) {
                 pendingAction = which;
-                if (which === 'approve') document.getElementById('approveConfirm').classList.add('show');
-                else {
+                if (which === 'approve') {
+                    ensureApproveInputs();
+                    document.getElementById('approveConfirm').classList.add('show');
+                } else {
                     document.getElementById('rejectConfirm').classList.add('show');
                     document.getElementById('rejectReason').value = '';
                 }
@@ -2029,39 +2396,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             }
             document.querySelectorAll('[data-close-confirm],[data-cancel-confirm]').forEach(el => el.addEventListener('click', closeAllConfirms));
 
-            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
-                if (pendingAction !== 'approve') return;
-                block(true);
-                const res = await sendDecision('approve');
-                block(false);
-                if (!res.ok) {
-                    alert(res.error || 'Failed to approve');
-                    return;
-                }
-                applyDecisionUI('approved');
-                closeAllConfirms();
-                showToast('Request approved', 'success');
-            });
-
-            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
-                if (pendingAction !== 'reject') return;
-                const reason = (document.getElementById('rejectReason').value || '').trim();
-                if (!reason) {
-                    alert('Please provide a reason.');
-                    return;
-                }
-                block(true);
-                const res = await sendDecision('reject', reason);
-                block(false);
-                if (!res.ok) {
-                    alert(res.error || 'Failed to reject');
-                    return;
-                }
-                applyDecisionUI('rejected');
-                closeAllConfirms();
-                showToast('Request rejected', 'success');
-            });
-
+            // Helpers for sending decisions (with extra fields on approve)
             async function sendDecision(action, reason = '') {
                 if (!currentApprovalId) return {
                     ok: false,
@@ -2071,6 +2406,24 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 form.set('approval_id', currentApprovalId);
                 form.set('action', action);
                 if (action === 'reject') form.set('reason', reason);
+
+                if (action === 'approve') {
+                    // collect WFP fields
+                    const wfpNo = (document.getElementById('fieldWfpNo')?.value || '').trim();
+                    const series = (document.getElementById('fieldSeries')?.value || '').trim();
+                    const meet = (document.getElementById('fieldMeetingDate')?.value || '').trim();
+
+                    if (!wfpNo || !series || !meet) {
+                        return {
+                            ok: false,
+                            error: 'Please complete WFP No., Series, and Meeting Date.'
+                        };
+                    }
+                    form.set('wfp_no', wfpNo);
+                    form.set('series', series);
+                    form.set('meeting_date', meet); // yyyy-mm-dd
+                }
+
                 return fetch('<?php echo basename(__FILE__); ?>?ajax=decide', {
                     method: 'POST',
                     headers: {
@@ -2096,6 +2449,44 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
                 }
             }
+
+            // Approve
+            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'approve') return;
+
+                block(true);
+                const res = await sendDecision('approve');
+                block(false);
+
+                if (!res.ok) {
+                    alert(res.error || 'Failed to approve');
+                    return;
+                }
+                applyDecisionUI('approved');
+                closeAllConfirms();
+                showToast('Request approved', 'success');
+                // NOTE: do not open permit.php — per requirements
+            });
+
+            // Reject
+            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'reject') return;
+                const reason = (document.getElementById('rejectReason').value || '').trim();
+                if (!reason) {
+                    alert('Please provide a reason.');
+                    return;
+                }
+                block(true);
+                const res = await sendDecision('reject', reason);
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to reject');
+                    return;
+                }
+                applyDecisionUI('rejected');
+                closeAllConfirms();
+                showToast('Request rejected', 'success');
+            });
 
             /* Filters */
             const filterStatus = document.getElementById('filterStatus');
@@ -2125,6 +2516,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             }
         });
     </script>
+
 </body>
+
+
+
 
 </html>

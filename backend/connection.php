@@ -52,3 +52,31 @@ if (!defined('SUPABASE_BUCKET_PROFILES')) {
 if (!defined('REQUIREMENTS_BUCKET')) {
     define('REQUIREMENTS_BUCKET', 'requirements');
 }
+
+// --- Make constants visible as environment variables for pages using env_get() ---
+if (!getenv('SUPABASE_URL')) {
+    putenv('SUPABASE_URL=' . SUPABASE_URL);
+    $_ENV['SUPABASE_URL'] = SUPABASE_URL;
+    $_SERVER['SUPABASE_URL'] = SUPABASE_URL;
+}
+
+// NOTE: your constant is SUPABASE_SERVICE_KEY but the code expects SUPABASE_SERVICE_ROLE_KEY
+if (!getenv('SUPABASE_SERVICE_ROLE_KEY')) {
+    putenv('SUPABASE_SERVICE_ROLE_KEY=' . SUPABASE_SERVICE_KEY);
+    $_ENV['SUPABASE_SERVICE_ROLE_KEY'] = SUPABASE_SERVICE_KEY;
+    $_SERVER['SUPABASE_SERVICE_ROLE_KEY'] = SUPABASE_SERVICE_KEY;
+}
+
+// Buckets (optional but recommended so previews/regeneration match)
+if (!getenv('SUPABASE_REQUIREMENTS_BUCKET')) {
+    putenv('SUPABASE_REQUIREMENTS_BUCKET=' . REQUIREMENTS_BUCKET);
+    $_ENV['SUPABASE_REQUIREMENTS_BUCKET'] = REQUIREMENTS_BUCKET;
+}
+if (!getenv('SUPABASE_REQUIREMENTS_PUBLIC')) {
+    putenv('SUPABASE_REQUIREMENTS_PUBLIC=true'); // or 'false' if your requirements bucket is private
+    $_ENV['SUPABASE_REQUIREMENTS_PUBLIC'] = 'true';
+}
+if (!getenv('SUPABASE_SIGNATURES_BUCKET')) {
+    putenv('SUPABASE_SIGNATURES_BUCKET=signatures'); // adjust to your actual signatures bucket
+    $_ENV['SUPABASE_SIGNATURES_BUCKET'] = 'signatures';
+}

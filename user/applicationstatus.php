@@ -11,6 +11,7 @@ declare(strict_types=1);
  * - Header/nav copied from user_home.php (including Notifications UI)
  * - Notifications are now LIVE: public.notifications."to" = current user_id
  * - UPDATED: View modal opens instantly with skeleton (bone) UI while details load
+ * - NEW: Download button for approved rows (requirements.application_form vs approved_docs.approved_document)
  */
 
 session_start();
@@ -44,7 +45,7 @@ function normalize_url(string $v, string $base): string
         $v = ltrim($v, '/');
         return $base . '/' . $v;
     }
-    return '';
+    return $v; // allow site-relative paths like /storage/... to pass through
 }
 /** Strip any rejection reason text from a notification message */
 function strip_reason_from_message(?string $msg): string
@@ -194,6 +195,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
 /* ---------- PAGE DATA: approvals (all for this user) ---------- */
 $rows = [];
 try {
+    // Join requirements for application_form; LATERAL join to get latest approved_docs for each approval
     $st = $pdo->prepare("
         select
           a.approval_id,
@@ -203,9 +205,19 @@ try {
           a.submitted_at,
           a.application_id,
           a.requirement_id,
-          c.first_name
+          c.first_name,
+          r.application_form as req_application_form,
+          ad.approved_document
         from public.approval a
         left join public.client c on c.client_id = a.client_id
+        left join public.requirements r on r.requirement_id = a.requirement_id
+        left join lateral (
+            select d.approved_document
+            from public.approved_docs d
+            where d.approval_id = a.approval_id
+            order by d.id desc
+            limit 1
+        ) ad on true
         where c.user_id = :uid
         order by a.submitted_at desc nulls last, a.approval_id desc
         limit 200
@@ -1246,19 +1258,41 @@ try {
                             $cls = $st === 'approved' ? 'approved' : ($st === 'rejected' ? 'rejected' : 'pending');
                             $rt  = strtolower((string)($r['request_type'] ?? ''));
                             $pt  = strtolower((string)($r['permit_type'] ?? 'none'));
+
+                            // Compute download URL per your rule:
+                            // - permit_type 'none'  -> requirements.application_form
+                            // - new / renewal       -> approved_docs.approved_document
+                            $downloadUrl = '';
+                            if ($st === 'approved') {
+                                if ($pt === 'none') {
+                                    $downloadUrl = normalize_url((string)($r['req_application_form'] ?? ''), $FILE_BASE);
+                                } else {
+                                    $downloadUrl = normalize_url((string)($r['approved_document'] ?? ''), $FILE_BASE);
+                                }
+                            }
                             ?>
                             <tr
                                 data-approval-id="<?= h($r['approval_id']) ?>"
                                 data-status="<?= h($st) ?>"
                                 data-request-type="<?= h($rt) ?>"
                                 data-permit-type="<?= h($pt) ?>"
-                                data-client="<?= h($r['first_name'] ?? '') ?>">
+                                data-client="<?= h($r['first_name'] ?? '') ?>"
+                                data-download-url="<?= h($downloadUrl) ?>">
                                 <td><?= h($r['first_name'] ?? '—') ?></td>
                                 <td><span class="pill"><?= h($rt ?: '—') ?></span></td>
                                 <td><span class="pill neutral"><?= h($pt) ?></span></td>
                                 <td><span class="badge status <?= $cls ?>"><?= ucfirst($st) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
-                                <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
+                                <td>
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                                        <button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button>
+                                        <?php if ($st === 'approved'): ?>
+                                            <button class="btn small" data-action="download" <?= $downloadUrl ? '' : 'disabled title="No file available yet"' ?>>
+                                                <i class="fas fa-download"></i> Download
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
 
@@ -1578,6 +1612,67 @@ try {
                 openApproval(approvalId);
             });
 
+            // table "Download" (force download without opening a page or tab)
+            document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-action="download"]');
+                if (!btn) return;
+
+                const tr = btn.closest('tr');
+                const url = (tr?.dataset.downloadUrl || '').trim();
+                if (!url) {
+                    alert('Download link is not available yet.');
+                    return;
+                }
+
+                try {
+                    // Fast path for data URLs
+                    if (url.startsWith('data:')) {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.setAttribute('download', 'document');
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        return;
+                    }
+
+                    const res = await fetch(url, {
+                        credentials: 'omit'
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+                    // Try filename from headers; else derive from URL path
+                    const dispo = res.headers.get('Content-Disposition') || '';
+                    let filename = 'document';
+                    const m = dispo.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+                    if (m && m[1]) {
+                        filename = decodeURIComponent(m[1].replace(/["']/g, ''));
+                    } else {
+                        const u = new URL(url, window.location.origin);
+                        filename = (u.pathname.split('/').pop() || 'document').split('?')[0];
+                    }
+
+                    const blob = await res.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.setAttribute('download', filename);
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+                } catch (err) {
+                    // Fallback: hidden iframe download (no navigation)
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = url;
+                    document.body.appendChild(iframe);
+                    setTimeout(() => iframe.remove(), 10000);
+                }
+            });
+
             // close modal
             document.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', () => {
                 document.getElementById('viewModal').classList.add('hidden');
@@ -1792,6 +1887,7 @@ try {
             });
         });
     </script>
+
 </body>
 
 </html>

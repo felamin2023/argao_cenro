@@ -2,23 +2,16 @@
 
 /**
  * seedlingpermit.php (Seedling Requests Admin UI)
- * - Lists approvals with request_type = 'seedling'
- * - Two-pane View modal:
- *      LEFT  → Request Info (Client, Request Type, Permit Type, Status)
- *      RIGHT → Documents (with tall preview drawer)
- * - NO meta strip/header inside the modal (removed because info is in the left pane)
- * - Uses skeleton "bone" loaders while details are loading
- * - Approve / Reject inside the View modal when status = pending (with confirmation modals)
- * - Writes approved_by (current admin user_id) and approved_at / reject_by / rejected_at
- * - Marks related notifications is_read=true when a row’s View is opened (and updates bell)
- * - Success toast (2 seconds) after approve/reject
- * - ADMIN BELL UI:
- *      • Shows only notifications where "to" ILIKE 'Seedling'
- *      • Also shows incident_report rows where category ILIKE 'Tree Cutting'
- * - “Mark all as read” marks:
- *      • public.notifications where "to" ILIKE 'Seedling'
- *      • public.incident_report where category ILIKE 'Tree Cutting'
- * - Email icon removed from header
+ * Server/PHP “top” section only (everything before <!DOCTYPE html>)
+ * - Auth guard (admin + seedling dept)
+ * - Supabase helpers (uses ENV or constants from connection.php)
+ * - MHTML builder with circular APPROVED badge
+ * - AJAX endpoints:
+ *      • mark_read                – mark one notif (by notif_id or incident_id)
+ *      • mark_all_read            – mark all seedling+incident notifs as read
+ *      • details                  – returns meta, files, and requested_seeds text
+ *      • decide                   – approve/reject (on approve regenerates & overwrites doc)
+ *      • mark_notifs_for_approval – mark ONLY seedling-targeted notifs for this approval
  */
 
 declare(strict_types=1);
@@ -46,7 +39,6 @@ try {
 
     $isAdmin = $me && strtolower((string)$me['role']) === 'admin';
     $dept    = strtolower((string)($me['department'] ?? ''));
-    // allow seedling variants
     $isSeed  = in_array($dept, ['seedling', 'seedlings', 'nursery', 'seedling section'], true);
 
     if (!$isAdmin || !$isSeed) {
@@ -67,7 +59,6 @@ function notempty($v): bool
 {
     return $v !== null && trim((string)$v) !== '' && $v !== 'null';
 }
-
 function time_elapsed_string($datetime, $full = false): string
 {
     if (!$datetime) return '';
@@ -104,6 +95,335 @@ function is_image_url(string $url): bool
     $path = parse_url($url, PHP_URL_PATH) ?? '';
     $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
     return in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'], true);
+}
+
+/* ====== Supabase env + helpers + storage + builder (APPROVED) ====== */
+
+/* env_get with constants fallback (from connection.php) */
+function env_get(string $k, ?string $def = null): ?string
+{
+    $v = getenv($k);
+    if ($v === false || $v === null || $v === '') {
+        $v = $_ENV[$k] ?? $_SERVER[$k] ?? null;
+    }
+    if (($v === null || $v === '') && defined($k)) {
+        /** @noinspection PhpConstantReassignmentInspection */
+        $v = constant($k);
+    }
+    return ($v !== null && $v !== '') ? (string)$v : $def;
+}
+
+/* Supabase basics (try ENV first, then constants SUPABASE_URL / SUPABASE_SERVICE_KEY) */
+$SUPABASE_URL = rtrim((string)env_get('SUPABASE_URL', defined('SUPABASE_URL') ? SUPABASE_URL : ''), '/');
+$SUPABASE_SERVICE_ROLE_KEY = (string)env_get('SUPABASE_SERVICE_ROLE_KEY', defined('SUPABASE_SERVICE_KEY') ? SUPABASE_SERVICE_KEY : '');
+$REQ_BUCKET = env_get('SUPABASE_REQUIREMENTS_BUCKET', defined('REQUIREMENTS_BUCKET') ? REQUIREMENTS_BUCKET : 'requirements');
+$REQ_BUCKET_PUBLIC = strtolower((string)env_get('SUPABASE_REQUIREMENTS_PUBLIC', 'true')) === 'true';
+$SIG_BUCKET = env_get('SUPABASE_SIGNATURES_BUCKET', 'signatures'); // used if signature is private path
+
+/* Ensure creds present */
+function require_supabase_creds(): void
+{
+    global $SUPABASE_URL, $SUPABASE_SERVICE_ROLE_KEY;
+    if (!$SUPABASE_URL || !$SUPABASE_SERVICE_ROLE_KEY) {
+        throw new RuntimeException('Supabase credentials are not configured on the server.');
+    }
+}
+
+/* URL/path helpers */
+function encode_storage_path(string $path): string
+{
+    $parts = array_map('rawurlencode', array_filter(explode('/', $path), fn($p) => $p !== ''));
+    return implode('/', $parts);
+}
+function http_get_bytes(string $url, int $timeout = 30): string
+{
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false || $http < 200 || $http >= 300) {
+        throw new RuntimeException("HTTP GET failed ($http): $err");
+    }
+    return (string)$resp;
+}
+
+/* Storage: upload / delete / download (private) */
+function storage_upload_binary(string $bucket, string $objectPath, string $contentType, string $binary): void
+{
+    require_supabase_creds();
+    global $SUPABASE_URL, $SUPABASE_SERVICE_ROLE_KEY;
+
+    $url = $SUPABASE_URL . '/storage/v1/object/' . rawurlencode($bucket) . '/' . encode_storage_path($objectPath);
+
+    error_log("DEBUG: Uploading to: $bucket/$objectPath, Size: " . strlen($binary));
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $SUPABASE_SERVICE_ROLE_KEY,
+            'apikey: ' . $SUPABASE_SERVICE_ROLE_KEY,
+            'Content-Type: ' . $contentType
+        ],
+        CURLOPT_POSTFIELDS => $binary,
+        CURLOPT_TIMEOUT => 60,
+    ]);
+
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+
+    if ($resp === false || $http < 200 || $http >= 300) {
+        error_log("DEBUG: Storage upload FAILED - HTTP: $http, Error: $err, Response: " . ($resp ?: 'none'));
+        throw new RuntimeException("Storage upload failed ($http): " . ($resp ?: $err));
+    }
+
+    error_log("DEBUG: Storage upload SUCCESS - HTTP: $http");
+}
+function storage_delete_object(string $bucket, string $objectPath): void
+{
+    require_supabase_creds();
+    global $SUPABASE_URL, $SUPABASE_SERVICE_ROLE_KEY;
+    $url = $SUPABASE_URL . '/storage/v1/object/' . rawurlencode($bucket) . '/' . encode_storage_path($objectPath);
+
+    error_log("DEBUG: Deleting from: $bucket/$objectPath");
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $SUPABASE_SERVICE_ROLE_KEY,
+            'apikey: ' . $SUPABASE_SERVICE_ROLE_KEY,
+        ],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($http >= 400 && $http !== 404) {
+        error_log("DEBUG: Storage delete FAILED - HTTP: $http, Response: " . (string)$resp);
+        throw new RuntimeException("Storage delete failed ($http): " . (string)$resp);
+    }
+
+    error_log("DEBUG: Storage delete SUCCESS - HTTP: $http");
+}
+function storage_download_private(string $bucket, string $objectPath): string
+{
+    require_supabase_creds();
+    global $SUPABASE_URL, $SUPABASE_SERVICE_ROLE_KEY;
+    $url = $SUPABASE_URL . '/storage/v1/object/' . rawurlencode($bucket) . '/' . encode_storage_path($objectPath);
+
+    error_log("DEBUG: Downloading from: $bucket/$objectPath");
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $SUPABASE_SERVICE_ROLE_KEY,
+            'apikey: ' . $SUPABASE_SERVICE_ROLE_KEY,
+        ],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false || $http < 200 || $http >= 300) {
+        error_log("DEBUG: Storage download FAILED - HTTP: $http, Error: $err");
+        throw new RuntimeException("Storage download failed ($http): " . ($resp ?: $err));
+    }
+
+    error_log("DEBUG: Storage download SUCCESS - Size: " . strlen($resp));
+    return (string)$resp;
+}
+
+/* Parse bucket/object from requirements.application_form */
+function parse_bucket_and_path_from_appform(string $urlOrPath): array
+{
+    $v = trim($urlOrPath);
+    if ($v === '') return ['', ''];
+    if (preg_match('~^https?://[^/]+/storage/v1/object/(public/)?([^/]+)/(.+)$~i', $v, $m)) {
+        $bucket = $m[2];
+        $path   = $m[3];
+        return [$bucket, $path];
+    }
+    $parts = explode('/', $v, 2);
+    if (count($parts) === 2) return [$parts[0], $parts[1]];
+    return ['', ''];
+}
+
+/* Build MHTML (.doc) with a circular APPROVED badge (upper-right) */
+function build_seedling_letter_mhtml_approved(array $client, string $sig_b64, string $purpose, array $items, string $request_date): array
+{
+    $first = trim((string)($client['first_name'] ?? ''));
+    $middle = trim((string)($client['middle_name'] ?? ''));
+    $last = trim((string)($client['last_name'] ?? ''));
+    $sitio = trim((string)($client['sitio_street'] ?? ''));
+    $brgy  = trim((string)($client['barangay'] ?? ''));
+    $muni  = trim((string)($client['municipality'] ?? ''));
+    $city  = trim((string)($client['city'] ?? ''));
+    $lgu   = $city ?: $muni;
+
+    $addr = [];
+    if ($sitio) $addr[] = $sitio;
+    if ($brgy)  $addr[] = 'Brgy. ' . $brgy;
+    if ($lgu)   $addr[] = $lgu;
+    $addressLine = implode(', ', $addr);
+    $cityProv = ($lgu ? ($lgu . ', ') : '') . 'Cebu';
+    $fullName = trim($first . ' ' . ($middle ? $middle . ' ' : '') . $last);
+    $prettyDate = $request_date ? date('F j, Y', strtotime($request_date)) : date('F j, Y');
+
+    $totalQty = 0;
+    $seedTxts = [];
+    foreach ($items as $it) {
+        $nm = (string)($it['seedling_name'] ?? 'Seedling');
+        $q  = (int)($it['qty'] ?? 0);
+        if ($q > 0) {
+            $seedTxts[] = h($nm) . ' (' . $q . ')';
+            $totalQty += $q;
+        }
+    }
+    $seedTxt = $seedTxts ? implode(', ', $seedTxts) : 'seedlings';
+
+    $inner = '
+        <div style="position:fixed;top:26px;right:26px;width:120px;height:120px;border-radius:50%;
+                    background:#0F2A6B;color:#fff;display:flex;align-items:center;justify-content:center;
+                    font-weight:700;text-transform:uppercase;letter-spacing:.5px;box-shadow:0 2px 8px rgba(0,0,0,.25);">
+            APPROVED
+        </div>
+
+        <p style="text-align:right;margin-top:10px;">' . h($addressLine) . '<br>' . h($cityProv) . '<br>' . h($prettyDate) . '</p>
+        <p><strong>CENRO Argao</strong></p>
+        <p><strong>Subject: Request for Seedlings</strong></p>
+        <p>Dear Sir/Madam,</p>
+        <p style="text-align:justify;text-indent:50px;">I am writing to formally request ' . $totalQty . ' seedlings of ' . $seedTxt . ' for ' . h($purpose) . '.</p>
+        <p style="text-align:justify;text-indent:50px;">The seedlings will be planted at ' . h($addressLine ?: $cityProv) . '.</p>
+        <p style="text-align:justify;text-indent:50px;">I would be grateful if you could approve this request at your earliest convenience.</p>
+        <p>Thank you for your time and consideration.</p>
+        <p>Sincerely,<br><br>
+            <img src="cid:sigimg" width="140" height="25" style="height:auto;border:1px solid #ccc;"><br>
+            ' . h($fullName) . '<br>' . h($addressLine ?: $cityProv) . '
+        </p>
+    ';
+
+    $htmlDoc = '<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <title>Seedling Request Letter (Approved)</title>
+        <style>body{font-family:Arial,sans-serif;line-height:1.6;margin:50px;color:#111}</style>
+        </head><body>' . $inner . '</body></html>';
+
+    $boundary = '----=_NextPart_' . bin2hex(random_bytes(8));
+    $mhtml = "MIME-Version: 1.0\r\n";
+    $mhtml .= "Content-Type: multipart/related; boundary=\"$boundary\"; type=\"text/html\"\r\n\r\n";
+    $mhtml .= "--$boundary\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\nContent-Location: file:///index.html\r\n\r\n" . $htmlDoc . "\r\n\r\n";
+    $mhtml .= "--$boundary\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <sigimg>\r\nContent-Location: file:///sig.png\r\n\r\n";
+    $mhtml .= chunk_split($sig_b64, 76, "\r\n") . "\r\n--$boundary--";
+    return [$mhtml, $fullName];
+}
+
+/* Regenerate and overwrite the requirements.application_form file for a given approval */
+function regenerate_and_overwrite_requirement_doc(PDO $pdo, string $approvalId): void
+{
+    error_log("DEBUG: Starting document regeneration for approval: $approvalId");
+
+    // 1) Load approval → requirement_id, client_id, submitted_at
+    $st = $pdo->prepare("SELECT approval_id, client_id, requirement_id, submitted_at FROM public.approval WHERE approval_id=:aid LIMIT 1");
+    $st->execute([':aid' => $approvalId]);
+    $ap = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$ap) throw new RuntimeException('Approval not found.');
+
+    $rid = (string)$ap['requirement_id'];
+    $cid = (string)$ap['client_id'];
+    $reqDate = (string)($ap['submitted_at'] ?? '');
+
+    error_log("DEBUG: Found approval - client_id: $cid, requirement_id: $rid");
+
+    // 2) Load requirements row to get current URL/path
+    $st2 = $pdo->prepare("SELECT application_form FROM public.requirements WHERE requirement_id=:rid LIMIT 1");
+    $st2->execute([':rid' => $rid]);
+    $req = $st2->fetch(PDO::FETCH_ASSOC) ?: [];
+    if (!$req || !trim((string)$req['application_form'])) throw new RuntimeException('Requirements row or application_form missing.');
+
+    $appForm = (string)$req['application_form'];
+    error_log("DEBUG: Application form URL: $appForm");
+
+    [$bucket, $objectPath] = parse_bucket_and_path_from_appform($appForm);
+    if ($bucket === '' || $objectPath === '') throw new RuntimeException('Could not parse bucket/path from application_form.');
+
+    error_log("DEBUG: Parsed bucket: $bucket, objectPath: $objectPath");
+
+    // 3) Gather all seedlings under same requirement_id (names + qty)
+    $st3 = $pdo->prepare("
+        SELECT s.seedling_name, COALESCE(sr.quantity,0) AS qty
+        FROM public.approval a
+        JOIN public.seedling_requests sr ON sr.seedl_req_id = a.seedl_req_id
+        JOIN public.seedlings s        ON s.seedlings_id = sr.seedlings_id
+        WHERE a.requirement_id = :rid
+        ORDER BY s.seedling_name
+    ");
+    $st3->execute([':rid' => $rid]);
+    $items = $st3->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    error_log("DEBUG: Found " . count($items) . " seedling items");
+
+    // 4) Load client (+ signature)
+    $st4 = $pdo->prepare("SELECT first_name,middle_name,last_name,sitio_street,barangay,municipality,city,signature FROM public.client WHERE client_id=:cid LIMIT 1");
+    $st4->execute([':cid' => $cid]);
+    $client = $st4->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    if (!$client) throw new RuntimeException('Client not found.');
+    error_log("DEBUG: Found client: " . ($client['first_name'] ?? 'Unknown'));
+
+    // 5) Get signature bytes → base64
+    $sig = trim((string)($client['signature'] ?? ''));
+    if ($sig === '') {
+        error_log("ERROR: Missing signature for client_id: $cid");
+        throw new RuntimeException('Client signature not found for this request.');
+    }
+
+    error_log("DEBUG: Signature path: $sig");
+
+    $pngBytes = '';
+    if (preg_match('~^https?://~i', $sig)) {
+        error_log("DEBUG: Downloading signature from URL");
+        $pngBytes = http_get_bytes($sig);
+    } else {
+        $seg = explode('/', $sig, 2);
+        if (count($seg) !== 2) {
+            error_log("ERROR: Invalid signature path format: $sig");
+            throw new RuntimeException('Invalid signature path format.');
+        }
+        error_log("DEBUG: Downloading signature from storage: {$seg[0]}/{$seg[1]}");
+        $pngBytes = storage_download_private($seg[0], $seg[1]);
+    }
+
+    $sig_b64 = base64_encode($pngBytes);
+    error_log("DEBUG: Signature downloaded successfully, size: " . strlen($pngBytes) . " bytes");
+
+    // 6) Purpose fallback
+    $purpose = 'approved seedling request';
+
+    // 7) Build new MHTML with APPROVED badge
+    error_log("DEBUG: Building MHTML document");
+    [$mhtml] = build_seedling_letter_mhtml_approved($client, $sig_b64, $purpose, $items, $reqDate);
+    error_log("DEBUG: MHTML built successfully, size: " . strlen($mhtml) . " bytes");
+
+    // 8) Replace object in storage
+    error_log("DEBUG: Replacing document in storage");
+    storage_delete_object($bucket, $objectPath);
+    storage_upload_binary($bucket, $objectPath, 'application/msword', $mhtml);
+
+    error_log("DEBUG: Document regeneration completed successfully for approval: $approvalId");
 }
 
 /* ---------------- AJAX (mark single read) ---------------- */
@@ -178,6 +498,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                  a.submitted_at,
                  a.application_id,
                  a.requirement_id,
+                 a.seedl_req_id,
                  c.first_name, c.last_name
           FROM public.approval a
           LEFT JOIN public.client c ON c.client_id = a.client_id
@@ -192,6 +513,30 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             exit;
         }
 
+        // Requested seeds text
+        $reqText = '—';
+        if (!empty($row['seedl_req_id'])) {
+            $sti = $pdo->prepare("
+                SELECT s.seedling_name, COALESCE(sr.quantity,0) AS qty
+                FROM public.seedling_requests sr
+                JOIN public.seedlings s ON s.seedlings_id = sr.seedlings_id
+                WHERE sr.seedl_req_id = :sid
+                ORDER BY s.seedling_name
+            ");
+            $sti->execute([':sid' => $row['seedl_req_id']]);
+            $items = $sti->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if ($items) {
+                $parts = [];
+                foreach ($items as $it) {
+                    $nm = (string)$it['seedling_name'];
+                    $q  = (int)$it['qty'];
+                    if ($q > 0) $parts[] = $nm . ' (' . $q . ')';
+                }
+                if ($parts) $reqText = implode(', ', $parts);
+            }
+        }
+
+        // Files list (from requirements)
         $files = [];
         if (notempty($row['requirement_id'])) {
             $st3 = $pdo->prepare("SELECT * FROM public.requirements WHERE requirement_id=:rid LIMIT 1");
@@ -212,11 +557,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
         echo json_encode([
             'ok' => true,
             'meta' => [
-                'client'       => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
-                'request_type' => $row['request_type'] ?? '',
-                'permit_type'  => $row['permit_type'] ?? '',
-                'status'       => $row['approval_status'] ?? '',
-                'submitted_at' => $row['submitted_at'] ?? null,
+                'client'            => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
+                'request_type'      => $row['request_type'] ?? '',
+                'permit_type'       => $row['permit_type'] ?? '',
+                'status'            => $row['approval_status'] ?? '',
+                'submitted_at'      => $row['submitted_at'] ?? null,
+                'requested_seeds'   => $reqText,   // 👈 added
             ],
             'files' => $files
         ]);
@@ -230,11 +576,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
 /* ---------------- AJAX (decide) ---------------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
     header('Content-Type: application/json');
+
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+
     $approvalId = $_POST['approval_id'] ?? '';
     $action     = strtolower(trim((string)$_POST['action'] ?? ''));
     $reason     = trim((string)($_POST['reason'] ?? ''));
 
+    error_log("DEBUG: Decide AJAX - approval_id: $approvalId, action: $action");
+
     if (!$approvalId || !in_array($action, ['approve', 'reject'], true)) {
+        error_log("ERROR: Invalid params - approval_id: $approvalId, action: $action");
         echo json_encode(['ok' => false, 'error' => 'invalid params']);
         exit();
     }
@@ -252,11 +605,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
         $row = $st->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
             $pdo->rollBack();
+            error_log("ERROR: Approval not found - approval_id: $approvalId");
             echo json_encode(['ok' => false, 'error' => 'approval not found']);
             exit;
         }
-        if (strtolower((string)$row['approval_status']) !== 'pending') {
+
+        $currentStatus = strtolower((string)$row['approval_status']);
+        if ($currentStatus !== 'pending') {
             $pdo->rollBack();
+            error_log("ERROR: Already decided - approval_id: $approvalId, status: $currentStatus");
             echo json_encode(['ok' => false, 'error' => 'already decided']);
             exit;
         }
@@ -271,26 +628,49 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
         }
 
         if ($action === 'approve') {
-            $pdo->prepare("
-                UPDATE public.approval
-                   SET approval_status='approved',
-                       approved_at=now(), approved_by=:by,
-                       rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
-                 WHERE approval_id=:aid
-            ")->execute([':by' => $adminId, ':aid' => $approvalId]);
+            error_log("DEBUG: Processing approval for: $approvalId");
 
-            $pdo->prepare("
-                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
-                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
-            ")->execute([
-                ':aid'      => $approvalId,
-                ':msg'      => 'Your seedling request was approved.',
-                ':fromDept' => $fromDept,
-                ':toUser'   => $toUserId
-            ]);
+            try {
+                // 1) Flip status to approved
+                $pdo->prepare("
+                    UPDATE public.approval
+                       SET approval_status='approved',
+                           approved_at=now(), approved_by=:by,
+                           rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
+                     WHERE approval_id=:aid
+                ")->execute([':by' => $adminId, ':aid' => $approvalId]);
 
-            $pdo->commit();
-            echo json_encode(['ok' => true, 'status' => 'approved']);
+                // 2) Regenerate file and overwrite existing object in Supabase
+                error_log("DEBUG: Starting document regeneration for: $approvalId");
+                try {
+                    regenerate_and_overwrite_requirement_doc($pdo, (string)$approvalId);
+                    error_log("DEBUG: Document regeneration completed for: $approvalId");
+                } catch (Exception $e) {
+                    error_log("ERROR: Document regeneration failed: " . $e->getMessage());
+                    throw new RuntimeException("Failed to regenerate document: " . $e->getMessage());
+                }
+
+                // 3) Notify user (their notification; remains unread for them)
+                $pdo->prepare("
+                    INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                    VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+                ")->execute([
+                    ':aid'      => $approvalId,
+                    ':msg'      => 'Your seedling request was approved.',
+                    ':fromDept' => $fromDept,
+                    ':toUser'   => $toUserId
+                ]);
+
+                $pdo->commit();
+                error_log("DEBUG: Approval completed successfully for: $approvalId");
+                echo json_encode(['ok' => true, 'status' => 'approved']);
+            } catch (Exception $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log("ERROR: Approval transaction failed: " . $e->getMessage());
+                echo json_encode(['ok' => false, 'error' => 'Approval process failed: ' . $e->getMessage()]);
+            }
         } else {
             if ($reason === '') {
                 $pdo->rollBack();
@@ -320,13 +700,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
         }
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_log('[SEEDLING-DECIDE AJAX] ' . $e->getMessage());
-        echo json_encode(['ok' => false, 'error' => 'server error']);
+        error_log('[SEEDLING-DECIDE AJAX ERROR] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error: ' . $e->getMessage()]);
     }
     exit();
 }
 
-/* ---------------- AJAX (mark notifications for approval) ---------------- */
+/* ---------------- AJAX (mark notifications for *this* approval — seedling target only) ---------------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
     header('Content-Type: application/json');
     $aid = $_POST['approval_id'] ?? '';
@@ -340,6 +720,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
                SET is_read = true
              WHERE approval_id = :aid
                AND is_read = false
+               AND LOWER(COALESCE(\"to\", '')) = 'seedling'
         ");
         $st->execute([':aid' => $aid]);
         echo json_encode(['ok' => true, 'count' => (int)$st->rowCount()]);
@@ -415,11 +796,16 @@ try {
         LIMIT 200
     ")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-    error_log('[SEEDLING-ADMIN LIST] ' . $e->getMessage());
+    error_log('[SEEDLING PAGE DATA] ' . $e->getMessage());
+    $rows = [];
 }
 
 $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -1333,7 +1719,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <tr>
                             <th>Client First Name</th>
                             <th>Request Type</th>
-                            <th>Permit Type</th>
+                            <!-- Permit Type column removed -->
                             <th>Status</th>
                             <th>Submitted At</th>
                             <th>Action</th>
@@ -1348,7 +1734,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             <tr data-approval-id="<?= h($r['approval_id']) ?>">
                                 <td><?= h($r['first_name'] ?? '—') ?></td>
                                 <td><span class="pill"><?= h($req) ?></span></td>
-                                <td><span class="pill neutral"><?= h(strtolower((string)$r['permit_type'])) ?></span></td>
+                                <!-- Permit Type cell removed -->
                                 <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
                                 <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
@@ -1426,13 +1812,14 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                                 <dt>Request Type</dt>
                                 <dd><span class="pill" id="infoRequestType">—</span></dd>
                             </div>
-                            <div class="defrow">
-                                <dt>Permit Type</dt>
-                                <dd><span class="pill neutral" id="infoPermitType">—</span></dd>
-                            </div>
+                            <!-- Permit Type row removed -->
                             <div class="defrow">
                                 <dt>Status</dt>
                                 <dd><span class="status-text" id="infoStatus">—</span></dd>
+                            </div>
+                            <div class="defrow">
+                                <dt>Requested Seeds</dt>
+                                <dd id="infoSeeds"><span class="muted">—</span></dd>
                             </div>
                         </dl>
                     </div>
@@ -1676,11 +2063,11 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             function showPreview(name, url, ext) {
                 const drawer = document.getElementById('filePreviewDrawer');
                 const imgWrap = document.getElementById('previewImageWrap');
-                const frameWrap = document.getElementById('previewFrameWrap');
+                theFrameWrap = document.getElementById('previewFrameWrap');
                 const linkWrap = document.getElementById('previewLinkWrap');
                 document.getElementById('previewTitle').textContent = name;
                 imgWrap.classList.add('hidden');
-                frameWrap.classList.add('hidden');
+                theFrameWrap.classList.add('hidden');
                 linkWrap.classList.add('hidden');
                 const imgExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
                 const offExt = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
@@ -1690,15 +2077,15 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     imgWrap.classList.remove('hidden');
                 } else if (ext === 'pdf' && url) {
                     document.getElementById('previewFrame').src = url;
-                    frameWrap.classList.remove('hidden');
+                    theFrameWrap.classList.remove('hidden');
                 } else if (offExt.includes(ext) && url) {
                     const viewer = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(url);
                     document.getElementById('previewFrame').src = viewer;
-                    frameWrap.classList.remove('hidden');
+                    theFrameWrap.classList.remove('hidden');
                 } else if (txtExt.includes(ext) && url) {
                     const gview = 'https://docs.google.com/gview?embedded=1&url=' + encodeURIComponent(url);
                     document.getElementById('previewFrame').src = gview;
-                    frameWrap.classList.remove('hidden');
+                    theFrameWrap.classList.remove('hidden');
                 } else {
                     const a = document.getElementById('previewDownload');
                     a.href = url || '#';
@@ -1727,8 +2114,8 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 // Reset placeholders
                 document.getElementById('infoClientName').textContent = '—';
                 document.getElementById('infoRequestType').textContent = '—';
-                document.getElementById('infoPermitType').textContent = '—';
                 document.getElementById('infoStatus').textContent = '—';
+                document.getElementById('infoSeeds').innerHTML = '<span class="muted">—</span>';
                 document.getElementById('filesList').innerHTML = '';
                 document.getElementById('filesEmpty').classList.add('hidden');
                 modalActions.innerHTML = '';
@@ -1737,7 +2124,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
                 // Mark related notifs read & update bell
                 try {
-                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_notifs_for_approval', {
+                    const resMark = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_notifs_for_approval', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded'
@@ -1746,11 +2133,11 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             approval_id: currentApprovalId
                         }).toString()
                     }).then(r => r.json());
-                    if (res && res.ok) {
+                    if (resMark && resMark.ok) {
                         const badge = document.querySelector('#notifDropdown .badge');
                         if (badge) {
                             const n = parseInt(badge.textContent || '0', 10) || 0;
-                            const dec = parseInt(res.count || 0, 10) || 0;
+                            const dec = parseInt(resMark.count || 0, 10) || 0;
                             const next = Math.max(0, n - dec);
                             badge.textContent = String(next);
                             if (next <= 0) badge.style.display = 'none';
@@ -1784,11 +2171,30 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 const meta = res.meta || {};
                 document.getElementById('infoClientName').textContent = meta.client || '—';
                 document.getElementById('infoRequestType').textContent = meta.request_type || '—';
-                document.getElementById('infoPermitType').textContent = meta.permit_type || '—';
                 const st = (meta.status || '').trim().toLowerCase();
                 const msLeft = document.getElementById('infoStatus');
                 msLeft.textContent = st ? st[0].toUpperCase() + st.slice(1) : '—';
                 msLeft.className = 'status-text';
+
+                // Requested Seeds (FIXED: read meta.requested_seeds if res.seeds is not provided)
+                const seedsWrap = document.getElementById('infoSeeds');
+                seedsWrap.innerHTML = '';
+                if (Array.isArray(res.seeds) && res.seeds.length) {
+                    const ul = document.createElement('ul');
+                    ul.style.listStyle = 'disc inside';
+                    ul.style.margin = '0';
+                    ul.style.paddingLeft = '16px';
+                    res.seeds.forEach(s => {
+                        const li = document.createElement('li');
+                        li.textContent = `${s.name} (${s.qty})`;
+                        ul.appendChild(li);
+                    });
+                    seedsWrap.appendChild(ul);
+                } else if (meta.requested_seeds && meta.requested_seeds !== '—') {
+                    seedsWrap.textContent = meta.requested_seeds;
+                } else {
+                    seedsWrap.textContent = '—';
+                }
 
                 // Files
                 const filesList = document.getElementById('filesList');
@@ -1851,39 +2257,6 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             }
             document.querySelectorAll('[data-close-confirm],[data-cancel-confirm]').forEach(el => el.addEventListener('click', closeAllConfirms));
 
-            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
-                if (pendingAction !== 'approve') return;
-                block(true);
-                const res = await sendDecision('approve');
-                block(false);
-                if (!res.ok) {
-                    alert(res.error || 'Failed to approve');
-                    return;
-                }
-                applyDecisionUI('approved');
-                closeAllConfirms();
-                showToast('Request approved', 'success');
-            });
-
-            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
-                if (pendingAction !== 'reject') return;
-                const reason = (document.getElementById('rejectReason').value || '').trim();
-                if (!reason) {
-                    alert('Please provide a reason.');
-                    return;
-                }
-                block(true);
-                const res = await sendDecision('reject', reason);
-                block(false);
-                if (!res.ok) {
-                    alert(res.error || 'Failed to reject');
-                    return;
-                }
-                applyDecisionUI('rejected');
-                closeAllConfirms();
-                showToast('Request rejected', 'success');
-            });
-
             async function sendDecision(action, reason = '') {
                 if (!currentApprovalId) return {
                     ok: false,
@@ -1914,10 +2287,79 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
                 const tr = document.querySelector(`tr[data-approval-id="${CSS.escape(currentApprovalId)}"]`);
                 if (tr) {
-                    const tdStatus = tr.children[3];
+                    // status column is now index 2 (after removing Permit Type col)
+                    const tdStatus = tr.children[2];
                     if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
                 }
             }
+
+            // Refresh files list after approve (cache-busted so the new stamped doc shows)
+            async function refreshFilesAfterDecision() {
+                if (!currentApprovalId) return;
+                const res = await fetch(`<?php echo basename(__FILE__); ?>?ajax=details&approval_id=${encodeURIComponent(currentApprovalId)}`, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }).then(r => r.json()).catch(() => ({
+                    ok: false
+                }));
+                if (!res.ok) return;
+
+                const filesList = document.getElementById('filesList');
+                const filesEmpty = document.getElementById('filesEmpty');
+                filesList.innerHTML = '';
+                if (Array.isArray(res.files) && res.files.length) {
+                    filesEmpty.classList.add('hidden');
+                    const bust = `v=${Date.now()}`;
+                    res.files.forEach(f => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        li.tabIndex = 0;
+                        const url = f.url ? (f.url + (f.url.includes('?') ? '&' : '?') + bust) : '#';
+                        li.dataset.fileUrl = url;
+                        li.dataset.fileName = f.name || 'Document';
+                        li.dataset.fileExt = (f.ext || '').toLowerCase();
+                        li.innerHTML = `<i class="far fa-file"></i><span class="name">${f.name}</span><span class="hint">${(f.ext||'').toUpperCase()}</span>`;
+                        filesList.appendChild(li);
+                    });
+                } else {
+                    filesEmpty.classList.remove('hidden');
+                }
+            }
+
+            document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'approve') return;
+                block(true);
+                const res = await sendDecision('approve');
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to approve');
+                    return;
+                }
+                applyDecisionUI('approved');
+                await refreshFilesAfterDecision(); // show the regenerated/stamped doc
+                closeAllConfirms();
+                showToast('Request approved', 'success');
+            });
+
+            document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'reject') return;
+                const reason = (document.getElementById('rejectReason').value || '').trim();
+                if (!reason) {
+                    alert('Please provide a reason.');
+                    return;
+                }
+                block(true);
+                const res = await sendDecision('reject', reason);
+                block(false);
+                if (!res.ok) {
+                    alert(res.error || 'Failed to reject');
+                    return;
+                }
+                applyDecisionUI('rejected');
+                closeAllConfirms();
+                showToast('Request rejected', 'success');
+            });
 
             /* Filters */
             const filterStatus = document.getElementById('filterStatus');
@@ -1936,7 +2378,8 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 let shown = 0;
                 document.querySelectorAll('#statusTableBody tr').forEach(tr => {
                     const name = (tr.children[0]?.textContent || '').trim().toLowerCase();
-                    const stat = (tr.children[3]?.textContent || '').trim().toLowerCase();
+                    // status column is now index 2
+                    const stat = (tr.children[2]?.textContent || '').trim().toLowerCase();
                     let ok = true;
                     if (st && stat !== st) ok = false;
                     if (q && !name.includes(q)) ok = false;
@@ -1947,6 +2390,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             }
         });
     </script>
+
+
 </body>
+
+</html>
 
 </html>

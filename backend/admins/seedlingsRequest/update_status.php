@@ -85,7 +85,7 @@ try {
             ':by' => (string)$_SESSION['user_id'],
             ':id' => $approval_id,
         ]);
-    } else { // pending
+    } else {
         $sql = "
             UPDATE public.approval
                SET approval_status = 'pending',

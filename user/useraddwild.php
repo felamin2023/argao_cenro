@@ -2285,13 +2285,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="requirement-title">
                                 <span class="requirement-number">8</span>
                                 Legal Acquisition of Wildlife:
-                                <ul style="margin-left:20px;">
-                                    <li>Proof of Purchase (Official Receipt/Deed of Sale or Captive Bred Certificate)</li>
-                                    <li>Deed of Donation with Notary</li>
-                                </ul>
+
                             </div>
+
                         </div>
                         <div class="file-upload">
+                            <h4>Proof of Purchase (Official Receipt/Deed of Sale or Captive Bred Certificate)</h4>
                             <div class="file-input-container">
                                 <label for="file-8a" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload Proof of Purchase
@@ -2300,8 +2299,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-8a"></div>
-
+                            <h4>Deed of Donation with Notary</h4>
                             <div class="file-input-container" style="margin-top:8px;">
+
                                 <label for="file-8b" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload Deed of Donation
                                 </label>
