@@ -176,76 +176,94 @@ function build_permit_html(array $d): string
 <!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;font-family:"Times New Roman",serif}
 body{margin:0;background:#fff}
+@page{size:letter;margin:.5in}
 
-/* Put the physical margins on the page itself */
-@page{ size:letter; margin:.5in }
+:root{ --stamp:#111; }
 
-.container{position:relative;width:100%;min-height:11in;margin:0 auto;background:#fff;padding:0}
+.container{position:relative;width:100%;min-height:11in;margin:0 auto;background:#fff}
 
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px;padding:10px 12px 10px 12px;border-bottom:4px solid #f00}
-.left-section{display:flex;gap:15px;align-items:flex-start}
-.logo{width:80px;height:80px;border-radius:5px;overflow:hidden}
-.logo img{width:100%;height:100%;object-fit:contain}
-.right-logo{width:110px;height:110px;border-radius:5px;overflow:hidden;margin-left:15px}
-.right-logo img{width:100%;height:100%;object-fit:contain}
-.denr-info h1{font-size:17px;margin:0 0 4px}
-.denr-info p{font-size:13px;margin:0}
-.permit-number{font-size:15px;margin:12px 12px}
-.permit-title{text-align:center;margin:15px 0;font-size:20px;font-weight:700;text-decoration:underline}
-.subtitle{text-align:center;margin-bottom:15px;font-size:16px}
+/* ===== Header (table for Dompdf reliability) ===== */
+.header-wrap{position:relative;margin:0 0 12px 0}
+.header-table{width:100%;border-collapse:collapse;border-bottom:5px solid #f00}
+.header-table td{vertical-align:middle}
+.hcell-left{width: 90px}
+.hcell-right{width:90px}
+.hcell-left img{
+  display:block;margin:0 auto;
+  max-width:750px; max-height:75px;
+}
+.hcell-right img{
+  display:block;margin:0 auto;
+  max-width:90px; max-height:90px;
+}
+.title-block{text-align:center;padding:8px 6px}
+.title-block h1{margin:0 0 6px 0;font-weight:800;font-size:20px;line-height:1.08}
+.title-block .sub{margin:0;font-size:16px}
+
+/* ===== Outline APPROVED stamp at upper-right ===== */
+/* ===== APPROVED oval (Dompdf-safe, centered with padding) ===== */
+/* ===== APPROVED oval (optically centered, Dompdf-safe) ===== */
+.stamp{
+  position:absolute; top:.18in; right:.18in;
+  width:1.45in; height:.95in; border-radius:50%;
+  border:6px solid var(--stamp); background:transparent; color:var(--stamp);
+  display:table;                /* key: enables true vertical centering */
+  transform:rotate(-12deg);
+  z-index:10; pointer-events:none; overflow:hidden;
+}
+.stamp__text{
+  display:table-cell; vertical-align:middle; text-align:center;
+  height:.95in; width:100%;
+  padding:0 .16in;               /* inner breathing room */
+  text-transform:uppercase; letter-spacing:1.2px;
+  font-weight:900; font-size:20px; line-height:1; /* no extra top gap */
+}
+
+
+
+/* ===== Body ===== */
+.permit-number{font-size:15px;margin:12px 18px}
+.permit-title{text-align:center;margin:15px 0 6px 0;font-size:20px;font-weight:700;text-decoration:underline}
+.subtitle{text-align:center;margin-bottom:14px;font-size:16px}
 .underline-field,.small-underline,.inline-underline{border-bottom:1px solid #000;display:inline-block;margin:0 3px;padding:0 3px}
 .underline-field{min-width:280px}.inline-underline{min-width:200px}.small-underline{min-width:140px}
-.permit-body{font-size:14px;line-height:1.5;color:#000;padding:0 12px 12px 12px}
+.permit-body{font-size:14px;line-height:1.5;color:#000;padding:0 18px 18px 18px}
 .info-table{width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;table-layout:fixed}
 .info-table th,.info-table td{border:1px solid #000;padding:8px;text-align:left;word-break:break-word}
 .info-table th{background:#f0f0f0}
 .nothing-follows{text-align:center;margin-top:10px}
 .contact-info{text-align:center;font-size:13px;margin-top:25px}
-
-/* APPROVE stamp: smaller, oval, centered text, no inner ring */
-.stamp{
-  position:absolute;
-  top:.12in;           /* safely inside the .5in page margin */
-  right:.12in;
-  width:1.10in;        /* oval: width != height */
-  height:.90in;
-  border-radius:50%;   /* ellipse because of non-equal sides */
-  background:#173a7a;
-  color:#fff;
-  box-shadow:0 2px 6px rgba(0,0,0,.25);
-}
-.stamp .label{
-  position:absolute;
-  top:50%; left:50%;
-  transform:translate(-50%,-50%); /* perfectly centered text */
-  font-weight:900;
-  font-size:18px;
-  letter-spacing:1px;
-  text-transform:uppercase;
-}
 </style></head><body>
-<div class="container" id="permit">
-  <div class="stamp"><div class="label">APPROVED</div></div>
 
-  <div class="header">
-    <div class="left-section">
-      <div class="logo"><img src="' . $e($denr) . '" alt="DENR"></div>
-      <div class="denr-info">
-        <h1>Department of Environment and Natural Resources</h1>
-        <p>Region 7</p>
-      </div>
-    </div>
-    <div class="right-logo"><img src="' . $e($ph) . '" alt="Philippines Flag"></div>
+<div class="container" id="permit">
+
+  <div class="header-wrap">
+    <table class="header-table">
+      <tr>
+        <td class="hcell-left">
+          <img src="' . $e($denr) . '" alt="DENR">
+        </td>
+        <td class="hcell-mid">
+          <div class="title-block">
+            <h1>Department of Environment and Natural Resources</h1>
+            <p class="sub">Region 7</p>
+          </div>
+        </td>
+        <td class="hcell-right">
+          <img src="' . $e($ph) . '" alt="Bagong Pilipinas">
+        </td>
+      </tr>
+    </table>
+    <div class="stamp"><div class="stamp__text">APPROVED</div></div>
+
   </div>
 
-  <div class="permit-details">
-    <div class="permit-number">
-      NEW PERMIT<br>
-      WFP No. <span class="small-underline">' . $e($d['wfp_no']) . '</span><br>
-      SERIES OF ' . $e($d['series']) . '<br>
-      Date Issued: <span class="small-underline">' . $e($d['date_issued_fmt']) . '</span><br>
-      Expiry Date: <span class="small-underline">' . $e($d['expiry_date_fmt']) . '</span>
-    </div>
+  <div class="permit-number">
+    NEW PERMIT<br>
+    WFP No. <span class="small-underline">' . $e($d['wfp_no']) . '</span><br>
+    SERIES OF ' . $e($d['series']) . '<br>
+    Date Issued: <span class="small-underline">' . $e($d['date_issued_fmt']) . '</span><br>
+    Expiry Date: <span class="small-underline">' . $e($d['expiry_date_fmt']) . '</span>
   </div>
 
   <div class="permit-title">WILDLIFE FARM PERMIT</div>
@@ -297,6 +315,9 @@ body{margin:0;background:#fff}
 </div>
 </body></html>';
 }
+
+
+
 
 
 

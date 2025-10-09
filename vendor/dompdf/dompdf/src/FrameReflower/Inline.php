@@ -1,7 +1,8 @@
 <?php
 /**
  * @package dompdf
- * @link    https://github.com/dompdf/dompdf
+ * @link    http://dompdf.github.com/
+ * @author  Benj Carson <benjcarson@digitaljunkies.ca>
  * @license http://www.gnu.org/copyleft/lesser.html GNU Lesser General Public License
  */
 namespace Dompdf\FrameReflower;
@@ -42,7 +43,7 @@ class Inline extends AbstractFrameReflower
         $style = $frame->get_style();
 
         // Resolve width, so the margin width can be checked
-        $style->set_used("width", 0.0);
+        $style->width = 0;
 
         $cb = $frame->get_containing_block();
         $line = $block->get_current_line_box();
@@ -74,7 +75,7 @@ class Inline extends AbstractFrameReflower
     /**
      * @param BlockFrameDecorator|null $block
      */
-    function reflow(?BlockFrameDecorator $block = null)
+    function reflow(BlockFrameDecorator $block = null)
     {
         /** @var InlineFrameDecorator */
         $frame = $this->_frame;
@@ -96,16 +97,16 @@ class Inline extends AbstractFrameReflower
         // https://www.w3.org/TR/CSS21/visudet.html#inline-width
         // https://www.w3.org/TR/CSS21/visudet.html#inline-non-replaced
         if ($style->margin_left === "auto") {
-            $style->set_used("margin_left", 0.0);
+            $style->margin_left = 0;
         }
         if ($style->margin_right === "auto") {
-            $style->set_used("margin_right", 0.0);
+            $style->margin_right = 0;
         }
         if ($style->margin_top === "auto") {
-            $style->set_used("margin_top", 0.0);
+            $style->margin_top = 0;
         }
         if ($style->margin_bottom === "auto") {
-            $style->set_used("margin_bottom", 0.0);
+            $style->margin_bottom = 0;
         }
 
         // Handle line breaks
@@ -134,23 +135,20 @@ class Inline extends AbstractFrameReflower
             return;
         }
 
-        // Add margin, padding & border width to the first and last children,
-        // so they are accounted for during text layout
+        // Add our margin, padding & border to the first and last children
         if (($f = $frame->get_first_child()) && $f instanceof TextFrameDecorator) {
             $f_style = $f->get_style();
             $f_style->margin_left = $style->margin_left;
             $f_style->padding_left = $style->padding_left;
-            $f_style->border_left_width = $style->border_left_width;
+            $f_style->border_left = $style->border_left;
         }
 
         if (($l = $frame->get_last_child()) && $l instanceof TextFrameDecorator) {
             $l_style = $l->get_style();
             $l_style->margin_right = $style->margin_right;
             $l_style->padding_right = $style->padding_right;
-            $l_style->border_right_width = $style->border_right_width;
+            $l_style->border_right = $style->border_right;
         }
-
-        $frame->position();
 
         $cb = $frame->get_containing_block();
 
@@ -167,17 +165,13 @@ class Inline extends AbstractFrameReflower
             }
         }
 
-        // Assume the position of the first in-flow child, otherwise use the
-        // fallback position that was set before child reflow
-        $child = $frame->get_first_child();
-        while ($child && !$child->is_in_flow()) {
-            $child = $child->get_next_sibling();
+        if (!$frame->get_first_child()) {
+            return;
         }
 
-        if ($child) {
-            [$x, $y] = $child->get_position();
-            $frame->set_position($x, $y);
-        }
+        // Assume the position of the first child
+        [$x, $y] = $frame->get_first_child()->get_position();
+        $frame->set_position($x, $y);
 
         // Handle relative positioning
         foreach ($frame->get_children() as $child) {

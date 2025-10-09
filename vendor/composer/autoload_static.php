@@ -48,7 +48,6 @@ class ComposerStaticInit7c63ef979f028de512b8ab7d6b85fe7b
         'M' => 
         array (
             'Monolog\\' => 8,
-            'Masterminds\\' => 12,
         ),
         'G' => 
         array (
@@ -95,7 +94,7 @@ class ComposerStaticInit7c63ef979f028de512b8ab7d6b85fe7b
         ),
         'Svg\\' => 
         array (
-            0 => __DIR__ . '/..' . '/dompdf/php-svg-lib/src/Svg',
+            0 => __DIR__ . '/..' . '/phenx/php-svg-lib/src/Svg',
         ),
         'Sabberworm\\CSS\\' => 
         array (
@@ -134,10 +133,6 @@ class ComposerStaticInit7c63ef979f028de512b8ab7d6b85fe7b
         array (
             0 => __DIR__ . '/..' . '/monolog/monolog/src/Monolog',
         ),
-        'Masterminds\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/masterminds/html5/src',
-        ),
         'GuzzleHttp\\Psr7\\' => 
         array (
             0 => __DIR__ . '/..' . '/guzzlehttp/psr7/src',
@@ -168,7 +163,7 @@ class ComposerStaticInit7c63ef979f028de512b8ab7d6b85fe7b
         ),
         'FontLib\\' => 
         array (
-            0 => __DIR__ . '/..' . '/dompdf/php-font-lib/src/FontLib',
+            0 => __DIR__ . '/..' . '/phenx/php-font-lib/src/FontLib',
         ),
         'Firebase\\JWT\\' => 
         array (
@@ -208,6 +203,11 @@ class ComposerStaticInit7c63ef979f028de512b8ab7d6b85fe7b
         'Google_Task_Retryable' => __DIR__ . '/..' . '/google/apiclient/src/aliases.php',
         'Google_Task_Runner' => __DIR__ . '/..' . '/google/apiclient/src/aliases.php',
         'Google_Utils_UriTemplate' => __DIR__ . '/..' . '/google/apiclient/src/aliases.php',
+        'HTML5_Data' => __DIR__ . '/..' . '/dompdf/dompdf/lib/html5lib/Data.php',
+        'HTML5_InputStream' => __DIR__ . '/..' . '/dompdf/dompdf/lib/html5lib/InputStream.php',
+        'HTML5_Parser' => __DIR__ . '/..' . '/dompdf/dompdf/lib/html5lib/Parser.php',
+        'HTML5_Tokenizer' => __DIR__ . '/..' . '/dompdf/dompdf/lib/html5lib/Tokenizer.php',
+        'HTML5_TreeBuilder' => __DIR__ . '/..' . '/dompdf/dompdf/lib/html5lib/TreeBuilder.php',
         'PhpToken' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/PhpToken.php',
         'Stringable' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Stringable.php',
         'UnhandledMatchError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/UnhandledMatchError.php',

@@ -2,9 +2,12 @@
 
 /**
  * @package dompdf
- * @link    https://github.com/dompdf/dompdf
+ * @link    http://dompdf.github.com/
+ * @author  Benj Carson <benjcarson@digitaljunkies.ca>
+ * @author  Fabien Ménager <fabien.menager@gmail.com>
  * @license http://www.gnu.org/copyleft/lesser.html GNU Lesser General Public License
  */
+
 namespace Dompdf\Css;
 
 use Dompdf\Helpers;
@@ -162,7 +165,7 @@ class Color
     ];
 
     /**
-     * @param array|string|null $color
+     * @param $color
      * @return array|string|null
      */
     static function parse($color)
@@ -205,7 +208,7 @@ class Color
 
             // #rgba format
             if ($length === 5) {
-                if (\ctype_xdigit($color[4])) {
+                if (ctype_xdigit($color[4])) {
                     $alpha = round(hexdec($color[4] . $color[4])/255, 2);
                 }
                 return $cache[$color] = self::getArray($color[1] . $color[1] . $color[2] . $color[2] . $color[3] . $color[3], $alpha);
@@ -218,7 +221,7 @@ class Color
             
             // #rrggbbaa format
             if ($length === 9) {
-                if (\ctype_xdigit(mb_substr($color, 7, 2))) {
+                if (ctype_xdigit(mb_substr($color, 7, 2))) {
                     $alpha = round(hexdec(mb_substr($color, 7, 2))/255, 2);
                 }
                 return $cache[$color] = self::getArray(mb_substr($color, 1, 6), $alpha);
@@ -258,7 +261,7 @@ class Color
 
             // Parse alpha value
             if (Helpers::is_percent($alpha)) {
-                $alpha = (float) $alpha / 100;
+                $alpha = round((float) $alpha / 100, 2);
             } else {
                 $alpha = (float) $alpha;
             }
@@ -291,7 +294,7 @@ class Color
                 return null;
             }
 
-            $values = array_map(function ($c) {
+            $values = array_map(function($c) {
                 return min(1.0, max(0.0, floatval(trim($c))));
             }, $values);
 
@@ -303,7 +306,7 @@ class Color
     }
 
     /**
-     * @param array|string $color
+     * @param $color
      * @param float $alpha
      * @return array
      */
@@ -320,7 +323,7 @@ class Color
             $c["alpha"] = $alpha;
             $c["hex"] = "cmyk($c[0],$c[1],$c[2],$c[3])";
         } else {
-            if (\ctype_xdigit($color) === false || mb_strlen($color) !== 6) {
+            if (ctype_xdigit($color) === false || mb_strlen($color) !== 6) {
                 // invalid color value ... expected 6-character hex
                 return $c;
             }
