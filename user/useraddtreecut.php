@@ -6,6 +6,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -54,7 +125,202 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             --transition: all 0.2s ease;
             --accent-color: #3a86ff;
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
         }
+
+        .as-item {
+            position: relative;
+        }
+
+        /* Bell button */
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        /* Base dropdown */
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* Notifications-specific sizing */
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        /* Sticky header */
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        /* Scroll body */
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        /* Rows */
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        /* Sticky footer */
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        /* Red badge on bell */
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
 
         * {
             margin: 0;
@@ -1704,6 +1970,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 padding: 15px;
             }
         }
+
+        /* Inline validation */
+        .input-error {
+            border-color: #dc2626 !important;
+            box-shadow: 0 0 0 2px rgba(220, 38, 38, .12)
+        }
+
+        .field-hint {
+            display: none;
+            margin-top: 6px;
+            font-size: .85rem;
+            color: #dc2626
+        }
+
+        /* show group-level errors (e.g., radio group, file block, table) */
+        .has-error .field-hint {
+            display: block
+        }
+
+        .has-error .file-input-label {
+            outline: 2px solid #dc2626;
+            outline-offset: 2px
+        }
     </style>
 </head>
 
@@ -1760,40 +2049,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
 
                 </div>
             </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge">
+                            <?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?>
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+
+                <div class="as-dropdown-menu as-notifications">
+                    <!-- sticky header -->
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <!-- scrollable body -->
+                    <div class="notifcontainer"><!-- this holds the records -->
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <!-- sticky footer -->
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
+
+
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
@@ -1891,6 +2214,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </label>
                     </div>
                 </div>
+                <!-- Land details -->
+                <div class="form-row" style="margin-top:10px;">
+                    <div class="form-group one-third">
+                        <label for="tax-declaration">Tax Declaration No.</label>
+                        <input type="text" id="tax-declaration" placeholder="e.g., TD-12345">
+                    </div>
+                    <div class="form-group one-third">
+                        <label for="lot-no">Lot No.</label>
+                        <input type="text" id="lot-no" placeholder="e.g., Lot 12">
+                    </div>
+                    <div class="form-group one-third">
+                        <label for="contained-area">Contained Area</label>
+                        <input type="text" id="contained-area" placeholder="e.g., 1,500 sq.m or 0.15 ha">
+                    </div>
+                </div>
+
 
                 <!-- Species table -->
                 <div class="form-group" style="margin-top:10px;">
@@ -2642,6 +2981,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             function buildTreeCutDocHTML(sigLocation, includeSignature, sigW, sigH) {
+                const taxDecl = getVal('tax-declaration'),
+                    lotNo = getVal('lot-no'),
+                    contAr = getVal('contained-area');
+
                 const first = getVal('first-name'),
                     middle = getVal('middle-name'),
                     last = getVal('last-name');
@@ -2689,6 +3032,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     '<p class="section-title">PART II. TREE CUTTING DETAILS</p>' +
                     '<p>1. Location of Area/Trees to be Cut: ' + location + '</p>' +
                     '<p>2. Ownership of Land: ' + ownershipValue + '</p>' +
+                    '<p style="margin-left:18px;">Tax Declaration No.: ' + taxDecl + ' &nbsp;|&nbsp; Lot No.: ' + lotNo + ' &nbsp;|&nbsp; Contained Area: ' + contAr + '</p>' +
+
                     '<p>3. Number and Species of Trees Applied for Cutting:</p>' +
                     '<table class="bordered-table"><tr><th>Species</th><th>No. of Trees</th><th>Net Volume (cu.m)</th></tr>' +
                     (speciesRows.length ? speciesRows.map(s => '<tr><td>' + (s.name || '') + '</td><td>' + (s.count || '') + '</td><td>' + (s.volume || '') + '</td></tr>').join('') : '') +
@@ -2857,12 +3202,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     formData.append('ownership', ownershipPicked());
                     formData.append('other_ownership', getVal('other-ownership'));
                     formData.append('purpose', getVal('purpose'));
+                    formData.append('tax_declaration', getVal('tax-declaration'));
+                    formData.append('lot_no', getVal('lot-no'));
+                    formData.append('contained_area', getVal('contained-area'));
+
 
                     // Species rows JSON
                     formData.append('species_rows_json', JSON.stringify(readSpeciesRows()));
 
                     // Always none for treecut (no renewal)
                     formData.append('permit_type', 'none');
+
 
                     /* Generate signature (optional) */
                     if (hasSignature()) {
@@ -2908,7 +3258,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     /* Success UI (NO SUCCESS MODAL) */
                     // Clear inputs
-                    ['first-name', 'middle-name', 'last-name', 'street', 'barangay', 'municipality', 'province', 'contact-number', 'email', 'registration-number', 'location', 'other-ownership', 'purpose']
+                    ['first-name', 'middle-name', 'last-name', 'street', 'barangay', 'municipality', 'province', 'contact-number', 'email', 'registration-number', 'location', 'other-ownership', 'purpose',
+                        'tax-declaration', 'lot-no', 'contained-area'
+                    ]
                     .forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.value = '';
@@ -2963,6 +3315,199 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (resultOkBtn) resultOkBtn.addEventListener('click', () => closeModal(resultModal));
         });
     </script>
+    <script>
+        /* ===== VALIDATION-ONLY SCRIPT (drop-in replacement for your small validation block) ===== */
+        (() => {
+            const NAME_RE = /^[A-Za-zÀ-ÖØ-öø-ÿÑñ\s'.-]+$/; // letters, spaces, apostrophe, hyphen, dot
+            const PHONE_RE = /^09\d{9}$/; // PH mobile: starts with 09 + 9 digits = 11 total
+            const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+            const $id = (id) => document.getElementById(id);
+
+            const tracked = [];
+
+            function ensureHint(input) {
+                const group = input.closest('.name-field, .form-group, td') || input.parentElement;
+                let hint = group.querySelector('.field-hint');
+                if (!hint) {
+                    hint = document.createElement('div');
+                    hint.className = 'field-hint';
+                    group.appendChild(hint);
+                }
+                return hint;
+            }
+
+            function attachValidator(input, {
+                required = false,
+                pattern = null,
+                min = 0,
+                max = 0,
+                message = 'Invalid value.'
+            }) {
+                if (!input) return;
+                const hint = ensureHint(input);
+
+                function show(msg) {
+                    input.classList.add('input-error');
+                    hint.textContent = msg;
+                    hint.style.display = 'block';
+                    return false;
+                }
+
+                function clear() {
+                    input.classList.remove('input-error');
+                    hint.textContent = '';
+                    hint.style.display = 'none';
+                    return true;
+                }
+
+                function validate() {
+                    const v = (input.value || '').trim();
+                    if (!v) return required ? show('This field is required.') : clear();
+                    if (min && v.length < min) return show(`Must be at least ${min} characters.`);
+                    if (max && v.length > max) return show(`Must be at most ${max} characters.`);
+                    if (pattern && !pattern.test(v)) return show(message);
+                    return clear();
+                }
+
+                input.addEventListener('input', validate);
+                input.addEventListener('blur', validate);
+                tracked.push({
+                    input,
+                    validate
+                });
+            }
+
+            /* ---------- Text fields ---------- */
+            attachValidator($id('first-name'), {
+                required: true,
+                pattern: NAME_RE,
+                message: "Letters, spaces, ' - . only."
+            });
+            attachValidator($id('middle-name'), {
+                required: false,
+                pattern: NAME_RE,
+                message: "Letters, spaces, ' - . only."
+            });
+            attachValidator($id('last-name'), {
+                required: true,
+                pattern: NAME_RE,
+                message: "Letters, spaces, ' - . only."
+            });
+
+            // Address & misc: min 2 chars if provided (toggle required:true if you want them mandatory)
+            ['street', 'barangay', 'municipality', 'province', 'location', 'purpose', 'tax-declaration', 'lot-no', 'contained-area']
+            .forEach(id => attachValidator($id(id), {
+                required: false,
+                min: 2,
+                message: 'Must be at least 2 characters.'
+            }));
+
+            // Contact No.: PH mobile only (starts with 09, 11 digits)
+            attachValidator($id('contact-number'), {
+                required: true,
+                pattern: PHONE_RE,
+                message: 'Enter a valid PH mobile (starts with 09 and 11 digits).'
+            });
+
+            // Email (optional; set required:true if you want to enforce)
+            attachValidator($id('email'), {
+                required: false,
+                pattern: EMAIL_RE,
+                message: 'Enter a valid email (name@host.tld).'
+            });
+
+            /* ---------- Species table constraints ---------- */
+            const tbody = $id('species-table-body');
+
+            const isCtrl = (e) =>
+                e.ctrlKey || e.metaKey || ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Tab', 'Escape', 'Enter'].includes(e.key);
+
+            if (tbody) {
+                // Block invalid keystrokes
+                tbody.addEventListener('keydown', (e) => {
+                    const t = e.target;
+                    if (!t || !t.classList) return;
+
+                    if (t.classList.contains('species-name')) {
+                        if (!isCtrl(e) && !/^[\p{L}\s]$/u.test(e.key)) e.preventDefault(); // letters + spaces only
+                    }
+
+                    if (t.classList.contains('species-count')) {
+                        if (!isCtrl(e) && !/^[0-9]$/.test(e.key)) e.preventDefault(); // digits only
+                    }
+
+                    if (t.classList.contains('species-volume')) {
+                        if (!isCtrl(e) && !/^[0-9.]$/.test(e.key)) e.preventDefault(); // digits or dot
+                        if (e.key === '.' && t.value.includes('.')) e.preventDefault(); // single dot
+                    }
+                });
+
+                // Guard paste/drag-drop
+                tbody.addEventListener('beforeinput', (e) => {
+                    const t = e.target,
+                        d = e.data || '';
+                    if (!t || !t.classList || !d) return;
+                    if (t.classList.contains('species-name') && !/^[\p{L}\s]+$/u.test(d)) e.preventDefault();
+                    if (t.classList.contains('species-count') && !/^[0-9]+$/.test(d)) e.preventDefault();
+                    if (t.classList.contains('species-volume') && !/^[0-9.]+$/.test(d)) e.preventDefault();
+                });
+
+                // Sanitize + tiny inline hint for species min length
+                tbody.addEventListener('input', (e) => {
+                    const t = e.target;
+                    if (!t || !t.classList) return;
+
+                    if (t.classList.contains('species-name')) {
+                        t.value = (t.value || '').replace(/[^\p{L}\s]/gu, '');
+                        const group = t.closest('td');
+                        const hint = ensureHint(t);
+                        if (t.value.trim() && t.value.trim().length < 2) {
+                            t.classList.add('input-error');
+                            hint.textContent = 'At least 2 letters.';
+                            hint.style.display = 'block';
+                        } else {
+                            t.classList.remove('input-error');
+                            hint.textContent = '';
+                            hint.style.display = 'none';
+                        }
+                    }
+
+                    if (t.classList.contains('species-count')) {
+                        t.value = (t.value || '').replace(/\D/g, '');
+                    }
+
+                    if (t.classList.contains('species-volume')) {
+                        let v = (t.value || '').replace(/[^0-9.]/g, '');
+                        const dot = v.indexOf('.');
+                        if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
+                        v = v.replace(/^(\d+)(\.\d{0,2})?.*$/, '$1$2'); // limit to 2 decimals
+                        t.value = v;
+                    }
+                });
+            }
+
+            // Expose a single function your submit flow can call
+            window.validateAllFields = function() {
+                let ok = true,
+                    firstBad = null;
+                for (const {
+                        input,
+                        validate
+                    }
+                    of tracked) {
+                    if (!validate() && !firstBad) {
+                        firstBad = input;
+                        ok = false;
+                    }
+                }
+                if (!ok && firstBad) firstBad.focus();
+                return ok;
+            };
+        })();
+    </script>
+
+
 </body>
 
 

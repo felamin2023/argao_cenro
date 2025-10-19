@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chainsaw Certificate of Registration — Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * {
+        box-sizing: border-box;
+        font-family: "Times New Roman", serif;
+        color: #000;
+      }
+      @page {
+        size: letter;
+        margin: 0.5in;
+      }
+      body {
+        margin: 0;
+        background: #fff;
+      }
+      .container {
+        width: 100%;
+        min-height: 11in;
+        padding: 0.25in 0.15in;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        border: 1px solid black;
+      }
+      .left {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        flex: 1;
+      }
+      .logo {
+        width: 80px;
+        height: 80px;
+      }
+      .logo img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .denr h1 {
+        margin: 0 0 4px 0;
+        font-size: 14px;
+        line-height: 1.2;
+      }
+      .denr p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.1;
+      }
+      .right {
+        width: 110px;
+        height: 110px;
+      }
+      .right img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .title {
+        text-align: center;
+        margin: 12px 0;
+        font-size: 20px;
+        font-weight: 700;
+        text-decoration: underline;
+      }
+      .number {
+        text-align: center;
+        margin-bottom: 12px;
+        font-size: 15px;
+      }
+      .underline {
+        display: inline-block;
+        border-bottom: 1px solid #000;
+        min-width: 240px;
+        padding: 0 3px;
+      }
+      .small {
+        display: inline-block;
+        border-bottom: 1px solid #000;
+        min-width: 140px;
+        padding: 0 3px;
+      }
+      .body {
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .center {
+        text-align: center;
+        margin: 12px 0;
+      }
+      .info-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      .info-table td {
+        padding: 4px 8px;
+        vertical-align: top;
+      }
+      .approval {
+        margin-top: 18px;
+      }
+      .approval h2 {
+        font-size: 16px;
+        margin: 0 0 6px 0;
+        text-decoration: underline;
+      }
+      .approval .name {
+        font-weight: 700;
+        font-size: 15px;
+        margin: 10px 0 2px;
+      }
+      .approval .pos {
+        font-size: 13px;
+      }
+      .fee {
+        margin-top: 14px;
+        font-size: 13px;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .head div h1 {
+        font-size: 20px;
+      }
+      .head div p {
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" id="certificate">
+      <div class="head">
+        <img src="' . $e($denr) . '" alt="DENR" width="80" height="80" />
+        <div>
+          <h1>Department of Environment and Natural Resources</h1>
+          <p>Region 7</p>
+          <p>Province of Cebu</p>
+          <p>Municipality of Argao</p>
+        </div>
+        <img
+          class="right"
+          src="' . $e($ph) . '"
+          alt="Pilipinas"
+          width="110"
+          height="110"
+        />
+      </div>
+
+      <div class="title">CERTIFICATE OF REGISTRATION</div>
+      <div class="number">NO. <span class="underline">CR-2025-001</span></div>
+
+      <div class="body">
+        <p>
+          After having complied with the provisions of DENR Administrative Order
+          No. 2003-29, series of 2003 otherwise known as the “Implementing
+          Guidelines of Chainsaw Act of 2002 (R.A. No 9175) entitled
+          <strong
+            >ACT REGULATING THE POSSESSION, OWNERSHIP, SALE, IMPORTATION AND USE
+            OF CHAINSAWS PENALIZING VIOLATIONS THEREOF AND FOR OTHER RELATED
+            PURPOSES</strong
+          >, this Certificate of Registration to possess, own or use a chainsaw
+          is hereby issued to:
+        </p>
+
+        <div class="center">
+          <p><span class="underline">Juan Dela Cruz</span> (Name)</p>
+          <p>
+            <span class="underline"
+              >Sitio Sampaguita, Brgy. Poblacion, Municipality of Argao,
+              Cebu</span
+            >
+            (Address)
+          </p>
+        </div>
+
+        <p style="margin: 12px 0">
+          bearing the following information and descriptions:
+        </p>
+
+        <table class="info-table">
+          <tr>
+            <td>Use of the Chainsaw:</td>
+            <td>
+              <span class="underline">Landscaping / Farm maintenance</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Brand: <span class="small">STIHL</span></td>
+            <td>Model: <span class="small">MS 381</span></td>
+          </tr>
+          <tr>
+            <td>
+              Date of Acquisition: <span class="small">March 12, 2023</span>
+            </td>
+            <td>Serial No.: <span class="small">SN-00123456789</span></td>
+          </tr>
+          <tr>
+            <td>Horsepower: <span class="small">3.9 hp</span></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>
+              Maximum Length of Guide bar: <span class="small">25 inches</span>
+            </td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Issued on: <span class="small">October 10, 2025</span></td>
+            <td>at: <span class="small">CENRO Argao, Cebu</span></td>
+          </tr>
+          <tr>
+            <td>Expiry Date: <span class="small">October 10, 2027</span></td>
+            <td></td>
+          </tr>
+        </table>
+
+        <p>
+          <strong
+            >An authenticated copy of this Certificate must accompany the
+            Chainsaw at all times.</strong
+          >
+        </p>
+      </div>
+
+      <div class="approval">
+        <h2>APPROVED:</h2>
+        <div class="name">VICENTE RUSTICOM. CALIZAR, RPF</div>
+        <div class="pos">CENR Officer</div>
+
+        <div class="fee">
+          <p>Registration Fee: P500.00</p>
+          <p>O.R. No. <span class="small">123456789</span></p>
+          <p>Date Issued: <span class="small">October 10, 2025</span></p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

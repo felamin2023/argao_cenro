@@ -62,7 +62,6 @@ function strip_reason_from_message(?string $msg): string
     return $t;
 }
 
-/* ---------- AJAX: details for modal ---------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
     header('Content-Type: application/json');
     $approvalId = $_GET['approval_id'] ?? '';
@@ -72,6 +71,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
     }
 
     try {
+        // 1) Query
         $st = $pdo->prepare("
           select
             a.approval_id,
@@ -82,9 +82,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             a.submitted_at,
             a.application_id,
             a.requirement_id,
-            c.first_name, c.last_name
+            c.first_name, c.last_name,
+            ad.approved_document
           from public.approval a
           left join public.client c on c.client_id = a.client_id
+          left join lateral (
+              select d.approved_document
+              from public.approved_docs d
+              where d.approval_id = a.approval_id
+              order by d.id desc
+              limit 1
+          ) ad on true
           where a.approval_id = :aid
             and c.user_id = :uid
           limit 1
@@ -96,21 +104,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             exit;
         }
 
+        // 2) Build application fields
         $appFields = [];
         $signatureField = null;
-
         if (notempty($row['application_id'])) {
             $st2 = $pdo->prepare("select * from public.application_form where application_id = :app limit 1");
             $st2->execute([':app' => $row['application_id']]);
             $app = $st2->fetch(PDO::FETCH_ASSOC) ?: [];
             foreach ($app as $k => $v) {
-                if (in_array($k, ['id', 'client_id'], true)) continue;
-                if (!notempty($v)) continue;
-
+                if (in_array($k, ['id', 'client_id'], true) || !notempty($v)) continue;
                 $label = ucwords(str_replace('_', ' ', $k));
                 $norm  = strtolower($label);
                 if ($norm === 'additional information' || $norm === 'additional info') continue;
-
                 if (strpos($norm, 'signature') !== false) {
                     $signatureField = ['label' => $label, 'value' => (string)$v];
                     continue;
@@ -120,15 +125,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
         }
         if ($signatureField) array_unshift($appFields, $signatureField);
 
-        // Files from requirements
+        // 3) Files
         $files = [];
         if (notempty($row['requirement_id'])) {
             $st3 = $pdo->prepare("select * from public.requirements where requirement_id = :rid limit 1");
             $st3->execute([':rid' => $row['requirement_id']]);
             $req = $st3->fetch(PDO::FETCH_ASSOC) ?: [];
             foreach ($req as $k => $v) {
-                if (in_array($k, ['id', 'requirement_id'], true)) continue;
-                if (!notempty($v)) continue;
+                if (in_array($k, ['id', 'requirement_id'], true) || !notempty($v)) continue;
                 $url = normalize_url((string)$v, $FILE_BASE);
                 if ($url === '') continue;
                 $label = ucwords(str_replace('_', ' ', $k));
@@ -138,28 +142,38 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             }
         }
 
+        // 4) Download link when status is RELEASED
+        $status      = strtolower((string)($row['approval_status'] ?? ''));
+        $downloadUrl = ($status === 'released')
+            ? normalize_url((string)($row['approved_document'] ?? ''), $FILE_BASE)
+            : '';
+
+        // 5) Echo once
         echo json_encode([
             'ok'   => true,
             'meta' => [
-                'client'         => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
-                'first_name'     => ($row['first_name'] ?? ''),
-                'last_name'      => ($row['last_name'] ?? ''),
-                'request_type'   => $row['request_type'] ?? '',
-                'permit_type'    => $row['permit_type'] ?? 'none',
-                'status'         => $row['approval_status'] ?? 'pending',
-                'reason'         => $row['rejection_reason'] ?? '',
-                'submitted_at'   => $row['submitted_at'] ?? null,
-                'approval_id'    => $row['approval_id'] ?? null,
+                'client'       => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
+                'first_name'   => ($row['first_name'] ?? ''),
+                'last_name'    => ($row['last_name'] ?? ''),
+                'request_type' => $row['request_type'] ?? '',
+                'permit_type'  => $row['permit_type'] ?? 'none',
+                'status'       => $status ?: 'pending',
+                'reason'       => $row['rejection_reason'] ?? '',
+                'submitted_at' => $row['submitted_at'] ?? null,
+                'approval_id'  => $row['approval_id'] ?? null,
+                'download_url' => $downloadUrl,
             ],
             'application' => $appFields,
             'files'       => $files
         ]);
     } catch (Throwable $e) {
         error_log('[APP-STATUS AJAX] ' . $e->getMessage());
+        http_response_code(500);
         echo json_encode(['ok' => false, 'error' => 'server error']);
     }
     exit;
 }
+
 
 /* ---------- AJAX: notifications mark read / all read ---------- */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_all_read') {
@@ -1121,7 +1135,8 @@ try {
                     <a href="useraddtreecut.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting Permit</span></a>
                     <a href="useraddlumber.php" class="dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
                     <a href="useraddwood.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
-                    <a href="application_status.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
+                    <a href="useraddchainsaw.php" class="dropdown-item active-page"><i class="fas fa-tools"></i><span>Chainsaw Permit</span></a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
 
@@ -1313,10 +1328,18 @@ try {
             <div class="modal-header">
                 <h3 id="modalTitle">Request Details</h3>
                 <div style="display:flex;gap:8px;align-items:center">
-                    <button class="btn primary hidden" id="btnRequestAgain" type="button" aria-hidden="true"><i class="fas fa-rotate-right"></i> Request again</button>
-                    <button class="icon-btn" type="button" aria-label="Close" data-close-modal><i class="fas fa-times"></i></button>
+                    <button class="btn small primary hidden" id="btnDownloadIssued" type="button" aria-hidden="true">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                    <button class="btn primary hidden" id="btnRequestAgain" type="button" aria-hidden="true">
+                        <i class="fas fa-rotate-right"></i> Request again
+                    </button>
+                    <button class="icon-btn" type="button" aria-label="Close" data-close-modal>
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
+
 
             <!-- SKELETON while loading -->
             <div id="modalSkeleton" class="s-wrap hidden" aria-hidden="true">
@@ -1456,6 +1479,7 @@ try {
 
             /* --- Modal utilities + state --- */
             const btnRequestAgain = document.getElementById('btnRequestAgain');
+            const btnDownloadIssued = document.getElementById('btnDownloadIssued');
             const modalEl = document.getElementById('viewModal');
             const modalSkeleton = document.getElementById('modalSkeleton');
             const metaStripEl = document.querySelector('.meta-strip');
@@ -1466,6 +1490,7 @@ try {
                 metaStripEl.classList.add('hidden');
                 modalContent.classList.add('hidden');
                 btnRequestAgain.classList.add('hidden');
+                if (btnDownloadIssued) btnDownloadIssued.classList.add('hidden'); // ← new
             }
 
             function hideModalSkeleton() {
@@ -1475,6 +1500,51 @@ try {
             }
 
             let cachedDetails = null;
+            async function forceDownload(url) {
+                if (!url) return;
+                try {
+                    if (url.startsWith('data:')) {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.setAttribute('download', 'document');
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        return;
+                    }
+                    const res = await fetch(url, {
+                        credentials: 'omit'
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+                    const dispo = res.headers.get('Content-Disposition') || '';
+                    let filename = 'document';
+                    const m = dispo.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+                    if (m && m[1]) {
+                        filename = decodeURIComponent(m[1].replace(/["']/g, ''));
+                    } else {
+                        const u = new URL(url, window.location.origin);
+                        filename = (u.pathname.split('/').pop() || 'document').split('?')[0];
+                    }
+
+                    const blob = await res.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.setAttribute('download', filename);
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+                } catch {
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = url;
+                    document.body.appendChild(iframe);
+                    setTimeout(() => iframe.remove(), 10000);
+                }
+            }
+
 
             async function openApproval(approvalId) {
                 if (!approvalId) return;
@@ -1536,7 +1606,25 @@ try {
 
                 const st = (meta.status || '').toLowerCase();
                 ms.textContent = st ? st[0].toUpperCase() + st.slice(1) : '—';
-                ms.className = 'badge status ' + (st === 'approved' ? 'approved' : (st === 'rejected' ? 'rejected' : 'pending'));
+                // 'released' uses the green badge like approved
+                ms.className = 'badge status ' + ((st === 'released' || st === 'approved') ? 'approved' : (st === 'rejected' ? 'rejected' : 'pending'));
+
+                // Toggle modal Download button only for released
+                if (btnDownloadIssued) {
+                    btnDownloadIssued.classList.add('hidden');
+                    btnDownloadIssued.disabled = true;
+                    btnDownloadIssued.setAttribute('aria-hidden', 'true');
+                    btnDownloadIssued.onclick = null;
+
+                    const dlUrl = (meta.download_url || '').trim();
+                    if (st === 'released' && dlUrl) {
+                        btnDownloadIssued.classList.remove('hidden');
+                        btnDownloadIssued.disabled = false;
+                        btnDownloadIssued.setAttribute('aria-hidden', 'false');
+                        btnDownloadIssued.onclick = () => forceDownload(dlUrl);
+                    }
+                }
+
 
                 if (st === 'rejected' && (meta.reason || '').trim() !== '') {
                     banner.textContent = 'Reason for rejection: ' + meta.reason;

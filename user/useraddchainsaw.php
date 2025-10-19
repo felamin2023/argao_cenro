@@ -6,6 +6,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -56,7 +127,202 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --accent-color: #3a86ff;
             --dark-gray: #555;
             --medium-gray: #ddd;
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
         }
+
+        .as-item {
+            position: relative;
+        }
+
+        /* Bell button */
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        /* Base dropdown */
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* Notifications-specific sizing */
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        /* Sticky header */
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        /* Scroll body */
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        /* Rows */
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        /* Sticky footer */
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        /* Red badge on bell */
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
 
         * {
             margin: 0;
@@ -1169,27 +1435,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <a href="useraddlumber.php" class="dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
                     <a href="useraddwood.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
                     <a href="useraddchainsaw.php" class="dropdown-item active-page"><i class="fas fa-tools"></i><span>Chainsaw Permit</span></a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-as-read">Mark all as read</a>
+            <!-- Notifications -->
+            <div class="as-item">
+                <div class="as-icon">
+                    <i class="fas fa-bell"></i>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge">
+                            <?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="as-dropdown-menu as-notifications">
+                    <!-- sticky header -->
+                    <div class="as-notif-header">
+                        <h3>Notifications</h3>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-circle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
+
+                    <!-- scrollable body -->
+                    <div class="notifcontainer"><!-- this holds the records -->
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="user_notification.php" class="view-all">View All Notifications</a></div>
+
+                    <!-- sticky footer -->
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
+                    </div>
                 </div>
             </div>
+
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
@@ -1648,7 +1958,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px">Working…</div>
     </div>
     <!-- Need Approved NEW modal -->
-    <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -1660,11 +1970,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
 
     <!-- Confirm Modal -->
-    <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
+    <!-- <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Submit Application</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -1675,10 +1985,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="btnOkConfirm" class="btn btn-primary" type="button">Yes, submit</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Pending NEW request modal -->
-    <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -1688,10 +1998,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Offer renewal modal -->
-    <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -1702,7 +2012,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
             </div>
         </div>
+    </div> -->
+
+    <!-- Universal App Modal (shared) -->
+    <div id="appModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <div id="amTitle" style="font-weight:600">Title</div>
+                <button id="amClose" class="close-modal" type="button" aria-label="Close" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer">&times;</button>
+            </div>
+            <div id="amBody" style="padding:16px 20px;line-height:1.6">Body</div>
+            <div id="amFooter" style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee"></div>
+        </div>
     </div>
+
 
     <script>
         (function() {
@@ -1710,6 +2033,215 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SIG_HEIGHT = 110;
             const SAVE_URL = new URL('../backend/users/chainsaw/save_chainsaw.php', window.location.href).toString();
             const PRECHECK_URL = new URL('../backend/users/chainsaw/precheck_chainsaw.php', window.location.href).toString();
+
+            /* ===== Universal Modal controller (uses #appModal you already have) ===== */
+            const AppModal = (() => {
+                const root = document.getElementById('appModal');
+                const titleEl = document.getElementById('amTitle');
+                const bodyEl = document.getElementById('amBody');
+                const footEl = document.getElementById('amFooter');
+                const closeBtn = document.getElementById('amClose');
+                let resolver = null;
+
+                function close(value = null) {
+                    root.style.display = 'none';
+                    footEl.innerHTML = '';
+                    if (resolver) {
+                        const r = resolver;
+                        resolver = null;
+                        r(value);
+                    }
+                    document.body.style.overflow = '';
+                }
+
+                function btn({
+                    text,
+                    value,
+                    variant
+                }) {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = text;
+                    b.className = variant === 'primary' ? 'btn btn-primary' : 'btn btn-outline';
+                    b.addEventListener('click', () => close(value ?? text));
+                    return b;
+                }
+
+                function open({
+                    title = 'Notice',
+                    html = '',
+                    buttons = [{
+                        text: 'OK',
+                        variant: 'primary',
+                        value: 'ok'
+                    }]
+                }) {
+                    return new Promise(resolve => {
+                        resolver = resolve;
+                        titleEl.textContent = title;
+                        bodyEl.innerHTML = html;
+                        footEl.innerHTML = '';
+                        buttons.forEach(def => footEl.appendChild(btn(def)));
+                        root.style.display = 'flex';
+                        document.body.style.overflow = 'hidden';
+                    });
+                }
+                root.addEventListener('click', (e) => {
+                    if (e.target === root) close('cancel');
+                });
+                closeBtn?.addEventListener('click', () => close('cancel'));
+                window.addEventListener('keydown', (e) => {
+                    if (root.style.display !== 'none' && e.key === 'Escape') close('cancel');
+                });
+                return {
+                    open,
+                    close
+                };
+            })();
+            const openModal = (opts) => AppModal.open(opts);
+
+            /* ===== Fuzzy precheck helpers ===== */
+            function renderCandidateList(cands) {
+                if (!Array.isArray(cands) || !cands.length) return '';
+                const rows = cands.map((c, i) => {
+                    const nm = [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ');
+                    const pct = (c.score != null) ? ` <small style="opacity:.65">~${Math.round((c.score||0)*100)}% match</small>` : '';
+                    return `<label style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #eee;">
+              <input type="radio" name="cand_pick" value="${String(c.client_id)}" ${i===0?'checked':''}>
+              <span>${nm}${pct}</span>
+            </label>`;
+                }).join('');
+                return `<div style="max-height:220px;overflow:auto;padding-top:6px;">${rows}</div>`;
+            }
+
+            function escHtml(s) {
+                return String(s ?? '').replace(/[&<>"']/g, m => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [m]));
+            }
+
+            async function confirmDetectedClientForRenewal(baseJson) {
+                // exact match already found?
+                const nameFromExact =
+                    (baseJson && (baseJson.existing_client_first || baseJson.existing_client_last)) ? [baseJson.existing_client_first, baseJson.existing_client_middle, baseJson.existing_client_last]
+                    .filter(Boolean).join(' ') :
+                    (baseJson?.existing_client_name || '');
+
+                if (baseJson?.existing_client_id && nameFromExact) {
+                    const act = await openModal({
+                        title: 'Confirm detected client',
+                        html: `Is this the correct client for renewal?<br><br><b>${escHtml(nameFromExact)}</b>`,
+                        buttons: [{
+                                text: 'Cancel',
+                                variant: 'outline',
+                                value: 'cancel'
+                            },
+                            {
+                                text: 'Confirm',
+                                variant: 'primary',
+                                value: 'confirm'
+                            },
+                        ]
+                    });
+                    if (act === 'confirm') return String(baseJson.existing_client_id);
+                    return null;
+                }
+
+                // fuzzy candidates → require a pick
+                const cands = Array.isArray(baseJson?.candidates) ? baseJson.candidates : [];
+                if (cands.length) {
+                    const act = await openModal({
+                        title: 'Choose client for renewal',
+                        html: `<div>We found similar client records. Pick the correct one for renewal:</div>${renderCandidateList(cands)}`,
+                        buttons: [{
+                                text: 'Cancel',
+                                variant: 'outline',
+                                value: 'cancel'
+                            },
+                            {
+                                text: 'Use selected',
+                                variant: 'primary',
+                                value: 'use'
+                            },
+                        ]
+                    });
+                    if (act === 'use') {
+                        const picked = readSelectedCandidateId();
+                        return picked ? String(picked) : null;
+                    }
+                    return null;
+                }
+
+                // no match at all
+                const act = await openModal({
+                    title: 'No matching client',
+                    html: `We couldn’t detect an existing client for renewal. You can edit the name fields or switch to a NEW request.`,
+                    buttons: [{
+                            text: 'Cancel',
+                            variant: 'outline',
+                            value: 'cancel'
+                        },
+                        {
+                            text: 'Switch to NEW',
+                            variant: 'primary',
+                            value: 'to_new'
+                        },
+                    ]
+                });
+                if (act === 'to_new') {
+                    applyFilter('new');
+                    autofillNewFromRenewal();
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                }
+                return null;
+            }
+
+            function readSelectedCandidateId() {
+                const r = document.querySelector('input[name="cand_pick"]:checked');
+                return r ? r.value : null;
+            }
+
+            const MSG = {
+                pay: 'You still have an unpaid chainsaw permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
+                offerR: 'You can’t request a <b>new</b> Chainsaw permit because you already have a released one. You’re allowed to request a <b>renewal</b> instead.',
+                needNew: 'To request a renewal, you must have an released <b>NEW</b> Chainsaw permit on record.',
+            };
+
+            /* small wrapper that reuses your PRECHECK_URL and existing v()/activePermitType() */
+            async function precheckWith(type, pickedClientId = null) {
+                const first = type === "renewal" ? v("first-name-r") : v("first-name");
+                const middle = type === "renewal" ? v("middle-name-r") : v("middle-name");
+                const last = type === "renewal" ? v("last-name-r") : v("last-name");
+
+                const fd = new FormData();
+                fd.append('first_name', first);
+                fd.append('middle_name', middle);
+                fd.append('last_name', last);
+                fd.append('desired_permit_type', type);
+                if (pickedClientId) fd.append('use_client_id', pickedClientId);
+
+                const res = await fetch(PRECHECK_URL, {
+                    method: 'POST',
+                    body: fd,
+                    credentials: 'include'
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.message || 'Precheck failed');
+                return json;
+            }
+
+            /* state set by the “Use existing / Create new” step */
+            let chosenClientId = null; // if user selected an existing client
+            let chosenClientName = null; // {first, middle, last} from existing client
+            let confirmNewClient = false;
+
 
             const btns = document.querySelectorAll(".permit-type-btn");
             const list = document.getElementById("requirementsList");
@@ -2050,26 +2582,223 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             btnSubmit?.addEventListener("click", async () => {
                 try {
                     const type = activePermitType();
-                    const first = type === "renewal" ? v("first-name-r") : v("first-name");
-                    const middle = type === "renewal" ? v("middle-name-r") : v("middle-name");
-                    const last = type === "renewal" ? v("last-name-r") : v("last-name");
 
-                    const fd = new FormData();
-                    fd.append("first_name", first);
-                    fd.append("middle_name", middle);
-                    fd.append("last_name", last);
-                    fd.append("desired_permit_type", type);
+                    // 1) First pass precheck
+                    const base = await precheckWith(type, null);
 
-                    const res = await fetch(PRECHECK_URL, {
-                        method: "POST",
-                        body: fd,
-                        credentials: "include"
-                    });
-                    const json = await res.json();
-                    if (!res.ok) throw new Error(json.message || "Precheck failed");
+                    // 2) NEW FLOW — unchanged logic
+                    if (type === "new") {
+                        if (base.block === "for_payment") {
+                            await openModal({
+                                title: 'Payment Due',
+                                html: MSG.pay,
+                                buttons: [{
+                                    text: 'Okay',
+                                    variant: 'primary',
+                                    value: 'ok'
+                                }]
+                            });
+                            return;
+                        }
+                        if (base.block === "pending_new") {
+                            if (pendingNewModal) pendingNewModal.style.display = "flex";
+                            else await openModal({
+                                title: 'Pending Request',
+                                html: 'You already have a pending <b>new</b> chainsaw permit request. Please wait for updates before submitting another one.',
+                                buttons: [{
+                                    text: 'Okay',
+                                    variant: 'primary',
+                                    value: 'ok'
+                                }]
+                            });
+                            return;
+                        }
+                        if (base.block === "pending_renewal") {
+                            toast("You already have a pending chainsaw renewal. Please wait for the update first.");
+                            return;
+                        }
+                        if (base.offer === "renewal") {
+                            const act = offerRenewalModal ? (offerRenewalModal.style.display = "flex", 'ok') : await openModal({
+                                title: 'Renewal Available',
+                                html: MSG.offerR,
+                                buttons: [{
+                                    text: 'Okay',
+                                    variant: 'outline',
+                                    value: 'ok'
+                                }, {
+                                    text: 'Request renewal',
+                                    variant: 'primary',
+                                    value: 'switch'
+                                }]
+                            });
+                            if (act === 'switch') {
+                                applyFilter('renewal');
+                                autofillRenewalFromNew();
+                                window.scrollTo({
+                                    top: 0,
+                                    behavior: 'smooth'
+                                });
+                            }
+                            return;
+                        }
 
-                    if (json.block === "pending_new") {
-                        pendingNewModal.style.display = "flex";
+                        const cands = Array.isArray(base.candidates) ? base.candidates :
+                            (base.existing_client_id ? [{
+                                client_id: base.existing_client_id,
+                                first_name: base.existing_client_first || '',
+                                middle_name: base.existing_client_middle || '',
+                                last_name: base.existing_client_last || '',
+                                score: base.suggestion_score || 0.7
+                            }] : []);
+                        if (cands.length) {
+                            const choice = await openModal({
+                                title: 'Use existing client?',
+                                html: `We found existing client records that look like a match. Do you want to use one of them?${renderCandidateList(cands)}`,
+                                buttons: [{
+                                        text: 'Cancel',
+                                        variant: 'outline',
+                                        value: 'cancel'
+                                    },
+                                    {
+                                        text: 'Create as new',
+                                        variant: 'outline',
+                                        value: 'new'
+                                    },
+                                    {
+                                        text: 'Use existing',
+                                        variant: 'primary',
+                                        value: 'use'
+                                    }
+                                ]
+                            });
+                            if (choice === 'cancel') return;
+                            if (choice === 'new') {
+                                confirmNewClient = true;
+                            } else if (choice === 'use') {
+                                const picked = readSelectedCandidateId();
+                                if (picked) {
+                                    chosenClientId = picked;
+                                    const j2 = await precheckWith(type, picked);
+                                    chosenClientName = {
+                                        first: j2.existing_client_first || '',
+                                        middle: j2.existing_client_middle || '',
+                                        last: j2.existing_client_last || ''
+                                    };
+                                    if (j2.block === "for_payment") {
+                                        await openModal({
+                                            title: 'Payment Due',
+                                            html: MSG.pay,
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'primary',
+                                                value: 'ok'
+                                            }]
+                                        });
+                                        return;
+                                    }
+                                    if (j2.block === "pending_new") {
+                                        if (pendingNewModal) pendingNewModal.style.display = "flex";
+                                        else await openModal({
+                                            title: 'Pending Request',
+                                            html: 'You already have a pending <b>new</b> chainsaw permit request. Please wait for updates before submitting another one.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'primary',
+                                                value: 'ok'
+                                            }]
+                                        });
+                                        return;
+                                    }
+                                    if (j2.block === "pending_renewal") {
+                                        toast("You already have a pending chainsaw renewal. Please wait for the update first.");
+                                        return;
+                                    }
+                                    if (j2.offer === "renewal") {
+                                        const sw = await openModal({
+                                            title: 'Renewal Available',
+                                            html: MSG.offerR,
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'outline',
+                                                value: 'ok'
+                                            }, {
+                                                text: 'Request renewal',
+                                                variant: 'primary',
+                                                value: 'switch'
+                                            }]
+                                        });
+                                        if (sw === 'switch') {
+                                            applyFilter('renewal');
+                                            autofillRenewalFromNew();
+                                            window.scrollTo({
+                                                top: 0,
+                                                behavior: 'smooth'
+                                            });
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // confirm submit
+                        if (typeof confirmModal !== "undefined" && confirmModal) {
+                            confirmModal.style.display = "flex";
+                        } else {
+                            const ans = await openModal({
+                                title: 'Submit Application',
+                                html: 'Please confirm you want to submit this Chainsaw application. Files will be uploaded and your request will enter review.',
+                                buttons: [{
+                                    text: 'Cancel',
+                                    variant: 'outline',
+                                    value: 'cancel'
+                                }, {
+                                    text: 'Yes, submit',
+                                    variant: 'primary',
+                                    value: 'ok'
+                                }]
+                            });
+                            if (ans === 'ok') {
+                                loading.style.display = "flex";
+                                try {
+                                    await doSubmit();
+                                    toast("Application submitted. We'll notify you once reviewed.");
+                                    resetForm();
+                                } catch (e) {
+                                    console.error(e);
+                                    toast(e?.message || "Submission failed. Please try again.");
+                                } finally {
+                                    loading.style.display = "none";
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    // 3) RENEWAL — confirm client FIRST
+                    const pickedId = await confirmDetectedClientForRenewal(base);
+                    if (!pickedId) return; // user cancelled / switched
+                    chosenClientId = pickedId;
+
+                    // Re-run precheck bound to the confirmed client
+                    const json = await precheckWith("renewal", pickedId);
+
+                    chosenClientName = {
+                        first: json.existing_client_first || '',
+                        middle: json.existing_client_middle || '',
+                        last: json.existing_client_last || ''
+                    };
+
+                    if (json.block === "for_payment") {
+                        await openModal({
+                            title: 'Payment Due',
+                            html: MSG.pay,
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
                         return;
                     }
                     if (json.block === "pending_renewal") {
@@ -2077,21 +2806,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         return;
                     }
                     if (json.block === "need_approved_new") {
-                        // Show the new modal (instead of toast). User can switch to NEW and keep their values.
-                        needApprovedNewModal.style.display = "flex";
+                        if (needApprovedNewModal) needApprovedNewModal.style.display = "flex";
+                        else {
+                            const act = await openModal({
+                                title: 'Action Required',
+                                html: MSG.needNew + '<br><br>You can switch to a NEW request. We’ll copy your values.',
+                                buttons: [{
+                                    text: 'Cancel',
+                                    variant: 'outline',
+                                    value: 'cancel'
+                                }, {
+                                    text: 'Request new',
+                                    variant: 'primary',
+                                    value: 'switch'
+                                }]
+                            });
+                            if (act === 'switch') {
+                                applyFilter('new');
+                                autofillNewFromRenewal();
+                                window.scrollTo({
+                                    top: 0,
+                                    behavior: 'smooth'
+                                });
+                            }
+                        }
                         return;
                     }
-                    if (json.offer === "renewal" && type === "new") {
-                        offerRenewalModal.style.display = "flex";
-                        return;
+
+                    // Confirm submit
+                    if (typeof confirmModal !== "undefined" && confirmModal) {
+                        confirmModal.style.display = "flex";
+                    } else {
+                        const ans = await openModal({
+                            title: 'Submit Application',
+                            html: 'Please confirm you want to submit this Chainsaw application. Files will be uploaded and your request will enter review.',
+                            buttons: [{
+                                text: 'Cancel',
+                                variant: 'outline',
+                                value: 'cancel'
+                            }, {
+                                text: 'Yes, submit',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
+                        if (ans === 'ok') {
+                            loading.style.display = "flex";
+                            try {
+                                await doSubmit();
+                                toast("Application submitted. We'll notify you once reviewed.");
+                                resetForm();
+                            } catch (e) {
+                                console.error(e);
+                                toast(e?.message || "Submission failed. Please try again.");
+                            } finally {
+                                loading.style.display = "none";
+                            }
+                        }
                     }
-                    confirmModal.style.display = "flex";
                 } catch (e) {
                     console.error(e);
-                    // still allow manual confirm so user gets feedback
-                    confirmModal.style.display = "flex";
+                    if (typeof confirmModal !== "undefined" && confirmModal) {
+                        confirmModal.style.display = "flex";
+                    } else {
+                        const ans = await openModal({
+                            title: 'Submit Application',
+                            html: 'Proceed with submission?',
+                            buttons: [{
+                                text: 'Cancel',
+                                variant: 'outline',
+                                value: 'cancel'
+                            }, {
+                                text: 'Yes, submit',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
+                        if (ans === 'ok') {
+                            loading.style.display = "flex";
+                            try {
+                                await doSubmit();
+                                toast("Application submitted. We'll notify you once reviewed.");
+                                resetForm();
+                            } catch (err) {
+                                console.error(err);
+                                toast(err?.message || "Submission failed. Please try again.");
+                            } finally {
+                                loading.style.display = "none";
+                            }
+                        }
+                    }
                 }
             });
+
+
 
             // FINAL submit
             document.getElementById("btnOkConfirm")?.addEventListener("click", async () => {
@@ -2160,7 +2968,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     maximum_length_of_guide_bar = v("guide-bar-length");
                 }
 
-                const fullName = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, " ").trim();
+                const fullNameForDoc = (
+                    chosenClientId && chosenClientName ? [chosenClientName.first, chosenClientName.middle, chosenClientName.last] : [firstName, middleName, lastName]
+                ).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
                 // Build MHTML doc (Word-opening)
                 const sigLocation = "signature.png";
@@ -2193,7 +3003,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <h3 style="text-align:center;">${titleLine}</h3>
 
             <p><b>I. APPLICANT INFORMATION</b></p>
-            <p>Name: <u>${fullName}</u></p>
+            <p>Name: <u>${fullNameForDoc}</u></p>
             <p>Address: <u>${addrJoined}</u></p>
             <p>Contact Number: <u>${contact_number}</u></p>
 
@@ -2227,7 +3037,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const docBlob = new Blob([mhtml], {
                     type: "application/msword"
                 });
-                const docFileName = `${type === "renewal" ? "Chainsaw_Renewal" : "Chainsaw_New"}_${(fullName || "Applicant").replace(/\s+/g, "_")}.doc`;
+                const docFileName =
+                    `${type === "renewal" ? "Chainsaw_Renewal" : "Chainsaw_New"}_${(fullNameForDoc || "Applicant").replace(/\s+/g, "_")}.doc`;
                 const docFile = new File([docBlob], docFileName, {
                     type: "application/msword"
                 });
@@ -2295,11 +3106,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     });
                 }
 
+                // Carry user’s choice from the fuzzy step
+                if (chosenClientId) fd.append("use_existing_client_id", String(chosenClientId));
+                if (confirmNewClient) fd.append("confirm_new_client", "1");
+
+                // Now submit
                 const res = await fetch(SAVE_URL, {
                     method: "POST",
                     body: fd,
                     credentials: "include"
                 });
+
                 let json;
                 try {
                     json = await res.json();
@@ -2316,6 +3133,513 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mobileToggle?.addEventListener("click", () => {
                 const isActive = navContainer.classList.toggle("active");
                 document.body.style.overflow = isActive ? "hidden" : "";
+            });
+        })();
+    </script>
+    <script>
+        /*! chainsaw-validate.js (concise msgs) */
+        (() => {
+            "use strict";
+            const $ = (id) => document.getElementById(id);
+            const q = (sel, root = document) => root.querySelector(sel);
+            const qa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+            const TYPE = {
+                NEW: "new",
+                REN: "renewal"
+            };
+            const curType = () => (q(".permit-type-btn.active")?.dataset.type || TYPE.NEW);
+
+            // Inject minimal error CSS (red text only)
+            (() => {
+                const s = document.createElement("style");
+                s.textContent = `.fv-error{color:#d93025;font-size:.88rem;line-height:1.3;margin-top:6px}`;
+                document.head.appendChild(s);
+            })();
+
+            // Error helpers (render under control; no borders)
+            function setErr(el, msg) {
+                if (!el) return false;
+                clrErr(el);
+                const d = document.createElement("div");
+                d.className = "fv-error";
+                d.setAttribute("role", "alert");
+                d.textContent = msg;
+                el.insertAdjacentElement("afterend", d);
+                return false;
+            }
+
+            function clrErr(el) {
+                if (!el) return;
+                const sib = el.nextElementSibling;
+                if (sib && sib.classList.contains("fv-error")) sib.remove();
+            }
+
+            function firstErrFocus() {
+                const e = q(".fv-error");
+                if (!e) return;
+                const a = e.previousElementSibling || e;
+                try {
+                    a.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center"
+                    });
+                } catch {}
+                if (a && a.focus) a.focus({
+                    preventScroll: true
+                });
+            }
+
+            // Utils
+            const blank = (v) => !v || !String(v).trim();
+            const letters = (v) => /^[A-Za-z][A-Za-z\s'’-]*[A-Za-z]$/.test(v.trim());
+            const rep4 = (v) => /(.)\1{3,}/.test(v);
+            const num = (v) => {
+                const n = parseFloat(String(v).replace(/,/g, "."));
+                return isNaN(n) ? NaN : n;
+            };
+            const isPHMobile = (s) => /^(\+639|639|09)\d{9}$/.test(String(s).replace(/[^\d+]/g, ""));
+            const isFuture = (iso) => {
+                if (!iso) return false;
+                const d = new Date(iso + "T00:00:00");
+                const t = new Date();
+                t.setHours(0, 0, 0, 0);
+                return d > t;
+            };
+            const before = (a, b) => new Date(a + "T00:00:00") < new Date(b + "T00:00:00");
+
+            function barInches(raw) {
+                if (!raw) return NaN;
+                const s = raw.trim().toLowerCase();
+                const mCm = s.match(/^(\d+(\.\d+)?)\s*cm$/);
+                const mIn = s.match(/^(\d+(\.\d+)?)\s*(in|inch|inches|")?$/);
+                if (mCm) return parseFloat(mCm[1]) / 2.54;
+                if (mIn) return parseFloat(mIn[1]);
+                const n0 = num(s);
+                return isNaN(n0) ? NaN : n0;
+            }
+
+            // Quick JPEG GPS check (EXIF)
+            async function jpegHasGPS(file) {
+                if (!file || file.type !== "image/jpeg") return false;
+                const buf = await file.slice(0, 128 * 1024).arrayBuffer();
+                const dv = new DataView(buf);
+                if (dv.getUint8(0) !== 0xff || dv.getUint8(1) !== 0xd8) return false;
+                let off = 2;
+                while (off + 3 < dv.byteLength) {
+                    const marker = dv.getUint16(off);
+                    off += 2;
+                    if ((marker & 0xff00) !== 0xff00) break;
+                    if (marker === 0xffda) break;
+                    const len = dv.getUint16(off);
+                    if (marker === 0xffe1 && len >= 8) {
+                        const id = new TextDecoder().decode(new Uint8Array(buf, off + 2, 6));
+                        if (/^Exif\0\0/.test(id)) {
+                            const tiff = off + 8;
+                            const be = new TextDecoder().decode(new Uint8Array(buf, tiff, 2)) === "MM";
+                            const u16 = (p) => dv.getUint16(p, !be);
+                            const u32 = (p) => dv.getUint32(p, !be);
+                            const ifd0 = tiff + u32(tiff + 4);
+                            const n = u16(ifd0);
+                            for (let i = 0; i < n; i++) {
+                                const e = ifd0 + 2 + i * 12;
+                                if (u16(e) === 0x8825) {
+                                    const gpsIfd = tiff + u32(e + 8);
+                                    const gn = u16(gpsIfd);
+                                    let lat = false,
+                                        lon = false;
+                                    for (let j = 0; j < gn; j++) {
+                                        const te = gpsIfd + 2 + j * 12;
+                                        const tag = u16(te);
+                                        if (tag === 0x0002) lat = true;
+                                        if (tag === 0x0004) lon = true;
+                                    }
+                                    return lat && lon;
+                                }
+                            }
+                        }
+                    }
+                    off += len;
+                }
+                return false;
+            }
+
+            // Allowed municipalities (read from select)
+            const MUNIC = (() => {
+                const sel = $("#municipality");
+                if (!sel) return [];
+                return qa("option", sel).map((o) => o.textContent.trim()).filter((t) => t && !/^Select/i.test(t));
+            })();
+
+            // Validators (concise messages)
+            const nameReq = (el, label) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 2) return setErr(el, "Too short.");
+                if (!letters(v)) return setErr(el, "Letters only.");
+                if (rep4(v)) return setErr(el, "Looks invalid.");
+                return true;
+            };
+            const nameOpt = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (!v) return true;
+                if (v.length === 1) return true;
+                if (!letters(v)) return setErr(el, "Letters only.");
+                if (rep4(v)) return setErr(el, "Looks invalid.");
+                return true;
+            };
+            const vStreet = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 3) return setErr(el, "Be specific.");
+                if (/^\d+$/.test(v)) return setErr(el, "Not numbers only.");
+                return true;
+            };
+            const vBarangay = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                const opts = qa("#barangayList option").map((o) => o.value.trim().toLowerCase());
+                if (opts.length && !opts.includes(v.toLowerCase())) return setErr(el, "Use list.");
+                return true;
+            };
+            const vMunicipNew = (sel) => {
+                clrErr(sel);
+                if (!sel || !sel.value) return setErr(sel, "Select one.");
+                return true;
+            };
+            const vMunicipRen = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (MUNIC.length && !MUNIC.some((m) => m.toLowerCase() === v.toLowerCase()))
+                    return setErr(el, "Invalid.");
+                return true;
+            };
+            const vProv = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (/^\d+$/.test(v)) return setErr(el, "Letters only.");
+                return true;
+            };
+            const vPhone = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (!isPHMobile(v)) return setErr(el, "Use 09/639 format.");
+                return true;
+            };
+            const vPurpose = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 10) return setErr(el, "Min 10 chars.");
+                if (/^(test|na|n\/a|sample|asdf)$/i.test(v)) return setErr(el, "Be specific.");
+                return true;
+            };
+            const vBrand = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (/^\d+$/.test(v)) return setErr(el, "Not numbers only.");
+                return true;
+            };
+            const vModel = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 2) return setErr(el, "Too short.");
+                return true;
+            };
+            const vAcq = (el) => {
+                const v = el?.value || "";
+                clrErr(el);
+                if (!v) return setErr(el, "Required.");
+                if (isFuture(v)) return setErr(el, "No future date.");
+                if (new Date(v) < new Date("1990-01-01")) return setErr(el, "Unrealistic.");
+                return true;
+            };
+            const vSerial = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 5) return setErr(el, "Too short.");
+                if (/^[^A-Za-z0-9]+$/.test(v)) return setErr(el, "Alphanumeric.");
+                if (rep4(v)) return setErr(el, "Looks invalid.");
+                return true;
+            };
+            const vHPopt = (el) => {
+                const r = el?.value?.trim() || "";
+                clrErr(el);
+                if (!r) return true;
+                const n = num(r);
+                if (isNaN(n)) return setErr(el, "Number only.");
+                if (n < 0.5 || n > 15) return setErr(el, "0.5–15.");
+                return true;
+            };
+            const vBar = (el) => {
+                const r = el?.value?.trim() || "";
+                clrErr(el);
+                if (!r) return setErr(el, "Required.");
+                const inches = barInches(r);
+                if (isNaN(inches)) return setErr(el, `Use in/cm.`);
+                if (inches < 8 || inches > 36) return setErr(el, "8–36 in.");
+                return true;
+            };
+            const vPermitNo = (el) => {
+                const v = el?.value?.trim() || "";
+                clrErr(el);
+                if (blank(v)) return setErr(el, "Required.");
+                if (v.length < 6) return setErr(el, "Too short.");
+                return true;
+            };
+            const vIssExp = (iss, exp) => {
+                clrErr(iss);
+                clrErr(exp);
+                const a = iss?.value || "",
+                    b = exp?.value || "";
+                if (!a) return setErr(iss, "Required.");
+                if (!b) return setErr(exp, "Required.");
+                if (!before(a, b)) return setErr(exp, "After issuance.");
+                if (isFuture(a)) return setErr(iss, "No future date.");
+                return true;
+            };
+
+            // File helpers
+            function okType(file, accept) {
+                if (!file) return false;
+                const ext = (file.name.split(".").pop() || "").toLowerCase();
+                const map = {
+                    pdf: ["pdf"],
+                    doc: ["doc", "docx"],
+                    img: ["jpg", "jpeg", "png"],
+                };
+                const allow = {
+                    "pdf,doc,docx": [...map.pdf, ...map.doc],
+                    "jpg,jpeg,png": map.img,
+                    "pdf,doc,docx,jpg,jpeg,png": [...map.pdf, ...map.doc, ...map.img],
+                } [accept] || [];
+                return allow.includes(ext);
+            }
+
+            async function vFiles(type) {
+                let ok = true;
+                const need = (inp, msg, types, maxMB) => {
+                    clrErr(inp);
+                    const f = inp?.files?.[0];
+                    if (!f) {
+                        ok = setErr(inp, msg);
+                        return;
+                    }
+                    if (!okType(f, types)) ok = setErr(inp, `Allowed: ${types.replace(/,/g, "/")}.`);
+                    else if (f.size > maxMB * 1024 * 1024) ok = setErr(inp, `Max ${maxMB}MB.`);
+                };
+
+                // common
+                need($("#file-cert-terms"), "Upload file.", "pdf,doc,docx", 10);
+                need($("#file-cert-sticker"), "Upload image.", "jpg,jpeg,png", 5);
+                need($("#file-memo"), "Upload file.", "pdf,doc,docx", 15);
+
+                // geo (gps if jpeg)
+                const geo = $("#file-geo");
+                if (geo?.files?.[0]) {
+                    const f = geo.files[0];
+                    clrErr(geo);
+                    if (!okType(f, "jpg,jpeg,png")) ok = setErr(geo, "JPG/PNG only.");
+                    else if (f.type === "image/jpeg") {
+                        try {
+                            const hasGps = await jpegHasGPS(f);
+                            if (!hasGps) ok = setErr(geo, "Need GPS EXIF.");
+                        } catch {
+                            ok = setErr(geo, "EXIF error.");
+                        }
+                    }
+                } else {
+                    ok = setErr(geo, "Upload image.");
+                }
+
+                if (type === TYPE.NEW) {
+                    need($("#file-sell-permit"), "Upload file.", "pdf,doc,docx", 10);
+                    need($("#file-business-permit"), "Upload file.", "pdf,doc,docx", 10);
+                    need($("#file-old-reg"), "Upload file.", "pdf,doc,docx,jpg,jpeg,png", 10);
+                }
+                return ok;
+            }
+
+            // Signature (canvas not blank)
+            function vSig() {
+                const c = $("#signature-pad");
+                if (!c) return true;
+                const ctx = c.getContext("2d");
+                try {
+                    const {
+                        data
+                    } = ctx.getImageData(0, 0, c.width, c.height);
+                    let ink = false;
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (!(data[i] === 255 && data[i + 1] === 255 && data[i + 2] === 255) && data[i + 3] !== 0) {
+                            ink = true;
+                            break;
+                        }
+                    }
+                    const anchor = c.closest(".signature-pad-container") || c;
+                    clrErr(anchor);
+                    if (!ink) return setErr(anchor, "Please sign."), false;
+                    return true;
+                } catch {
+                    return true;
+                }
+            }
+
+            // Validate all visible fields
+            async function validateAll() {
+                qa(".fv-error").forEach((n) => n.remove());
+                const t = curType();
+                const fld = (n, r) => $(t === TYPE.REN ? r : n);
+
+                let ok = true;
+                ok &= nameReq(fld("first-name", "first-name-r"), "First name");
+                ok &= nameOpt(fld("middle-name", "middle-name-r"));
+                ok &= nameReq(fld("last-name", "last-name-r"), "Last name");
+                ok &= vStreet(fld("street", "street-r"));
+                ok &= vBarangay(fld("barangay", "barangay-r"));
+                ok &= (t === TYPE.NEW ? vMunicipNew($("#municipality")) : vMunicipRen($("#municipality-r")));
+                ok &= vProv(fld("province", "province-r"));
+                ok &= vPhone(fld("contact-number", "contact-number-r"));
+
+                ok &= vPurpose(fld("purpose", "purpose-r"));
+                ok &= vBrand(fld("brand", "brand-r"));
+                ok &= vModel(fld("model", "model-r"));
+                ok &= vAcq(fld("acquisition-date", "acquisition-date-r"));
+                ok &= vSerial(fld("serial-number", "serial-number-r"));
+                ok &= vHPopt(fld("horsepower", "horsepower-r"));
+                ok &= vBar(fld("guide-bar-length", "guide-bar-length-r"));
+
+                if (t === TYPE.REN) {
+                    ok &= vPermitNo($("#permit-number-r"));
+                    ok &= vIssExp($("#issuance-date-r"), $("#expiry-date-r"));
+                }
+
+                ok &= vSig();
+                ok &= await vFiles(t);
+
+                return !!ok;
+            }
+
+            // Live validation bindings
+            function bindLive() {
+                const rules = [
+                    ["first-name", (e) => nameReq(e, "First name")],
+                    ["middle-name", nameOpt],
+                    ["last-name", (e) => nameReq(e, "Last name")],
+                    ["street", vStreet],
+                    ["barangay", vBarangay],
+                    ["municipality", vMunicipNew],
+                    ["province", vProv],
+                    ["contact-number", vPhone],
+                    ["purpose", vPurpose],
+                    ["brand", vBrand],
+                    ["model", vModel],
+                    ["acquisition-date", vAcq],
+                    ["serial-number", vSerial],
+                    ["horsepower", vHPopt],
+                    ["guide-bar-length", vBar],
+                    // Renewal
+                    ["first-name-r", (e) => nameReq(e, "First name")],
+                    ["middle-name-r", nameOpt],
+                    ["last-name-r", (e) => nameReq(e, "Last name")],
+                    ["street-r", vStreet],
+                    ["barangay-r", (e) => (clrErr(e), !blank(e.value) || setErr(e, "Required."))],
+                    ["municipality-r", vMunicipRen],
+                    ["province-r", vProv],
+                    ["contact-number-r", vPhone],
+                    ["permit-number-r", vPermitNo],
+                    ["issuance-date-r", () => true],
+                    ["expiry-date-r", () => true],
+                    ["purpose-r", vPurpose],
+                    ["brand-r", vBrand],
+                    ["model-r", vModel],
+                    ["acquisition-date-r", vAcq],
+                    ["serial-number-r", vSerial],
+                    ["horsepower-r", vHPopt],
+                    ["guide-bar-length-r", vBar],
+                ];
+                for (const [id, fn] of rules) {
+                    const el = $(id);
+                    if (!el) continue;
+                    const evt = el.tagName === "SELECT" || el.type === "date" ? "change" : "input";
+                    el.addEventListener(evt, () => fn(el));
+                    el.addEventListener("blur", () => fn(el));
+                }
+
+                // issuance/expiry pair
+                const iss = $("#issuance-date-r"),
+                    exp = $("#expiry-date-r");
+                if (iss && exp) {
+                    const sync = () => vIssExp(iss, exp);
+                    iss.addEventListener("change", sync);
+                    exp.addEventListener("change", sync);
+                }
+
+                // file quick checks
+                qa("input[type='file']").forEach((inp) => {
+                    inp.addEventListener("change", async () => {
+                        if (!inp.files || !inp.files[0]) return;
+                        const id = inp.id,
+                            f = inp.files[0];
+                        clrErr(inp);
+                        const over = (sz, mb) => sz > mb * 1024 * 1024 ? setErr(inp, `Max ${mb}MB.`) : true;
+                        if (id === "file-cert-terms" || id === "file-memo") {
+                            if (!okType(f, "pdf,doc,docx")) setErr(inp, "PDF/DOC/DOCX only.");
+                            else over(f.size, id === "file-memo" ? 15 : 10);
+                        } else if (id === "file-cert-sticker") {
+                            if (!okType(f, "jpg,jpeg,png")) setErr(inp, "JPG/PNG only.");
+                            else over(f.size, 5);
+                        } else if (id === "file-geo") {
+                            if (!okType(f, "jpg,jpeg,png")) setErr(inp, "JPG/PNG only.");
+                            else if (f.type === "image/jpeg") {
+                                try {
+                                    if (!(await jpegHasGPS(f))) setErr(inp, "Need GPS EXIF.");
+                                } catch {
+                                    setErr(inp, "EXIF error.");
+                                }
+                            }
+                        } else if (id === "file-sell-permit" || id === "file-business-permit") {
+                            if (!okType(f, "pdf,doc,docx")) setErr(inp, "PDF/DOC/DOCX only.");
+                            else over(f.size, 10);
+                        } else if (id === "file-old-reg") {
+                            if (!okType(f, "pdf,doc,docx,jpg,jpeg,png")) setErr(inp, "PDF/DOC/DOCX/JPG/PNG.");
+                            else over(f.size, 10);
+                        }
+                    });
+                });
+
+                // clear when switching type
+                qa(".permit-type-btn").forEach((b) => b.addEventListener("click", () => setTimeout(() => qa(".fv-error").forEach((n) => n.remove()), 0)));
+            }
+
+            // Intercept submits (precheck + confirm buttons)
+            function guardSubmits() {
+                const guard = async (e) => {
+                    const ok = await validateAll();
+                    if (!ok) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        firstErrFocus();
+                    }
+                };
+                $("#submitApplication")?.addEventListener("click", guard, true);
+                $("#btnOkConfirm")?.addEventListener("click", guard, true);
+            }
+
+            // Boot
+            const ready = (fn) => (document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn) : fn());
+            ready(() => {
+                bindLive();
+                guardSubmits();
             });
         })();
     </script>

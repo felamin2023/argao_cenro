@@ -115,8 +115,19 @@ try {
     $horsepower          = trim($_POST['horsepower']           ?? '');
     $max_guide           = trim($_POST['maximum_length_of_guide_bar'] ?? '');
 
-    $complete_name   = trim(preg_replace('/\s+/', ' ', "{$first_name} {$middle_name} {$last_name}"));
-    $present_address = implode(', ', array_filter([$sitio_street, $barangay, $municipality, $province]));
+    // NEW: optional override/force flags coming from precheck flow
+    $override_client_id   = trim((string)($_POST['use_existing_client_id'] ?? $_POST['use_client_id'] ?? ''));
+    $confirm_new_client   = isset($_POST['confirm_new_client'])
+        ? (($_POST['confirm_new_client'] === '1' || strtolower((string)$_POST['confirm_new_client']) === 'true'))
+        : false;
+
+    $complete_name_typed = trim(preg_replace('/\s+/', ' ', "{$first_name} {$middle_name} {$last_name}"));
+    $present_address     = implode(', ', array_filter([$sitio_street, $barangay, $municipality, $province]));
+
+    // Basic sanity (aligns with frontend requireds)
+    if ($first_name === '' || $last_name === '') {
+        throw new Exception('Missing required name fields.');
+    }
 
     // --- Server-side PRECHECK (hard rules) ---
     $nf = norm($first_name);
@@ -131,25 +142,42 @@ try {
     } catch (\Throwable $ignored) {
     }
 
-    if ($hasNormCols) {
-        $stmt = $pdo->prepare("SELECT client_id FROM public.client WHERE norm_first=:f AND norm_middle=:m AND norm_last=:l LIMIT 1");
-    } else {
-        $stmt = $pdo->prepare("
-            SELECT client_id
-            FROM public.client
-            WHERE lower(trim(coalesce(first_name,'')))  = :f
-              AND lower(trim(coalesce(middle_name,''))) = :m
-              AND lower(trim(coalesce(last_name,'')))   = :l
-            LIMIT 1
-        ");
+    // 1) If frontend selected a specific existing client id, validate and use it
+    $client_id = null;
+    if ($override_client_id !== '') {
+        $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
+        $chk->execute([':cid' => $override_client_id]);
+        $client_id = $chk->fetchColumn() ?: null;
+        if (!$client_id) {
+            throw new Exception('Selected client does not exist.');
+        }
     }
-    $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
-    $existing_client_id = $stmt->fetchColumn() ?: null;
+
+    // 2) Otherwise, search for an exact match by name
+    $existing_client_id = null;
+    if (!$client_id) {
+        if ($hasNormCols) {
+            $stmt = $pdo->prepare("SELECT client_id FROM public.client WHERE norm_first=:f AND norm_middle=:m AND norm_last=:l LIMIT 1");
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT client_id
+                FROM public.client
+                WHERE lower(trim(coalesce(first_name,'')))  = :f
+                  AND lower(trim(coalesce(middle_name,''))) = :m
+                  AND lower(trim(coalesce(last_name,'')))   = :l
+                LIMIT 1
+            ");
+        }
+        $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
+        $existing_client_id = $stmt->fetchColumn() ?: null;
+    }
 
     $pdo->beginTransaction();
 
-    // --- Client: reuse if found, else create ---
-    if ($existing_client_id) {
+    // 3) Decide: use override; else reuse match unless user said "create new"; else create new client
+    if ($client_id) {
+        // use the override value as-is
+    } elseif ($existing_client_id && !$confirm_new_client) {
         $client_id = $existing_client_id;
     } else {
         $stmt = $pdo->prepare("
@@ -174,6 +202,18 @@ try {
     }
 
     // ---- Status flags on this client ----
+
+    // Global blocker: any chainsaw approval in 'for payment'
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'chainsaw'
+          AND lower(approval_status) = 'for payment'
+        LIMIT 1
+    ");
+    $stmt->execute([':cid' => $client_id]);
+    $hasForPayment = (bool)$stmt->fetchColumn();
+
     // PENDING NEW
     $stmt = $pdo->prepare("
         SELECT 1 FROM public.approval
@@ -186,18 +226,17 @@ try {
     $stmt->execute([':cid' => $client_id]);
     $hasPendingNew = (bool)$stmt->fetchColumn();
 
-    // APPROVED NEW
+    // RELEASED NEW (required for renewal)
     $stmt = $pdo->prepare("
         SELECT 1 FROM public.approval
         WHERE client_id = :cid
           AND lower(request_type) = 'chainsaw'
           AND lower(permit_type)  = 'new'
-          AND lower(approval_status) = 'approved'
-        ORDER BY approved_at DESC NULLS LAST
+          AND lower(approval_status) = 'released'
         LIMIT 1
     ");
     $stmt->execute([':cid' => $client_id]);
-    $hasApprovedNew = (bool)$stmt->fetchColumn();
+    $hasReleasedNew = (bool)$stmt->fetchColumn();
 
     // PENDING RENEWAL
     $stmt = $pdo->prepare("
@@ -211,19 +250,26 @@ try {
     $stmt->execute([':cid' => $client_id]);
     $hasPendingRenewal = (bool)$stmt->fetchColumn();
 
+    // Pending ANY (new or renewal) — used to block renewal if anything is pending
+    $hasPendingAny = ($hasPendingNew || $hasPendingRenewal);
+
     // ---- Enforce rules (HARD BLOCKS) ----
+    if (!empty($hasForPayment)) {
+        throw new Exception('You currently have a chainsaw approval marked FOR PAYMENT. Please settle payment before filing another request.');
+    }
+
     if ($permit_type === 'renewal') {
-        if ($hasPendingRenewal) {
-            throw new Exception('You already have a pending RENEWAL chainsaw application.');
+        if (!empty($hasPendingAny)) {
+            throw new Exception('You already have a pending chainsaw application. Please wait for the update first.');
         }
-        if (!$hasApprovedNew) {
-            throw new Exception('To file a renewal, you must have an APPROVED new chainsaw permit on record.');
+        if (empty($hasReleasedNew)) {
+            throw new Exception('To file a renewal, you must have a RELEASED NEW chainsaw permit on record.');
         }
     } else { // NEW
-        if ($hasPendingNew) {
+        if (!empty($hasPendingNew)) {
             throw new Exception('You already have a pending NEW chainsaw application.');
         }
-        if ($hasPendingRenewal) {
+        if (!empty($hasPendingRenewal)) {
             throw new Exception('You have a pending RENEWAL; please wait for the update first.');
         }
     }
@@ -310,6 +356,19 @@ try {
         $stmt->execute($params);
     }
 
+    /* -------- Canonical client name (use for complete_name + notifications) -------- */
+    $cnq = $pdo->prepare("SELECT first_name, middle_name, last_name FROM public.client WHERE client_id = :cid LIMIT 1");
+    $cnq->execute([':cid' => $client_id]);
+    $cn = $cnq->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $canon_first  = trim((string)($cn['first_name']  ?? ''));
+    $canon_middle = trim((string)($cn['middle_name'] ?? ''));
+    $canon_last   = trim((string)($cn['last_name']   ?? ''));
+    $canon_full   = trim(preg_replace('/\s+/', ' ', "{$canon_first} {$canon_middle} {$canon_last}"));
+
+    // If we have a stored name (existing client), prefer it for the application_form.complete_name
+    $complete_name_for_form = $canon_full !== '' ? $canon_full : $complete_name_typed;
+
     // --- application_form row ---
     // Build additional_information (store submission_key and optional issuance_date)
     $extraInfo = ["submission_key={$run}"];
@@ -342,7 +401,7 @@ try {
         ':date_of_acq'     => $date_of_acquisition,
         ':horsepower'      => $horsepower,
         ':max_guide'       => $max_guide,
-        ':complete_name'   => $complete_name,
+        ':complete_name'   => $complete_name_for_form, // <— use canonical/stored name
         ':present_address' => $present_address,
         ':province'        => $province,
         ':location'        => $municipality,
@@ -373,9 +432,11 @@ try {
     $approval_id = $stmt->fetchColumn();
     if (!$approval_id) throw new Exception('Failed to create approval record');
 
-    // --- admin notification (now with "from" and "to") ---
-    $nicePermit = strtolower($permit_type); // "new" or "renewal"
-    $msg = sprintf('%s requested a chainsaw %s permit.', $first_name ?: $complete_name, $nicePermit);
+    // --- admin notification (prefer stored FIRST name) ---
+    $display_name = $canon_first ?: $first_name ?: $canon_full ?: $complete_name_for_form;
+    $nicePermit   = strtolower($permit_type); // "new" or "renewal"
+    $msg          = sprintf('%s requested a chainsaw %s permit.', $display_name, $nicePermit);
+
     $stmt = $pdo->prepare("
         INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
         VALUES (:approval_id, NULL, :message, false, :from_user, :to_value)

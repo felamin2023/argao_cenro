@@ -4,119 +4,121 @@ $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wood Processing Records</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-     <link rel="stylesheet" href="/denr/superadmin/css/woodprocessing.css">
-   
+
+    <link rel="stylesheet" href="/denr/superadmin/css/woodprocessing.css">
+
 </head>
+
 <body>
 
-<header>
-    <div class="logo">
-        <a href="treehome.php">
-            <img src="seal.png" alt="Site Logo">
-        </a>
-    </div>
-    
-    <!-- Mobile menu toggle -->
-    <button class="mobile-toggle" aria-label="Toggle menu">
-        <i class="fas fa-bars"></i>
-    </button>
-    
-    <!-- Navigation on the right -->
-    <div class="nav-container">
-        <!-- Dashboard Dropdown -->
-        <div class="nav-item dropdown">
-            <div  class="nav-icon active" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-bars"></i>
-            </div>
-            <div class="dropdown-menu center">
-                <a href="treecutting.php" class="dropdown-item">
-                    <i class="fas fa-tree"></i>
-                    <span>Tree Cutting</span>
-                </a>
-                <a href="lumber.php" class="dropdown-item">
-                    <i class="fas fa-store"></i>
-                    <span>Lumber Dealers</span>
-                </a>
-                <a href="chainsaw.php" class="dropdown-item active-page">
-                    <i class="fas fa-tools"></i>
-                    <span>Registered Chainsaw</span>
-                </a>
-                <a href="woodprocessing.php" class="dropdown-item">
-                    <i class="fas fa-industry"></i>
-                    <span>Wood Processing</span>
-                </a>
-                <a href="reportaccident.php" class="dropdown-item">
-                    <i class="fas fa-file-invoice"></i>
-                    <span>Incident Reports</span>
-                </a>
-               
-            </div>
+    <header>
+        <div class="logo">
+            <a href="treehome.php">
+                <img src="seal.png" alt="Site Logo">
+            </a>
         </div>
-        
-        <!-- Messages Icon -->
-        <div class="nav-item">
-            <div class="nav-icon">
-                <a href="treemessage.php" aria-label="Messages">
-                    <i class="fas fa-envelope" style="color: black;"></i>
-                </a>
-            </div>
-        </div>
-        
-        <!-- Notifications -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-bell"></i>
-                <span class="badge">1</span>
-            </div>
-            <div class="dropdown-menu notifications-dropdown">
-                <div class="notification-header">
-                    <h3>Notifications</h3>
-                    <a href="#" class="mark-all-read">Mark all as read</a>
+
+        <!-- Mobile menu toggle -->
+        <button class="mobile-toggle" aria-label="Toggle menu">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Navigation on the right -->
+        <div class="nav-container">
+            <!-- Dashboard Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon active" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-bars"></i>
                 </div>
-                
-                <div class="notification-item unread">
-                    <a href="treeeach.php?id=1" class="notification-link">
-                        <div class="notification-icon">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="notification-content">
-                            <div class="notification-title">Illegal Logging Alert</div>
-                            <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
-                            <div class="notification-time">15 minutes ago</div>
-                        </div>
+                <div class="dropdown-menu center">
+                    <a href="treecutting.php" class="dropdown-item">
+                        <i class="fas fa-tree"></i>
+                        <span>Tree Cutting</span>
+                    </a>
+                    <a href="lumber.php" class="dropdown-item">
+                        <i class="fas fa-store"></i>
+                        <span>Lumber Dealers</span>
+                    </a>
+                    <a href="chainsaw.php" class="dropdown-item active-page">
+                        <i class="fas fa-tools"></i>
+                        <span>Registered Chainsaw</span>
+                    </a>
+                    <a href="woodprocessing.php" class="dropdown-item">
+                        <i class="fas fa-industry"></i>
+                        <span>Wood Processing</span>
+                    </a>
+                    <a href="reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-file-invoice"></i>
+                        <span>Incident Reports</span>
+                    </a>
+
+                </div>
+            </div>
+
+            <!-- Messages Icon -->
+            <div class="nav-item">
+                <div class="nav-icon">
+                    <a href="treemessage.php" aria-label="Messages">
+                        <i class="fas fa-envelope" style="color: black;"></i>
                     </a>
                 </div>
-                
-                <div class="notification-footer">
-                    <a href="treenotification.php" class="view-all">View All Notifications</a>
+            </div>
+
+            <!-- Notifications -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge">1</span>
+                </div>
+                <div class="dropdown-menu notifications-dropdown">
+                    <div class="notification-header">
+                        <h3>Notifications</h3>
+                        <a href="#" class="mark-all-read">Mark all as read</a>
+                    </div>
+
+                    <div class="notification-item unread">
+                        <a href="treeeach.php?id=1" class="notification-link">
+                            <div class="notification-icon">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div class="notification-content">
+                                <div class="notification-title">Illegal Logging Alert</div>
+                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
+                                <div class="notification-time">15 minutes ago</div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="notification-footer">
+                        <a href="treenotification.php" class="view-all">View All Notifications</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="dropdown-menu">
+                    <a href="treeprofile.php" class="dropdown-item">
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="../superlogin.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
             </div>
         </div>
-        
-        <!-- Profile Dropdown -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                <i class="fas fa-user-circle"></i>
-            </div>
-            <div class="dropdown-menu">
-                <a href="treeprofile.php" class="dropdown-item">
-                    <i class="fas fa-user-edit"></i>
-                    <span>Edit Profile</span>
-                </a>
-                <a href="../superlogin.php" class="dropdown-item">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
+    </header>
 
     <div class="wood-processing-records">
         <div class="container">
@@ -126,17 +128,17 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
             <!-- Controls Section -->
             <div class="controls">
-               
+
                 <div class="search">
                     <input type="text" placeholder="SEARCH HERE" class="search-input">
                     <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon">
                 </div>
-                <div class="export"> 
-                    <button class="export-button">  
-                        <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon"> 
-                    </button> 
+                <div class="export">
+                    <button class="export-button">
+                        <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon">
+                    </button>
                     <span class="export-label">Export as CSV</span>
-                </div> 
+                </div>
             </div>
 
             <!-- Table Section -->
@@ -161,11 +163,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <td>New Permit</td>
                             <td>2023-08-18</td>
                             <td>Approved</td>
-                           
+
                             <td>
                                 <button class="view-btn" onclick="openModal('1', 'view')">👁️</button>
                                 <button class="edit-btn" onclick="openModal('1', 'edit')">✎</button>
-                            
+
                             </td>
                         </tr>
                         <tr>
@@ -175,13 +177,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <td>Renewal</td>
                             <td>2023-09-05</td>
                             <td>Pending</td>
-                           
+
                             <td>
                                 <button class="view-btn" onclick="openModal('2', 'view')">👁️</button>
                                 <button class="edit-btn" onclick="openModal('2', 'edit')">✎</button>
                             </td>
                         </tr>
-                        
+
                     </tbody>
                 </table>
             </div>
@@ -218,8 +220,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </div>
     </div>
 
-        <!-- JavaScript for functionality -->
-        <script>
+    <!-- JavaScript for functionality -->
+    <script>
         // Sample data - in a real app, you would fetch this from your database
         const recordData = {
             '1': {
@@ -233,11 +235,26 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 'APPROVED BY': 'Paquito D.Melicor, Jr, Regional Executive Director',
                 'STATUS': 'approved',
                 'requirements': {
-                    'application_letter': { uploaded: true, file: 'application_letter.pdf' },
-                    'official_receipt': { uploaded: true, file: 'official_receipt.pdf' },
-                    'permit_to_sell': { uploaded: true, file: 'permit_to_sell.pdf' },
-                    'business_permit': { uploaded: true, file: 'business_permit.pdf' },
-                    'old_registration': { uploaded: true, file: 'old_registration.pdf' }
+                    'application_letter': {
+                        uploaded: true,
+                        file: 'application_letter.pdf'
+                    },
+                    'official_receipt': {
+                        uploaded: true,
+                        file: 'official_receipt.pdf'
+                    },
+                    'permit_to_sell': {
+                        uploaded: true,
+                        file: 'permit_to_sell.pdf'
+                    },
+                    'business_permit': {
+                        uploaded: true,
+                        file: 'business_permit.pdf'
+                    },
+                    'old_registration': {
+                        uploaded: true,
+                        file: 'old_registration.pdf'
+                    }
                 }
             },
             '2': {
@@ -249,11 +266,26 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 'DATE APPLIED': '2023-09-05',
                 'STATUS': 'pending',
                 'requirements': {
-                    'application_letter': { uploaded: true, file: 'application_letter.pdf' },
-                    'official_receipt': { uploaded: true, file: 'official_receipt.pdf' },
-                    'permit_to_sell': { uploaded: false, file: '' },
-                    'business_permit': { uploaded: true, file: 'business_permit.pdf' },
-                    'old_registration': { uploaded: false, file: '' }
+                    'application_letter': {
+                        uploaded: true,
+                        file: 'application_letter.pdf'
+                    },
+                    'official_receipt': {
+                        uploaded: true,
+                        file: 'official_receipt.pdf'
+                    },
+                    'permit_to_sell': {
+                        uploaded: false,
+                        file: ''
+                    },
+                    'business_permit': {
+                        uploaded: true,
+                        file: 'business_permit.pdf'
+                    },
+                    'old_registration': {
+                        uploaded: false,
+                        file: ''
+                    }
                 }
             }
         };
@@ -266,83 +298,83 @@ $current_page = basename($_SERVER['PHP_SELF']);
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
+
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     navContainer.classList.toggle('active');
                 });
             }
-            
+
             // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
-            
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                
+
                 // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
                 });
-                
+
                 // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
                     // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
-                
+
                 // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
             });
-            
+
             // Close dropdowns when clicking outside (for mobile)
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     });
                 }
             });
-            
+
             // Mobile dropdown toggle
             if (window.innerWidth <= 992) {
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
-                    
+
                     toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
+
                         // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
-                        
+
                         // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
@@ -378,7 +410,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 });
             });
         });
-        
+
         // Open modal in either view or edit mode
         function openModal(id, mode) {
             currentRecordId = id;
@@ -388,26 +420,28 @@ $current_page = basename($_SERVER['PHP_SELF']);
             const modalBody = document.getElementById('modalBody');
             const modalTitle = document.getElementById('modalTitle');
             const modalActions = document.getElementById('modalActions');
-            
+
             // Get the data for the selected record
             const record = recordData[id] || {};
-            originalData = {...record};
-            
+            originalData = {
+                ...record
+            };
+
             // Set modal title based on mode
-            modalTitle.textContent = mode === 'edit' ? 
-                'EDIT CHAINSAW PERMIT' : 
+            modalTitle.textContent = mode === 'edit' ?
+                'EDIT CHAINSAW PERMIT' :
                 'CHAINSAW PERMIT - SUBMITTED REQUIREMENTS';
-            
+
             // Toggle edit mode class on modal content
             if (mode === 'edit') {
                 modalContent.classList.add('edit-mode');
             } else {
                 modalContent.classList.remove('edit-mode');
             }
-            
+
             // Build the HTML for the modal content
             let html = '';
-            
+
             if (mode === 'view') {
                 // View mode - show requirements list
                 html = `
@@ -704,9 +738,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     </div>
                 `;
             }
-            
+
             modalBody.innerHTML = html;
-            
+
             // Set up action buttons based on mode
             let actionButtons = '';
             if (mode === 'view') {
@@ -721,20 +755,20 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 modalBody.classList.add('edit-mode');
                 modalBody.classList.remove('view-mode');
             }
-            
+
             modalActions.innerHTML = actionButtons;
             modal.style.display = 'block';
-            
+
             // Add event listeners for file preview
             document.querySelectorAll('.view-file').forEach(btn => {
                 btn.addEventListener('click', function(e) {
                     e.preventDefault();
                     const fileName = this.getAttribute('data-file');
                     if (!fileName) return;
-                    
+
                     const modal = document.getElementById('filePreviewModal');
                     const modalFrame = document.getElementById('filePreviewFrame');
-                    
+
                     document.getElementById('modal-title').textContent = `Preview: ${fileName}`;
                     modalFrame.srcdoc = `
                         <html>
@@ -775,41 +809,41 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 });
             });
         }
-        
+
         function saveChanges() {
             // Collect all the edited values
             const status = document.getElementById('STATUS').value;
-            
+
             const updatedData = {
                 'STATUS': status
             };
-            
+
             // In a real app, you would send this data to the server
             console.log('Updated data:', updatedData);
-            
+
             // Update the table with the new data (in a real app, you would refresh from server)
             Object.assign(recordData[currentRecordId], updatedData);
-            
+
             // Update the table row
             const tableRow = document.querySelector(`.view-btn[onclick*="'${currentRecordId}'"]`).closest('tr');
             tableRow.cells[5].textContent = updatedData['STATUS'] || recordData[currentRecordId]['STATUS'];
-            
+
             alert('Changes saved successfully!');
             closeModal();
         }
-        
+
         function cancelEdit() {
             // Restore original data
             if (confirm('Are you sure you want to cancel? All unsaved changes will be lost.')) {
                 closeModal();
             }
         }
-        
+
         function closeModal() {
             const modal = document.getElementById('detailModal');
             modal.style.display = 'none';
         }
-        
+
         // Close modal when clicking outside of it
         window.onclick = function(event) {
             const modal = document.getElementById('detailModal');
@@ -821,12 +855,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 }
             }
         }
-        
+
         // Close file preview modal
         document.querySelector('.close-modal').addEventListener('click', function() {
             document.getElementById('filePreviewModal').style.display = 'none';
         });
-        
+
         window.addEventListener('click', function(event) {
             if (event.target == document.getElementById('filePreviewModal')) {
                 document.getElementById('filePreviewModal').style.display = 'none';
@@ -834,4 +868,5 @@ $current_page = basename($_SERVER['PHP_SELF']);
         });
     </script>
 </body>
+
 </html>

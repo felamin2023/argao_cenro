@@ -6,6 +6,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -54,7 +125,202 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             --transition: all 0.2s ease;
             --accent-color: #3a86ff;
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
         }
+
+        .as-item {
+            position: relative;
+        }
+
+        /* Bell button */
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        /* Base dropdown */
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* Notifications-specific sizing */
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        /* Sticky header */
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        /* Scroll body */
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        /* Rows */
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        /* Sticky footer */
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        /* Red badge on bell */
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
 
         * {
             margin: 0;
@@ -1253,39 +1519,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon" data-dropdown-toggle>
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge">
+                            <?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?>
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+
+                <div class="as-dropdown-menu as-notifications">
+                    <!-- sticky header -->
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <!-- scrollable body -->
+                    <div class="notifcontainer"><!-- this holds the records -->
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <!-- sticky footer -->
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
+
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
@@ -1368,6 +1667,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
                             </div>
                         </div>
+
+                        <div class="form-group">
+                            <label for="business-name" class="required">Business Name:</label>
+                            <input type="text" id="business-name" placeholder="Registered business name">
+                        </div>
+
 
                         <div class="form-group">
                             <label for="business-address" class="required">Business Address:</label>
@@ -1475,7 +1780,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
                                     <div class="signature-actions">
                                         <button type="button" class="signature-btn clear-signature" id="clear-signature">Clear</button>
-                                        <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button>
+                                        <!-- <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button> -->
                                     </div>
                                     <div class="signature-preview">
                                         <img id="signature-image" class="hidden" alt="Signature">
@@ -1510,6 +1815,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label for="applicant-age-ren" class="required">Age:</label>
                             <input type="number" id="applicant-age-ren" min="18">
                         </div>
+                        <div class="form-group">
+                            <label for="business-name-ren" class="required">Business Name:</label>
+                            <input type="text" id="business-name-ren" placeholder="Registered business name">
+                        </div>
+
 
                         <div class="form-group">
                             <label for="business-address-ren" class="required">Business Address:</label>
@@ -1929,12 +2239,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Toast -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
-    <!-- Need Approved NEW modal (attempting renewal without approved NEW) -->
+    <!-- Need Released NEW modal (attempting renewal without released NEW) -->
     <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
             <div style="padding:16px 20px;line-height:1.6">
-                To request a <b>renewal</b>, you must have an approved <b>NEW</b> lumber dealer permit on record.<br><br>
+                To request a <b>renewal</b>, you must have a <b>RELEASED NEW</b> lumber dealer permit on record.<br><br>
                 You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
@@ -1943,6 +2253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+
 
     <!-- Pending NEW request modal -->
     <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
@@ -1962,7 +2273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
             <div style="padding:16px 20px;line-height:1.6">
-                You can’t request a <b>new</b> lumber dealer permit because you already have an approved one. You’re allowed to request a <b>renewal</b> instead.
+                You can’t request a <b>new</b> lumber dealer permit because you already have a <b>RELEASED NEW</b>. You’re allowed to request a <b>renewal</b> instead.
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
                 <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
@@ -1970,6 +2281,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+    <!-- Use Existing Client modal -->
+    <div id="existingClientModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Client Found</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                We found an existing <b>client record</b> with the same name.<br><br>
+                Do you want to <b>use the existing client</b> for this <b>lumber</b> application,
+                or create a new client record?
+                <div id="existingClientHint" style="margin-top:10px;color:#666;font-size:.95rem;"></div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="existingClientCancel" class="btn btn-outline" type="button">Cancel</button>
+                <button id="existingClientNew" class="btn btn-outline" type="button">Create new</button>
+                <button id="existingClientUse" class="btn btn-primary" type="button">Use existing</button>
+            </div>
+        </div>
+    </div>
+    <!-- Use Existing Client (RENEWAL) -->
+    <div id="existingClientModalRen" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Client Found</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                We found an existing <b>client record</b> that matches your details for a <b>renewal</b>.
+                <div id="existingClientHintRen" style="margin-top:10px;color:#666;font-size:.95rem;"></div>
+                <div style="margin-top:10px;">Is this the correct client?</div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="existingClientRenCancel" class="btn btn-outline" type="button">Cancel</button>
+                <button id="existingClientRenConfirm" class="btn btn-primary" type="button">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- For Payment (global block) -->
+    <div id="forPaymentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:540px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Payment Required</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You still have an unpaid lumber permit on record (<b>for payment</b>).<br>
+                Please settle this <b>personally at the office</b> before filing another request.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="forPaymentOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+
+
     <script>
         (function() {
             'use strict';
@@ -2093,16 +2452,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     `;
             }
 
+            function esc(s) {
+                return String(s || '').replace(/[&<>"']/g, c => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [c]));
+            }
+
             function suppliersTableHTML(suppliers) {
                 const body = suppliers.length ?
-                    suppliers.map(s => `<tr><td>${s.name || ''}</td><td>${s.volume || ''}</td></tr>`).join('') :
+                    suppliers.map(s => `<tr><td>${esc(s.name)}</td><td>${esc(s.volume)}</td></tr>`).join('') :
                     `<tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr>`;
                 return `
-      <table class="suppliers-table">
-        <tr><th>SUPPLIERS NAME/COMPANY</th><th>VOLUME</th></tr>
-        ${body}
-      </table>`;
+    <table class="suppliers-table">
+      <tr><th>SUPPLIERS NAME/COMPANY</th><th>VOLUME</th></tr>
+      ${body}
+    </table>`;
             }
+
 
             function buildNewDocHTML(logoHref, sigHref, F, suppliers) {
                 const notStr = F.govEmp === 'yes' ? '' : 'not';
@@ -2136,7 +2506,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <p class="info-line">The CENR Officer<br>Argao, Cebu</p>
   <p class="info-line">Sir:</p>
 
-  <p class="info-line">I/We, <span class="underline">${F.fullName || ''}</span>, <span class="underline">${F.applicantAge || ''}</span> years old, with business address at <span class="underline">${F.businessAddress || ''}</span>, hereby apply for registration as a Lumber Dealer.</p>
+  <p class="info-line">I/We, <span class="underline">${esc(F.fullName)}</span>, <span class="underline">${esc(F.applicantAge)}</span> years old, with business address at <span class="underline">${esc(F.businessAddress)}</span>, hereby apply for registration as a Lumber Dealer.</p>
+
 
   <p class="info-line">1. I am ${notStr} a government employee and have ${notStr} received any compensation from the government.</p>
 
@@ -2291,20 +2662,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!menu) return;
                     const open = !menu.classList.contains('_open');
                     menu.classList.toggle('_open', open);
-                    Object.assign(menu.style, open ?
-                        {
-                            opacity: 1,
-                            visibility: 'visible',
-                            pointerEvents: 'auto',
-                            transform: 'translateY(0)'
-                        } :
-                        {
-                            opacity: 0,
-                            visibility: 'hidden',
-                            pointerEvents: 'none',
-                            transform: 'translateY(10px)'
-                        }
-                    );
+                    Object.assign(menu.style, open ? {
+                        opacity: 1,
+                        visibility: 'visible',
+                        pointerEvents: 'auto',
+                        transform: 'translateY(0)'
+                    } : {
+                        opacity: 0,
+                        visibility: 'hidden',
+                        pointerEvents: 'none',
+                        transform: 'translateY(10px)'
+                    });
                 });
             });
             document.addEventListener('click', () => {
@@ -2736,6 +3104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ['first-name', 'first-name-ren'],
                     ['middle-name', 'middle-name-ren'],
                     ['last-name', 'last-name-ren'],
+                    ['business-name', 'business-name-ren'], // <-- added
                     ['business-address', 'business-address-ren'],
                     ['operation-place', 'operation-place-ren'],
                     ['annual-volume', 'annual-volume-ren'],
@@ -2776,6 +3145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ['first-name-ren', 'first-name'],
                     ['middle-name-ren', 'middle-name'],
                     ['last-name-ren', 'last-name'],
+                    ['business-name-ren', 'business-name'], // <-- added
                     ['business-address-ren', 'business-address'],
                     ['operation-place-ren', 'operation-place'],
                     ['annual-volume-ren', 'annual-volume'],
@@ -2817,6 +3187,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const confirmModal = document.getElementById('confirmModal');
             const btnCancelConfirm = document.getElementById('btnCancelConfirm') || document.getElementById('cancelSubmitBtn');
             const btnOkConfirm = document.getElementById('btnOkConfirm') || document.getElementById('confirmSubmitBtn');
+
+            // Add these with the other modal refs:
+            const forPaymentModal = document.getElementById('forPaymentModal');
+            const forPaymentOk = document.getElementById('forPaymentOk');
 
             const pendingNewModal = document.getElementById('pendingNewModal');
             const pendingNewOk = document.getElementById('pendingNewOk');
@@ -2865,6 +3239,281 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 display(confirmModal, 'none');
             });
 
+            forPaymentOk?.addEventListener('click', () => {
+                display(forPaymentModal, 'none');
+            });
+
+            /* =========================
+   Existing Client modal (choose reuse vs new)
+========================== */
+            let chosenClientId = null; // if user picks "Use existing"
+            let forceNewClient = false; // if user picks "Create new"
+
+
+
+
+
+            const existingClientModal = document.getElementById('existingClientModal');
+            const existingClientHint = document.getElementById('existingClientHint');
+            const existingClientUse = document.getElementById('existingClientUse');
+            const existingClientNew = document.getElementById('existingClientNew');
+            const existingClientCancel = document.getElementById('existingClientCancel');
+
+            // RENEWAL-only modal refs
+            const existingClientModalRen = document.getElementById('existingClientModalRen');
+            const existingClientHintRen = document.getElementById('existingClientHintRen');
+            const existingClientRenConfirm = document.getElementById('existingClientRenConfirm');
+            const existingClientRenCancel = document.getElementById('existingClientRenCancel');
+
+            if (existingClientModal) {
+                existingClientModal.dataset.clientId = '';
+                if (existingClientHint) existingClientHint.textContent = '';
+            }
+            if (existingClientModalRen) {
+                existingClientModalRen.dataset.clientId = '';
+                if (existingClientHintRen) existingClientHintRen.textContent = '';
+            }
+
+
+            // DB name parts returned by precheck (when it finds/suggests a client)
+            let existingClientFirst = null,
+                existingClientMiddle = null,
+                existingClientLast = null;
+
+
+            function openExistingClientModal(clientId, displayName) {
+                chosenClientId = null;
+                forceNewClient = false;
+                if (existingClientModal) {
+                    existingClientModal.style.display = 'flex';
+                    existingClientModal.dataset.clientId = String(clientId || '');
+                }
+                if (existingClientHint) existingClientHint.textContent = displayName ? `Matched: ${displayName}` : '';
+            }
+
+            function closeExistingClientModal() {
+                if (existingClientModal) existingClientModal.style.display = 'none';
+            }
+
+            function openExistingClientModalRen(clientId, displayName) {
+                if (!existingClientModalRen) return;
+                existingClientModalRen.style.display = 'flex';
+                existingClientModalRen.dataset.clientId = String(clientId || '');
+                if (existingClientHintRen) {
+                    existingClientHintRen.textContent = displayName ? `Matched: ${esc(displayName)}` : '';
+                }
+            }
+
+            function closeExistingClientModalRen() {
+                if (!existingClientModalRen) return;
+                existingClientModalRen.style.display = 'none';
+                existingClientModalRen.dataset.clientId = '';
+                if (existingClientHintRen) existingClientHintRen.textContent = '';
+            }
+
+
+            existingClientUse?.addEventListener('click', async () => {
+                const overlay = document.getElementById('loadingIndicator');
+                const btn = existingClientUse;
+                const prevLabel = btn?.textContent;
+
+                // Start loading state
+                btn && (btn.disabled = true, btn.setAttribute('aria-busy', 'true'), btn.textContent = 'Working…');
+                display(overlay, 'flex');
+
+                chosenClientId = existingClientModal?.dataset?.clientId || null;
+                forceNewClient = false;
+
+                // Mirror DB names (FIRST, MIDDLE, LAST) into the visible fields + declaration
+                const dbFirst = existingClientFirst || '';
+                const dbMiddle = existingClientMiddle || ''; // may be empty
+                const dbLast = existingClientLast || '';
+                const declVal = (dbFirst + ' ' + dbLast).trim(); // declaration stays FIRST + LAST
+
+                // NEW section
+                const fN = document.getElementById('first-name');
+                const mN = document.getElementById('middle-name');
+                const lN = document.getElementById('last-name');
+                const dN = document.getElementById('declaration-name');
+                if (fN) fN.value = dbFirst;
+                if (mN) mN.value = dbMiddle; // set middle or empty
+                if (lN) lN.value = dbLast;
+                if (dN) dN.value = declVal;
+
+                // RENEWAL section
+                const fR = document.getElementById('first-name-ren');
+                const mR = document.getElementById('middle-name-ren');
+                const lR = document.getElementById('last-name-ren');
+                const dR = document.getElementById('declaration-name-ren');
+                if (fR) fR.value = dbFirst;
+                if (mR) mR.value = dbMiddle; // set middle or empty
+                if (lR) lR.value = dbLast;
+                if (dR) dR.value = declVal;
+
+                try {
+                    // Re-run PRECHECK with the chosen client id so server can return the same block -> modal
+                    const type = activePermitType();
+                    const fd = new FormData();
+                    fd.append('first_name', type === 'renewal' ? (document.getElementById('first-name-ren')?.value || '') : (document.getElementById('first-name')?.value || ''));
+                    fd.append('middle_name', type === 'renewal' ? (document.getElementById('middle-name-ren')?.value || '') : (document.getElementById('middle-name')?.value || ''));
+                    fd.append('last_name', type === 'renewal' ? (document.getElementById('last-name-ren')?.value || '') : (document.getElementById('last-name')?.value || ''));
+                    fd.append('desired_permit_type', type);
+                    fd.append('use_client_id', chosenClientId || '');
+
+                    const res = await fetch(PRECHECK_URL, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'include'
+                    });
+                    const json = await res.json();
+
+                    // Same UI handling as initial precheck
+                    if (json.block === 'for_payment') {
+                        display(forPaymentModal, 'flex');
+                        closeExistingClientModal();
+                        return;
+                    }
+                    if (json.block === 'pending_new') {
+                        display(pendingNewModal, 'flex');
+                        closeExistingClientModal();
+                        return;
+                    }
+                    if (json.block === 'pending_renewal') {
+                        toast('You already have a pending lumber renewal. Please wait for the update first.');
+                        closeExistingClientModal();
+                        return;
+                    }
+                    if (json.block === 'need_released_new' ||
+                        json.block === 'need_approved_new') {
+                        display(needApprovedNewModal, 'flex');
+                        closeExistingClientModal();
+                        return;
+                    }
+                    if (json.offer === 'renewal' && type === 'new') {
+                        display(offerRenewalModal, 'flex');
+                        closeExistingClientModal();
+                        return;
+                    }
+                } catch (err) {
+                    // If precheck fails, fall through to confirm so the user isn’t stuck
+                    console.error(err);
+                } finally {
+                    // End loading state
+                    btn && (btn.disabled = false, btn.removeAttribute('aria-busy'), btn.textContent = prevLabel || 'Use existing');
+                    display(overlay, 'none');
+                }
+
+                closeExistingClientModal();
+                document.getElementById('confirmModal').style.display = 'flex';
+            });
+
+
+
+            existingClientNew?.addEventListener('click', () => {
+                chosenClientId = null;
+                forceNewClient = true;
+                closeExistingClientModal();
+                document.getElementById('confirmModal').style.display = 'flex';
+            });
+            existingClientCancel?.addEventListener('click', () => {
+                chosenClientId = null;
+                forceNewClient = false;
+                closeExistingClientModal();
+            });
+            // Renewal: Cancel just closes
+            existingClientRenCancel?.addEventListener('click', () => {
+                closeExistingClientModalRen();
+            });
+
+            // Renewal: Confirm = use existing client, then re-precheck
+            existingClientRenConfirm?.addEventListener('click', async () => {
+                const cid = existingClientModalRen?.dataset?.clientId || null;
+                if (!cid) {
+                    closeExistingClientModalRen();
+                    return;
+                }
+
+                const overlay = document.getElementById('loadingIndicator');
+                const btn = existingClientRenConfirm;
+                const prevLabel = btn?.textContent;
+
+                // Start loading state
+                btn && (btn.disabled = true, btn.setAttribute('aria-busy', 'true'), btn.textContent = 'Working…');
+                display(overlay, 'flex');
+
+                chosenClientId = cid;
+                forceNewClient = false;
+
+                // Mirror DB names (FIRST, MIDDLE, LAST) into both NEW & RENEWAL + declaration
+                const dbFirst = existingClientFirst || '';
+                const dbMiddle = existingClientMiddle || ''; // may be empty
+                const dbLast = existingClientLast || '';
+                const declVal = (dbFirst + ' ' + dbLast).trim(); // declaration stays FIRST + LAST
+
+                // NEW section
+                const fN = document.getElementById('first-name');
+                const mN = document.getElementById('middle-name');
+                const lN = document.getElementById('last-name');
+                const dN = document.getElementById('declaration-name');
+                if (fN) fN.value = dbFirst;
+                if (mN) mN.value = dbMiddle; // set middle or empty
+                if (lN) lN.value = dbLast;
+                if (dN) dN.value = declVal;
+
+                // RENEWAL section
+                const fR = document.getElementById('first-name-ren');
+                const mR = document.getElementById('middle-name-ren');
+                const lR = document.getElementById('last-name-ren');
+                const dR = document.getElementById('declaration-name-ren');
+                if (fR) fR.value = dbFirst;
+                if (mR) mR.value = dbMiddle; // set middle or empty
+                if (lR) lR.value = dbLast;
+                if (dR) dR.value = declVal;
+
+                try {
+                    // re-run PRECHECK specifically as renewal with chosen client id
+                    const fd = new FormData();
+                    fd.append('desired_permit_type', 'renewal');
+                    fd.append('use_client_id', cid);
+
+                    const res = await fetch(PRECHECK_URL, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'include'
+                    });
+                    const json = await res.json();
+
+                    if (json.block === 'for_payment') {
+                        display(forPaymentModal, 'flex');
+                        closeExistingClientModalRen();
+                        return;
+                    }
+                    if (json.block === 'pending_renewal') {
+                        toast('You already have a pending lumber renewal. Please wait for the update first.');
+                        closeExistingClientModalRen();
+                        return;
+                    }
+                    if (json.block === 'need_released_new' ||
+                        json.block === 'need_approved_new') {
+                        display(needApprovedNewModal, 'flex');
+                        closeExistingClientModalRen();
+                        return;
+                    }
+                } catch (e) {
+                    console.error(e);
+                    // fall through to confirm so user isn’t stuck
+                } finally {
+                    // End loading state
+                    btn && (btn.disabled = false, btn.removeAttribute('aria-busy'), btn.textContent = prevLabel || 'Confirm');
+                    display(overlay, 'none');
+                }
+
+                closeExistingClientModalRen();
+                document.getElementById('confirmModal').style.display = 'flex';
+            });
+
+
+
             /* =========================
                PRECHECK → CONFIRM → SUBMIT
             ========================== */
@@ -2888,8 +3537,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         body: fd,
                         credentials: 'include'
                     });
+
                     const json = await res.json();
                     if (!res.ok) throw new Error(json.message || 'Precheck failed');
+
+                    // Stash DB name parts (used if user picks “Use existing” and for doc/filename)
+                    existingClientFirst = json.existing_client_first || null;
+                    existingClientMiddle = json.existing_client_middle || null;
+                    existingClientLast = json.existing_client_last || null;
+
+                    // hard blocks (same)
+                    // hard blocks (updated)
+                    if (json.block === 'for_payment') {
+                        // NEW: global payment blocker
+                        display(forPaymentModal, 'flex');
+                        return;
+                    }
 
                     if (json.block === 'pending_new') {
                         display(pendingNewModal, 'flex');
@@ -2899,27 +3562,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         toast('You already have a pending lumber renewal. Please wait for the update first.');
                         return;
                     }
-                    if (json.block === 'need_approved_new') {
+                    if (json.block === 'need_released_new' || json.block === 'need_approved_new') {
                         display(needApprovedNewModal, 'flex');
                         return;
                     }
+
                     if (json.offer === 'renewal' && type === 'new') {
                         display(offerRenewalModal, 'flex');
                         return;
                     }
 
+                    // Offer "use existing client" if backend suggested one (supports both old and new response shapes)
+                    const suggestedId =
+                        json.existing_client_id || json?.suggest_existing_client?.client_id;
+
+                    if (suggestedId && !forceNewClient) {
+                        const displayName = (
+                            json.existing_client_name ||
+                            json?.suggest_existing_client?.full_name || [first, middle, last].filter(Boolean).join(' ')
+                        ).trim();
+
+                        if (type === 'renewal') {
+                            openExistingClientModalRen(String(suggestedId), displayName); // Confirm/Cancel only
+                        } else {
+                            openExistingClientModal(String(suggestedId), displayName); // New: Use / Create new / Cancel
+                        }
+                        return; // wait for user choice
+                    }
+
+
+
+
                     display(confirmModal, 'flex');
                 } catch (e) {
                     console.error(e);
-                    display(confirmModal, 'flex');
+                    toast(e?.message || 'Precheck failed. Please try again.');
+                    return; // <- don't open confirm if precheck failed
                 } finally {
                     display(overlay, 'none');
                 }
+
             });
+
 
             btnOkConfirm?.addEventListener('click', async () => {
                 display(confirmModal, 'none');
-                const overlay = document.getElementById('loadingIndicator'); // FIX: use the correct ID
+                const overlay = document.getElementById('loadingIndicator');
                 display(overlay, 'flex');
                 try {
                     await doSubmit();
@@ -2927,11 +3615,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     resetForm();
                 } catch (e) {
                     console.error(e);
-                    toast(e?.message || 'Submission failed. Please try again.');
+                    const msg = String(e?.message || '').toLowerCase();
+                    if (msg.includes('for payment')) {
+                        // Show the same modal the precheck path uses
+                        display(forPaymentModal, 'flex');
+                    } else {
+                        toast(e?.message || 'Submission failed. Please try again.');
+                    }
                 } finally {
                     display(overlay, 'none');
                 }
             });
+
 
             /* =========================
                Final submit (generate doc + upload files)
@@ -2940,30 +3635,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const type = activePermitType();
                 const isRenewal = type === 'renewal';
 
-                const sigScaled = isRenewal ? getSignatureDataURLScaledRen(300, 110) : getSignatureDataURLScaled(300, 110);
+                // Scale signature and gather suppliers
+                const sigScaled = isRenewal ?
+                    getSignatureDataURLScaledRen(300, 110) :
+                    getSignatureDataURLScaled(300, 110);
                 const hasSignature = !!(sigScaled && sigScaled.dataURL);
-
                 const suppliersArr = gatherSuppliers(isRenewal);
 
-                let firstName, middleName, lastName, applicantAge, businessAddress, govEmp, operationPlace,
-                    annualVolume, annualWorth, employeesCount, dependentsCount, intendedMarket, experience,
-                    declarationName, prevCert, issuedDate, expiryDate, crLicense, sawmillPermit, buyingOther;
+                // -------- collect UI values --------
+                let firstName, middleName, lastName,
+                    applicantAge, businessName, businessAddress, govEmp,
+                    operationPlace, annualVolume, annualWorth,
+                    employeesCount, dependentsCount, intendedMarket, experience,
+                    typedDeclarationName, prevCert, issuedDate, expiryDate, crLicense, sawmillPermit, buyingOther;
 
                 if (isRenewal) {
                     firstName = v('first-name-ren');
                     middleName = v('middle-name-ren');
                     lastName = v('last-name-ren');
+
                     applicantAge = v('applicant-age-ren');
+                    businessName = v('business-name-ren');
                     businessAddress = v('business-address-ren');
+
                     govEmp = (document.getElementById('govt-employee-ren-yes')?.checked ? 'yes' : 'no');
                     operationPlace = v('operation-place-ren');
                     annualVolume = v('annual-volume-ren');
                     annualWorth = v('annual-worth-ren');
+
                     employeesCount = v('employees-count-ren');
                     dependentsCount = v('dependents-count-ren');
+
                     intendedMarket = v('intended-market-ren');
                     experience = v('experience-ren');
-                    declarationName = v('declaration-name-ren');
+
+                    typedDeclarationName = v('declaration-name-ren');
+
                     prevCert = v('prev-certificate-ren');
                     issuedDate = v('issued-date-ren');
                     expiryDate = v('expiry-date-ren');
@@ -2974,29 +3681,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     firstName = v('first-name');
                     middleName = v('middle-name');
                     lastName = v('last-name');
+
                     applicantAge = v('applicant-age');
+                    businessName = v('business-name'); // added mapping in save_lumber.php
                     businessAddress = v('business-address');
+
                     govEmp = (document.getElementById('govt-employee-yes')?.checked ? 'yes' : 'no');
                     operationPlace = v('operation-place');
                     annualVolume = v('annual-volume');
                     annualWorth = v('annual-worth');
+
                     employeesCount = v('employees-count');
                     dependentsCount = v('dependents-count');
+
                     intendedMarket = v('intended-market');
                     experience = v('experience');
-                    declarationName = v('declaration-name');
+
+                    typedDeclarationName = v('declaration-name');
                 }
 
-                const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+                // -------- prefer DB names when user chose an existing client --------
+                // (existingClientFirst/Last are set during PRECHECK; fall back to typed if missing)
+                const effFirst = chosenClientId ? (existingClientFirst || firstName) : firstName;
+                const effLast = chosenClientId ? (existingClientLast || lastName) : lastName;
 
-                // Build a tiny logo as PNG (for Word)
+                // Keep middle name as typed so the user can include or leave blank
+                const fullName = [effFirst, middleName, effLast].filter(Boolean).join(' ').trim();
+
+                // Declaration must be exactly FIRST + LAST from DB when using existing client
+                const declarationName = chosenClientId ? [effFirst, effLast].join(' ').trim() :
+                    typedDeclarationName;
+
+                // -------- build Word document (MHTML) --------
                 const svgLogo = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="45" fill="#2b6625"/>
-        <path d="M35 35L65 65" stroke="white" stroke-width="5"/>
-        <path d="M65 35L35 65" stroke="white" stroke-width="5"/>
-        <circle cx="50" cy="50" r="20" stroke="white" stroke-width="3" fill="none"/>
-      </svg>`;
+    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="45" fill="#2b6625"/>
+      <path d="M35 35L65 65" stroke="white" stroke-width="5"/>
+      <path d="M65 35L35 65" stroke="white" stroke-width="5"/>
+      <circle cx="50" cy="50" r="20" stroke="white" stroke-width="3" fill="none"/>
+    </svg>`;
                 const logoDataUrl = await svgToPngDataUrl(svgLogo);
 
                 const fields = {
@@ -3028,32 +3751,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     buildNewDocHTML(logoLoc, hasSignature ? sigLoc : '', fields, suppliersArr);
 
                 const parts = [];
-                if (logoDataUrl) parts.push({
-                    location: logoLoc,
-                    contentType: 'image/png',
-                    base64: (logoDataUrl.split(',')[1] || '')
-                });
-                if (hasSignature) parts.push({
-                    location: sigLoc,
-                    contentType: 'image/png',
-                    base64: (sigScaled.dataURL.split(',')[1] || '')
-                });
+                if (logoDataUrl) {
+                    parts.push({
+                        location: logoLoc,
+                        contentType: 'image/png',
+                        base64: (logoDataUrl.split(',')[1] || '')
+                    });
+                }
+                if (hasSignature) {
+                    parts.push({
+                        location: sigLoc,
+                        contentType: 'image/png',
+                        base64: (sigScaled.dataURL.split(',')[1] || '')
+                    });
+                }
 
                 const mhtml = makeMHTML(docHTML, parts);
                 const docBlob = new Blob([mhtml], {
                     type: 'application/msword'
                 });
-                const docFileName = `${isRenewal ? 'Lumber_Renewal' : 'Lumber_New'}_${(fullName || 'Applicant').replace(/\s+/g,'_')}.doc`;
+
+                // Filename: when using existing client, force "First_Last"
+                const nameForFile = chosenClientId ? ([effFirst, effLast].join(' ').trim()) : fullName;
+                const docFileName = `${isRenewal ? 'Lumber_Renewal' : 'Lumber_New'}_${(nameForFile || 'Applicant').replace(/\s+/g, '_')}.doc`;
                 const docFile = new File([docBlob], docFileName, {
                     type: 'application/msword'
                 });
 
+                // -------- assemble FormData --------
                 const fd = new FormData();
                 fd.append('permit_type', isRenewal ? 'renewal' : 'new');
+
+                // Base identity fields (typed; server may override when use_client_id is set)
                 fd.append('first_name', firstName);
                 fd.append('middle_name', middleName);
                 fd.append('last_name', lastName);
+
+                // App-specific fields
                 fd.append('applicant_age', applicantAge);
+                fd.append('business_name', businessName); // mapped to company_name on server
                 fd.append('business_address', businessAddress);
                 fd.append('is_government_employee', govEmp);
                 fd.append('proposed_place_of_operation', operationPlace);
@@ -3063,8 +3799,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fd.append('total_number_of_dependents', dependentsCount);
                 fd.append('intended_market', intendedMarket);
                 fd.append('my_experience_as_alumber_dealer', experience);
+
+                // Enforced declaration (DB first + last if using existing)
                 fd.append('declaration_name', declarationName);
+
+                // Suppliers
                 fd.append('suppliers_json', JSON.stringify(suppliersArr));
+
+                // Renewal-only extras
                 if (isRenewal) {
                     fd.append('prev_certificate_no', prevCert);
                     fd.append('issued_date', issuedDate);
@@ -3074,21 +3816,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     fd.append('buying_from_other_sources', buyingOther);
                 }
 
-                // Generated application document + signature (if any)
+                // Generated application document + signature
                 fd.append('application_doc', docFile);
                 if (hasSignature) {
                     const sigBlob = dataURLToBlob(sigScaled.dataURL);
-                    if (sigBlob) fd.append('signature_file', new File([sigBlob], 'signature.png', {
-                        type: 'image/png'
-                    }));
+                    if (sigBlob) {
+                        fd.append('signature_file', new File([sigBlob], 'signature.png', {
+                            type: 'image/png'
+                        }));
+                    }
                 }
 
-                // Attach uploads
+                // Attach uploads from the form
                 const pick = (id) => document.getElementById(id)?.files?.[0] || null;
                 const filesCommon = {
                     lumber_csw_document: pick('file-1'),
                     geo_photos: pick('file-2'),
-                    application_form: pick('file-3'),
+                    application_form: null, // generated above
                     lumber_supply_contract: pick('file-4'),
                     lumber_mayors_permit: pick('file-6'),
                     lumber_registration_certificate: pick('file-7'),
@@ -3102,21 +3846,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const filesRenewal = {
                     lumber_monthly_reports: pick('file-9')
                 };
+
                 Object.entries(filesCommon).forEach(([k, f]) => {
                     if (f) fd.append(k, f);
                 });
-                if (isRenewal) Object.entries(filesRenewal).forEach(([k, f]) => {
-                    if (f) fd.append(k, f);
-                });
-                else Object.entries(filesNew).forEach(([k, f]) => {
-                    if (f) fd.append(k, f);
-                });
+                if (isRenewal) {
+                    Object.entries(filesRenewal).forEach(([k, f]) => {
+                        if (f) fd.append(k, f);
+                    });
+                } else {
+                    Object.entries(filesNew).forEach(([k, f]) => {
+                        if (f) fd.append(k, f);
+                    });
+                }
 
+                // Pass the client-choice flags to the server (server enforces DB names when use_client_id is present)
+                if (chosenClientId) {
+                    fd.append('use_client_id', String(chosenClientId));
+                }
+                if (forceNewClient) {
+                    fd.append('force_new_client', '1');
+                }
+
+                // -------- submit --------
                 const res = await fetch(SAVE_URL, {
                     method: 'POST',
                     body: fd,
                     credentials: 'include'
                 });
+
                 let json;
                 try {
                     json = await res.json();
@@ -3124,8 +3882,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const text = await res.text();
                     throw new Error(`HTTP ${res.status} – ${text.slice(0, 200)}`);
                 }
-                if (!res.ok || !json.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+                if (!res.ok || !json.ok) {
+                    throw new Error(json?.error || `HTTP ${res.status}`);
+                }
             }
+
 
             /* =========================
                Reset form after success
@@ -3175,6 +3936,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 permitTypeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'new'));
                 setPermitType('new');
+                chosenClientId = null;
+                forceNewClient = false;
+
                 window.scrollTo({
                     top: 0,
                     behavior: 'smooth'
@@ -3182,10 +3946,402 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         })();
     </script>
+    <script>
+        /* ===========================================================
+   Lumber Dealer — Client-side Validation (separate script)
+   - Shows red error TEXT under each input (no red borders)
+   - Validates NEW & RENEWAL sections
+   - Intercepts Submit button (capture phase) to block submit when invalid
+   - Does NOT validate: file inputs, signature canvases, middle names
+   - Safe to paste after your existing scripts
+=========================================================== */
+        (function() {
+            'use strict';
 
+            /* ------------------ tiny helpers (scoped) ------------------ */
+            const $ = (s, r = document) => r.querySelector(s);
+            const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
+            function isBlank(str) {
+                return !str || !str.trim();
+            }
 
+            function minChars(str, n) {
+                return (str || '').trim().length >= n;
+            }
 
+            function hasLetters(str) {
+                return /[A-Za-z]/.test(str || '');
+            }
+
+            function hasDigits(str) {
+                return /\d/.test(str || '');
+            }
+
+            function normalizeNum(str) {
+                if (!str) return '';
+                return str.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
+            }
+
+            // create or get an error holder div right after a field
+            function ensureErrorEl(el) {
+                if (!el) return null;
+                let next = el.nextElementSibling;
+                if (!(next && next.classList && next.classList.contains('field-error'))) {
+                    next = document.createElement('div');
+                    next.className = 'field-error';
+                    next.style.cssText = 'color:#d32f2f;margin-top:6px;font-size:.9rem;display:none;';
+                    el.insertAdjacentElement('afterend', next);
+                }
+                return next;
+            }
+
+            function setError(el, msg) {
+                if (!el) return;
+                const holder = ensureErrorEl(el);
+                if (!holder) return;
+                if (msg) {
+                    holder.textContent = msg;
+                    holder.style.display = 'block';
+                } else {
+                    holder.textContent = '';
+                    holder.style.display = 'none';
+                }
+                // keep borders clean
+                el.classList.remove('error', 'is-invalid');
+                el.style.borderColor = '';
+                el.style.outlineColor = '';
+                el.style.boxShadow = '';
+            }
+
+            /* ------------------ per-field rules ------------------ */
+            // Names: allow letters incl. accents + space/hyphen/apostrophe
+            const NAME_RX = /^[A-Za-zÀ-ž' -]{2,50}$/;
+            const MID_RX = /^[A-Za-zÀ-ž' -]{1,50}$/;
+            const GENERIC_ID_RX = /^[A-Za-z0-9\-\/\s]{3,}$/; // for IDs/permits
+
+            const rules = {
+                // NEW
+                'first-name': v => {
+                    if (isBlank(v)) return 'First name is required.';
+                    if (!NAME_RX.test(v)) return 'First name must be 2–50 letters (no numbers).';
+                },
+                'middle-name': v => {
+                    if (v && !MID_RX.test(v)) return 'Middle name should contain letters only.';
+                }, // optional
+                'last-name': v => {
+                    if (isBlank(v)) return 'Last name is required.';
+                    if (!NAME_RX.test(v)) return 'Last name must be 2–50 letters (no numbers).';
+                },
+                'applicant-age': v => {
+                    if (isBlank(v)) return 'Age is required.';
+                    const n = parseInt(v, 10);
+                    if (Number.isNaN(n)) return 'Age must be a number.';
+                    if (n < 18 || n > 120) return 'Age must be between 18 and 120.';
+                },
+                'business-name': v => {
+                    if (isBlank(v)) return 'Business name is required.';
+                    if (!minChars(v, 3) || !/[A-Za-z0-9]/.test(v)) return 'Enter a valid business name (min 3 chars).';
+                },
+                'business-address': v => {
+                    if (isBlank(v)) return 'Business address is required.';
+                    if (!minChars(v, 10)) return 'Business address must be at least 10 characters.';
+                    if (!hasLetters(v) || !hasDigits(v)) return 'Include both street/house number and area (letters and numbers).';
+                },
+                'operation-place': v => {
+                    if (isBlank(v)) return 'Proposed place of operation is required.';
+                    if (!minChars(v, 5)) return 'Enter at least 5 characters.';
+                },
+                'annual-volume': v => {
+                    if (isBlank(v)) return 'Expected annual volume is required.';
+                    if (!hasDigits(v)) return 'Include a numeric volume (e.g., 1,000 bd ft).';
+                },
+                'annual-worth': v => {
+                    if (isBlank(v)) return 'Worth is required.';
+                    const num = normalizeNum(v);
+                    if (!num) return 'Enter a numeric worth (e.g., ₱500,000).';
+                    if (parseFloat(num) <= 0) return 'Worth must be greater than 0.';
+                },
+                'employees-count': v => {
+                    if (isBlank(v)) return 'Total employees is required.';
+                    const n = parseInt(v, 10);
+                    if (!Number.isInteger(n) || n < 0 || n > 5000) return 'Enter a whole number 0–5000.';
+                },
+                'dependents-count': v => {
+                    if (isBlank(v)) return 'Total dependents is required.';
+                    const n = parseInt(v, 10);
+                    if (!Number.isInteger(n) || n < 0 || n > 5000) return 'Enter a whole number 0–5000.';
+                },
+                'intended-market': v => {
+                    if (isBlank(v)) return 'Intended market is required.';
+                    if (!minChars(v, 10)) return 'Describe the intended market (10+ chars).';
+                },
+                'experience': v => {
+                    if (isBlank(v)) return 'Experience is required.';
+                    if (!minChars(v, 10)) return 'Describe your experience in at least 10 characters.';
+                },
+                'declaration-name': v => {
+                    if (isBlank(v)) return 'Declaration name is required.';
+                    if (!/^[A-Za-zÀ-ž' .-]{4,100}$/.test(v)) return 'Use letters, spaces, and punctuation (.-\').';
+                    const f = $('#first-name')?.value?.trim().toLowerCase();
+                    const l = $('#last-name')?.value?.trim().toLowerCase();
+                    if (f && l) {
+                        const lower = v.trim().toLowerCase();
+                        if (!(lower.includes(f) && lower.includes(l))) return 'Include your first and last name here.';
+                    }
+                },
+
+                // RENEWAL (mirror NEW + extras)
+                'first-name-ren': v => rules['first-name'](v),
+                'middle-name-ren': v => rules['middle-name'](v),
+                'last-name-ren': v => rules['last-name'](v),
+                'applicant-age-ren': v => rules['applicant-age'](v),
+                'business-name-ren': v => rules['business-name'](v),
+                'business-address-ren': v => rules['business-address'](v),
+                'operation-place-ren': v => rules['operation-place'](v),
+                'annual-volume-ren': v => rules['annual-volume'](v),
+                'annual-worth-ren': v => rules['annual-worth'](v),
+                'employees-count-ren': v => rules['employees-count'](v),
+                'dependents-count-ren': v => rules['dependents-count'](v),
+                'intended-market-ren': v => rules['intended-market'](v),
+                'experience-ren': v => rules['experience'](v),
+                'declaration-name-ren': v => {
+                    if (!v || !v.trim()) return 'Declaration name is required.';
+                    if (!/^[A-Za-zÀ-ž' .-]{4,100}$/.test(v)) return 'Use letters, spaces, and punctuation (.-\').';
+                    const f = document.querySelector('#first-name-ren')?.value?.trim().toLowerCase();
+                    const l = document.querySelector('#last-name-ren')?.value?.trim().toLowerCase();
+                    if (f && l) {
+                        const lower = v.trim().toLowerCase();
+                        if (!(lower.includes(f) && lower.includes(l))) return 'Include your first and last name here.';
+                    }
+                },
+                'prev-certificate-ren': v => {
+                    if (v && !GENERIC_ID_RX.test(v)) return 'Use letters/numbers, slashes or dashes.';
+                },
+                'issued-date-ren': v => {
+                    const exp = $('#expiry-date-ren')?.value;
+                    if (v && exp && v > exp) return 'Issued date must be on/before the expiry date.';
+                },
+                'expiry-date-ren': v => {
+                    const iss = $('#issued-date-ren')?.value;
+                    if (v && iss && iss > v) return 'Expiry date must be on/after issued date.';
+                },
+                'cr-license-ren': v => {
+                    if (v && !GENERIC_ID_RX.test(v)) return 'Use letters/numbers, slashes or dashes.';
+                },
+                'sawmill-permit-ren': v => {
+                    if (v && !GENERIC_ID_RX.test(v)) return 'Use letters/numbers, slashes or dashes.';
+                }
+            };
+
+            /* ------------------ suppliers table validation (updated) ------------------ */
+            function validateSuppliers(isRenewal) {
+                let ok = true;
+                const rows = isRenewal ?
+                    Array.from(document.querySelectorAll('#suppliers-table-ren tbody tr')) :
+                    Array.from(document.querySelectorAll('#suppliers-table tbody tr'));
+
+                let hasAnyContent = false;
+                let hasOneComplete = false;
+
+                rows.forEach(tr => {
+                    const nameEl = tr.querySelector(isRenewal ? '.supplier-name-ren' : '.supplier-name');
+                    const volEl = tr.querySelector(isRenewal ? '.supplier-volume-ren' : '.supplier-volume');
+
+                    ensureErrorEl(nameEl);
+                    ensureErrorEl(volEl);
+
+                    const name = (nameEl?.value || '').trim();
+                    const vol = (volEl?.value || '').trim();
+
+                    // blank row -> ignore
+                    if (!name && !vol) {
+                        setError(nameEl, '');
+                        setError(volEl, '');
+                        return;
+                    }
+
+                    hasAnyContent = true;
+
+                    // per-field messages for partially filled rows
+                    if (!name) {
+                        setError(nameEl, 'Supplier name is required.');
+                        ok = false;
+                    } else if (!/^[A-Za-zÀ-ž0-9' .,-]{3,}$/.test(name)) {
+                        setError(nameEl, 'Enter a valid name (3+ chars).');
+                        ok = false;
+                    } else {
+                        setError(nameEl, '');
+                    }
+
+                    if (!vol) {
+                        setError(volEl, 'Volume is required.');
+                        ok = false;
+                    } else if (!/\d/.test(vol)) {
+                        setError(volEl, 'Include a numeric value.');
+                        ok = false;
+                    } else {
+                        setError(volEl, '');
+                    }
+
+                    if (name && vol && /\d/.test(vol)) hasOneComplete = true;
+                });
+
+                // Only show the table-level prompt when truly nothing is entered anywhere
+                if (!hasAnyContent) {
+                    const first = rows[0];
+                    if (first) {
+                        const nameEl = first.querySelector(isRenewal ? '.supplier-name-ren' : '.supplier-name');
+                        const volEl = first.querySelector(isRenewal ? '.supplier-volume-ren' : '.supplier-volume');
+                        setError(nameEl, 'Add at least one supplier.');
+                        setError(volEl, 'Add at least one supplier.');
+                    }
+                    ok = false;
+                }
+
+                return ok && hasOneComplete;
+            }
+
+            /* ------------------ section validation ------------------ */
+            function activeType() {
+                return (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
+            }
+
+            function validateSection(type) {
+                const isRenewal = type === 'renewal';
+                const ids = isRenewal ? [
+                    'first-name-ren', 'middle-name-ren', 'last-name-ren', 'applicant-age-ren',
+                    'business-name-ren', 'business-address-ren',
+                    'operation-place-ren', 'annual-volume-ren', 'annual-worth-ren',
+                    'employees-count-ren', 'dependents-count-ren',
+                    'intended-market-ren', 'experience-ren', 'declaration-name-ren',
+                    'prev-certificate-ren', 'issued-date-ren', 'expiry-date-ren',
+                    'cr-license-ren', 'sawmill-permit-ren'
+                ] : [
+                    'first-name', 'middle-name', 'last-name', 'applicant-age',
+                    'business-name', 'business-address',
+                    'operation-place', 'annual-volume', 'annual-worth',
+                    'employees-count', 'dependents-count',
+                    'intended-market', 'experience', 'declaration-name'
+                ];
+
+                let ok = true;
+
+                ids.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    ensureErrorEl(el);
+
+                    const rule = rules[id];
+                    let msg = rule ? (rule(el.value) || '') : '';
+
+                    // pair logic for issued/expiry (both or none)
+                    if (id === 'issued-date-ren' || id === 'expiry-date-ren') {
+                        const iss = $('#issued-date-ren')?.value;
+                        const exp = $('#expiry-date-ren')?.value;
+                        if ((iss && !exp) || (!iss && exp)) msg = 'Provide both issued and expiry dates.';
+                        else if (rule) msg = rule(el.value) || '';
+                    }
+
+                    if (msg) {
+                        setError(el, msg);
+                        ok = false;
+                    } else setError(el, '');
+                });
+
+                // hard check: numbers in names (guard)
+                ['first-name', 'last-name', 'first-name-ren', 'last-name-ren'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    if (/\d/.test(el.value)) {
+                        setError(el, 'Names cannot contain numbers.');
+                        ok = false;
+                    }
+                });
+
+                if (!validateSuppliers(isRenewal)) ok = false;
+
+                return ok;
+            }
+
+            /* ------------------ live validation + submit interception ------------------ */
+            function attachLiveValidation() {
+                const allIds = [
+                    'first-name', 'middle-name', 'last-name', 'applicant-age', 'business-name', 'business-address',
+                    'operation-place', 'annual-volume', 'annual-worth', 'employees-count', 'dependents-count',
+                    'intended-market', 'experience', 'declaration-name',
+                    'first-name-ren', 'middle-name-ren', 'last-name-ren', 'applicant-age-ren', 'business-name-ren', 'business-address-ren',
+                    'operation-place-ren', 'annual-volume-ren', 'annual-worth-ren', 'employees-count-ren', 'dependents-count-ren',
+                    'intended-market-ren', 'experience-ren', 'declaration-name-ren',
+                    'prev-certificate-ren', 'issued-date-ren', 'expiry-date-ren', 'cr-license-ren', 'sawmill-permit-ren'
+                ];
+                allIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    ensureErrorEl(el);
+                    const handler = () => {
+                        const rule = rules[id];
+                        let msg = rule ? (rule(el.value) || '') : '';
+                        if (id === 'issued-date-ren' || id === 'expiry-date-ren') {
+                            const iss = $('#issued-date-ren')?.value;
+                            const exp = $('#expiry-date-ren')?.value;
+                            if ((iss && !exp) || (!iss && exp)) msg = 'Provide both issued and expiry dates.';
+                            else if (rule) msg = rule(el.value) || '';
+                        }
+                        setError(el, msg);
+                    };
+                    el.addEventListener('input', handler);
+                    el.addEventListener('blur', handler);
+                    // in case previous CSS/classes were adding red borders:
+                    el.classList.remove('error', 'is-invalid');
+                });
+
+                // suppliers: attach per row + when adding rows
+                function hookRows(tableSel, isRenewal) {
+                    $$(tableSel + ' tbody tr').forEach(tr => {
+                        const nameEl = tr.querySelector(isRenewal ? '.supplier-name-ren' : '.supplier-name');
+                        const volEl = tr.querySelector(isRenewal ? '.supplier-volume-ren' : '.supplier-volume');
+                        if (nameEl) {
+                            ensureErrorEl(nameEl);
+                            nameEl.addEventListener('input', () => validateSuppliers(isRenewal));
+                        }
+                        if (volEl) {
+                            ensureErrorEl(volEl);
+                            volEl.addEventListener('input', () => validateSuppliers(isRenewal));
+                        }
+                    });
+                }
+                hookRows('#suppliers-table', false);
+                hookRows('#suppliers-table-ren', true);
+
+                $('#add-supplier-row')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table', false), 0));
+                $('#add-supplier-row-ren')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table-ren', true), 0));
+            }
+
+            function interceptSubmitClicks() {
+                const guard = (e) => {
+                    const ok = validateSection(activeType());
+                    if (!ok) {
+                        e.stopImmediatePropagation?.();
+                        e.preventDefault?.();
+                        const firstErr = document.querySelector('.field-error:not([style*="display: none"])');
+                        if (firstErr && firstErr.previousElementSibling?.focus) firstErr.previousElementSibling.focus();
+                    }
+                };
+                // capture phase => runs before the existing click handler you already have
+                document.getElementById('submitApplication')?.addEventListener('click', guard, true);
+                // also guard the confirm button in case someone reaches it directly
+                document.getElementById('btnOkConfirm')?.addEventListener('click', guard, true);
+            }
+
+            // expose manual trigger if you ever want to call it elsewhere
+            window.validateLumberForm = () => validateSection(activeType());
+
+            // init
+            attachLiveValidation();
+            interceptSubmitClicks();
+        })();
+    </script>
 
 
 

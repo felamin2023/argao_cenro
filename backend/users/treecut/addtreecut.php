@@ -17,15 +17,18 @@ function bucket_name(): string
     if (defined('SUPABASE_BUCKET') && SUPABASE_BUCKET) return SUPABASE_BUCKET;
     return DEFAULT_BUCKET;
 }
+
 function encode_path_segments(string $path): string
 {
     $path = ltrim($path, '/');
     return implode('/', array_map('rawurlencode', explode('/', $path)));
 }
+
 function supa_public_url(string $bucket, string $path): string
 {
     return rtrim(SUPABASE_URL, '/') . '/storage/v1/object/public/' . $bucket . '/' . encode_path_segments($path);
 }
+
 function supa_upload(string $bucket, string $path, string $tmp, string $mime): string
 {
     $url = rtrim(SUPABASE_URL, '/') . '/storage/v1/object/' . $bucket . '/' . encode_path_segments($path);
@@ -50,6 +53,7 @@ function supa_upload(string $bucket, string $path, string $tmp, string $mime): s
     curl_close($ch);
     return supa_public_url($bucket, $path);
 }
+
 function slugify_name(string $s): string
 {
     $s = preg_replace('~[^\pL\d._-]+~u', '_', $s);
@@ -59,21 +63,26 @@ function slugify_name(string $s): string
     $s = preg_replace('~_+~', '_', $s);
     return strtolower($s ?: 'file');
 }
+
 function pick_ext(array $file, string $fallback): string
 {
     $ext = pathinfo($file['name'] ?? '', PATHINFO_EXTENSION);
     return $ext ? ('.' . strtolower($ext)) : $fallback;
 }
+
 function norm(?string $s): string
 {
     return strtolower(trim((string)$s));
 }
+
 function column_exists(PDO $pdo, string $schema, string $table, string $column): bool
 {
     $q = $pdo->prepare("
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema=:s AND table_name=:t AND column_name=:c LIMIT 1
-  ");
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema=:s AND table_name=:t AND column_name=:c
+        LIMIT 1
+    ");
     $q->execute([':s' => $schema, ':t' => $table, ':c' => $column]);
     return (bool)$q->fetchColumn();
 }
@@ -115,6 +124,11 @@ try {
     $other_owner  = trim($_POST['other_ownership'] ?? '');
     $purpose      = trim($_POST['purpose']      ?? '');
 
+    // NEW: Land details
+    $tax_declaration = trim($_POST['tax_declaration'] ?? '');
+    $lot_no          = trim($_POST['lot_no'] ?? '');
+    $contained_area  = trim($_POST['contained_area'] ?? '');
+
     // Species rows JSON (optional)
     $species_json = trim($_POST['species_rows_json'] ?? '');
     $species      = $species_json !== '' ? json_decode($species_json, true) : null;
@@ -141,13 +155,13 @@ try {
         $cs = $pdo->prepare("SELECT client_id FROM public.client WHERE norm_first=:f AND norm_middle=:m AND norm_last=:l LIMIT 1");
     } else {
         $cs = $pdo->prepare("
-      SELECT client_id
-      FROM public.client
-      WHERE lower(trim(coalesce(first_name,'')))=:f
-        AND lower(trim(coalesce(middle_name,'')))=:m
-        AND lower(trim(coalesce(last_name,'')))=:l
-      LIMIT 1
-    ");
+            SELECT client_id
+            FROM public.client
+            WHERE lower(trim(coalesce(first_name,'')))=:f
+              AND lower(trim(coalesce(middle_name,'')))=:m
+              AND lower(trim(coalesce(last_name,'')))=:l
+            LIMIT 1
+        ");
     }
     $cs->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
     $existing_client_id = $cs->fetchColumn() ?: null;
@@ -158,21 +172,21 @@ try {
         $client_id = $existing_client_id;
     } else {
         $ins = $pdo->prepare("
-      INSERT INTO public.client
-        (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
-      VALUES
-        (:uid, :first, :middle, :last, :street, :barangay, :municipality, :contact)
-      RETURNING client_id
-    ");
+            INSERT INTO public.client
+                (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
+            VALUES
+                (:uid, :first, :middle, :last, :street, :barangay, :municipality, :contact)
+            RETURNING client_id
+        ");
         $ins->execute([
-            ':uid'        => $user_uuid,
-            ':first'      => $first_name,
-            ':middle'     => $middle_name,
-            ':last'       => $last_name,
-            ':street'     => $street ?: null,
-            ':barangay'   => $barangay ?: null,
+            ':uid'          => $user_uuid,
+            ':first'        => $first_name,
+            ':middle'       => $middle_name,
+            ':last'         => $last_name,
+            ':street'       => $street ?: null,
+            ':barangay'     => $barangay ?: null,
             ':municipality' => $municipality ?: null,
-            ':contact'    => $contact_no ?: null,
+            ':contact'      => $contact_no ?: null,
         ]);
         $client_id = $ins->fetchColumn();
         if (!$client_id) throw new Exception('Failed to create client record.');
@@ -180,10 +194,10 @@ try {
 
     /* ------- Pending check (only one pending treecut per client) ------- */
     $chk = $pdo->prepare("
-    SELECT 1 FROM public.approval
-    WHERE client_id=:cid AND lower(request_type)='treecut' AND lower(approval_status)='pending'
-    LIMIT 1
-  ");
+        SELECT 1 FROM public.approval
+        WHERE client_id=:cid AND lower(request_type)='treecut' AND lower(approval_status)='pending'
+        LIMIT 1
+    ");
     $chk->execute([':cid' => $client_id]);
     if ($chk->fetchColumn()) throw new Exception('You already have a pending tree cutting request.');
 
@@ -214,7 +228,7 @@ try {
 
         // Extra uploads we also accept:
         'application_doc' => 'application_form',     // Generated .doc (MHTML) -> requirements.application_form
-        // 'signature_file' has no column in requirements; we will store it in application_form.signature_of_applicant
+        // 'signature_file' has no column in requirements; stored in application_form.signature_of_applicant
     ];
 
     foreach ($_FILES as $key => $file) {
@@ -271,6 +285,9 @@ try {
         'registration_no' => $registration ?: null,
         'ownership_raw'   => $ownership ?: null,
         'other_ownership' => $other_owner ?: null,
+        'tax_declaration' => $tax_declaration ?: null,
+        'lot_no'          => $lot_no ?: null,
+        'contained_area'  => $contained_area ?: null,
         'species_rows'    => $species,
         'uploads'         => $uploaded_map ?: new stdClass(),
     ];
@@ -308,7 +325,7 @@ try {
         "to_char(now(),'YYYY-MM-DD')"
     ];
 
-    // If application_form has a column to store signature (in application_form table)
+    // Optional signature column support
     $sigCol = null;
     if (column_exists($pdo, 'public', 'application_form', 'signature_of_applicant')) $sigCol = 'signature_of_applicant';
     elseif (column_exists($pdo, 'public', 'application_form', 'signature_over_printed_name')) $sigCol = 'signature_over_printed_name';
@@ -318,9 +335,23 @@ try {
         $afVals[] = ':signature_url';
     }
 
+    // NEW: include land details if columns exist
+    if (column_exists($pdo, 'public', 'application_form', 'tax_declaration')) {
+        $afCols[] = 'tax_declaration';
+        $afVals[] = ':tax_declaration';
+    }
+    if (column_exists($pdo, 'public', 'application_form', 'lot_no')) {
+        $afCols[] = 'lot_no';
+        $afVals[] = ':lot_no';
+    }
+    if (column_exists($pdo, 'public', 'application_form', 'contained_area')) {
+        $afCols[] = 'contained_area';
+        $afVals[] = ':contained_area';
+    }
+
     $sql = "INSERT INTO public.application_form (" . implode(',', $afCols) . ")
-          VALUES (" . implode(',', $afVals) . ")
-          RETURNING application_id";
+            VALUES (" . implode(',', $afVals) . ")
+            RETURNING application_id";
     $af = $pdo->prepare($sql);
     $af->execute([
         ':client_id'       => $client_id,
@@ -335,18 +366,21 @@ try {
         ':email'           => $email_addr ?: null,
         ':additional_info' => json_encode($additional, JSON_UNESCAPED_SLASHES),
         ':signature_url'   => $signature_url, // may be null
+        ':tax_declaration' => $tax_declaration ?: null,
+        ':lot_no'          => $lot_no ?: null,
+        ':contained_area'  => $contained_area ?: null,
     ]);
     $application_id = $af->fetchColumn();
     if (!$application_id) throw new Exception('Failed to create application form.');
 
     /* ------- Create approval row (pending) ------- */
     $ap = $pdo->prepare("
-    INSERT INTO public.approval
-      (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
-    VALUES
-      (:client_id, :requirement_id, 'treecut', 'pending', NULL, 'none', :application_id, now())
-    RETURNING approval_id
-  ");
+        INSERT INTO public.approval
+          (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
+        VALUES
+          (:client_id, :requirement_id, 'treecut', 'pending', NULL, 'none', :application_id, now())
+        RETURNING approval_id
+    ");
     $ap->execute([
         ':client_id'      => $client_id,
         ':requirement_id' => $requirement_id,
@@ -358,10 +392,10 @@ try {
     /* ------- Notification (include "from" and "to") ------- */
     $msg = sprintf('%s requested a tree cutting permit.', $first_name ?: $complete_name);
     $nt = $pdo->prepare("
-    INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
-    VALUES (:aid, NULL, :msg, false, :from_user, :to_dept)
-    RETURNING notif_id
-  ");
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
+        VALUES (:aid, NULL, :msg, false, :from_user, :to_dept)
+        RETURNING notif_id
+    ");
     $nt->execute([
         ':aid'       => $approval_id,
         ':msg'       => $msg,

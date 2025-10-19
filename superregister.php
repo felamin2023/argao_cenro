@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
   <link rel="stylesheet" href="/denr/superadmin/css/superregister.css">
   <style>
-    /* keep using your existing CSS file; inline styles optional */
     #loadingScreen {
       display: none;
       position: fixed;
@@ -135,7 +134,7 @@
     <div class="modal-content">
       <span class="close" id="closeModal">&times;</span>
       <h3>Email Verification</h3>
-      <input type="text" id="otpInput" maxlength="6" placeholder="Enter OTP code">
+      <input type="text" id="otpInput" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter OTP code">
       <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
         <button type="button" id="sendOtpBtn">Send</button>
         <button type="button" id="resendOtpBtn">Resend</button>
@@ -156,13 +155,11 @@
   </div>
 
   <script>
-    // Utilities
     const $ = (id) => document.getElementById(id);
     const loading = $('loadingScreen');
     const showLoading = () => loading.style.display = 'flex';
     const hideLoading = () => loading.style.display = 'none';
 
-    // Inputs
     const emailInput = $('email');
     const phoneInput = $('phone');
     const deptInput = $('department');
@@ -172,7 +169,6 @@
     const verifyEmailBtn = $('verifyEmailBtn');
     const formError = $('formError');
 
-    // OTP modal
     const otpModal = $('otpModal');
     const closeModal = $('closeModal');
     const otpInput = $('otpInput');
@@ -181,7 +177,6 @@
     const otpMessage = $('otpMessage');
     const successMessage = $('successMessage');
 
-    // Password toggles
     function togglePassword(inputId, btnId) {
       const input = $(inputId),
         btn = $(btnId);
@@ -194,10 +189,8 @@
     togglePassword('password', 'togglePassword');
     togglePassword('confirm_password', 'toggleConfirmPassword');
 
-    // Email format
     const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-    // Verify Email
     verifyEmailBtn.addEventListener('click', async () => {
       formError.textContent = '';
       const email = emailInput.value.trim();
@@ -212,7 +205,9 @@
         fd.append('email', email);
         const res = await fetch('backend/admin/register.php', {
           method: 'POST',
-          body: fd
+          body: fd,
+          credentials: 'same-origin',
+          cache: 'no-store'
         });
         const data = await res.json();
         hideLoading();
@@ -226,11 +221,11 @@
           formError.textContent = data.error || 'Email verification failed.';
           return;
         }
-        // For testing only; remove in prod:
         if (data.otp) console.log('OTP (testing):', data.otp);
 
         otpModal.style.display = 'block';
-      } catch (e) {
+        otpInput.focus();
+      } catch {
         hideLoading();
         verifyEmailBtn.disabled = false;
         formError.textContent = 'Network error.';
@@ -239,7 +234,6 @@
 
     closeModal.addEventListener('click', () => otpModal.style.display = 'none');
 
-    // Send OTP (verify)
     sendOtpBtn.addEventListener('click', async () => {
       otpMessage.textContent = '';
       const code = otpInput.value.trim();
@@ -254,14 +248,15 @@
         fd.append('otp', code);
         const res = await fetch('backend/admin/register.php', {
           method: 'POST',
-          body: fd
+          body: fd,
+          credentials: 'same-origin',
+          cache: 'no-store'
         });
         const data = await res.json();
         hideLoading();
 
         if (data.success) {
           otpModal.style.display = 'none';
-          // Enable rest of the form
           phoneInput.disabled = false;
           deptInput.disabled = false;
           passInput.disabled = false;
@@ -272,15 +267,15 @@
         } else {
           otpMessage.textContent = data.error || 'Incorrect OTP.';
         }
-      } catch (e) {
+      } catch {
         hideLoading();
         otpMessage.textContent = 'Network error.';
       }
     });
 
-    // Resend OTP
     resendOtpBtn.addEventListener('click', async () => {
       const email = emailInput.value.trim();
+      if (!email) return;
       showLoading();
       try {
         const fd = new FormData();
@@ -288,13 +283,17 @@
         fd.append('email', email);
         const res = await fetch('backend/admin/register.php', {
           method: 'POST',
-          body: fd
+          body: fd,
+          credentials: 'same-origin',
+          cache: 'no-store'
         });
         const data = await res.json();
         hideLoading();
         if (data.success) {
           otpMessage.textContent = 'OTP resent! Check your email.';
           if (data.otp) console.log('Resent OTP (testing):', data.otp);
+          otpInput.value = '';
+          otpInput.focus();
         } else {
           otpMessage.textContent = data.error || 'Failed to resend OTP.';
         }
@@ -304,7 +303,6 @@
       }
     });
 
-    // Final submit
     document.getElementById('registerForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       formError.textContent = '';
@@ -329,7 +327,9 @@
         fd.append('action', 'register');
         const res = await fetch('backend/admin/register.php', {
           method: 'POST',
-          body: fd
+          body: fd,
+          credentials: 'same-origin',
+          cache: 'no-store'
         });
         const data = await res.json();
         hideLoading();
@@ -337,7 +337,10 @@
         if (data.success) {
           successMessage.style.display = 'flex';
         } else {
-          formError.textContent = data.error || 'Registration failed.';
+          if (data.reason === 'phone') formError.textContent = 'Phone number already exists.';
+          else if (data.reason === 'email') formError.textContent = 'Email already exist';
+          else formError.textContent = data.error || 'Registration failed.';
+          if (data.debug_dup) console.log('dup-check:', data.debug_dup);
         }
       } catch {
         hideLoading();

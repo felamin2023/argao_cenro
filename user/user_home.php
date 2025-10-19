@@ -1212,7 +1212,6 @@ try {
         .as-notifications {
             min-width: 350px;
             max-height: 500px;
-            overflow-y: auto
         }
 
         .as-notif-header {
@@ -1220,7 +1219,7 @@ try {
             align-items: center;
             justify-content: space-between;
             padding: 15px 20px;
-            border-bottom: 1px solid #eee
+            border-bottom: 1px solid #eee;
         }
 
         .as-notif-header h3 {
@@ -1248,7 +1247,7 @@ try {
             padding: 12px 16px;
             border-bottom: 1px solid #eee;
             background: #fff;
-            transition: var(--as-trans)
+            transition: var(--as-trans);
         }
 
         .as-notif-item.unread {
@@ -1257,6 +1256,12 @@ try {
 
         .as-notif-item:hover {
             background: #f9f9f9
+        }
+
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
         }
 
         .as-notif-link {
@@ -1343,6 +1348,10 @@ try {
                     <a href="useraddtreecut.php" class="as-dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting Permit</span></a>
                     <a href="useraddlumber.php" class="as-dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
                     <a href="useraddwood.php" class="as-dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
+                    <a href="useraddchainsaw.php" class="dropdown-item">
+                        <i class="fas fa-tools"></i>
+                        <span>Chainsaw Permit</span>
+                    </a>
                     <a href="applicationstatus.php" class="as-dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
@@ -1360,42 +1369,45 @@ try {
                         <h3>Notifications</h3>
                         <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
+                    <div class="notifcontainer">
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($notifs as $n): ?>
+                                <?php
+                                $unread = empty($n['is_read']);
+                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                                ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
 
-                    <?php if (!$notifs): ?>
-                        <div class="as-notif-item">
-                            <div class="as-notif-content">
-                                <div class="as-notif-title">No record found</div>
-                                <div class="as-notif-message">There are no notifications.</div>
-                            </div>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($notifs as $n): ?>
-                            <?php
-                            $unread = empty($n['is_read']);
-                            $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                            $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
-                            $cleanMsg = (function ($m) {
-                                $t = trim((string)$m);
-                                $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
-                                $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
-                                return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
-                            })($n['message'] ?? '');
-                            ?>
-                            <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
-                                <a href="#" class="as-notif-link"
-                                    data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
-                                    <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
-                                    <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
-                                    <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
-                                    <div class="as-notif-content">
-                                        <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
-                                        <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
-                                        <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
-                                    </div>
-                                </a>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+
 
                     <div class="as-notif-footer">
                         <a href="user_notification.php" class="as-view-all">View All Notifications</a>
@@ -1597,66 +1609,98 @@ try {
     <!-- Minimal, namespaced JS for the AS navbar only -->
     <script>
         (function() {
-            // relative time labels
-            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
-                const ts = Number(el.dataset.ts || 0) * 1000;
-                if (!ts) return;
-                const s = Math.floor((Date.now() - ts) / 1000);
+            // ----- Relative time labels -----
+            function timeAgo(seconds) {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            }
 
-                function ago(sec) {
-                    if (sec < 60) return 'just now';
-                    const m = Math.floor(sec / 60);
-                    if (m < 60) return `${m} minute${m>1?'s':''} ago`;
-                    const h = Math.floor(m / 60);
-                    if (h < 24) return `${h} hour${h>1?'s':''} ago`;
-                    const d = Math.floor(h / 24);
-                    if (d < 7) return `${d} day${d>1?'s':''} ago`;
-                    const w = Math.floor(d / 7);
-                    if (w < 5) return `${w} week${w>1?'s':''} ago`;
-                    const mo = Math.floor(d / 30);
-                    if (mo < 12) return `${mo} month${mo>1?'s':''} ago`;
-                    const y = Math.floor(d / 365);
-                    return `${y} year${y>1?'s':''} ago`;
-                }
-                el.textContent = ago(s);
-                el.title = new Date(ts).toLocaleString();
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const tsMs = Number(el.dataset.ts || 0) * 1000;
+                if (!tsMs) return;
+                const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                el.textContent = timeAgo(diffSec);
+                el.title = new Date(tsMs).toLocaleString();
             });
 
-            // mark all read (best-effort)
+            // ----- Mark all as read -----
             const badge = document.getElementById('asNotifBadge');
-            document.getElementById('asMarkAllRead')?.addEventListener('click', async (e) => {
+            const markAllBtn = document.getElementById('asMarkAllRead');
+
+            markAllBtn?.addEventListener('click', async (e) => {
                 e.preventDefault();
                 try {
                     await fetch(location.pathname + '?ajax=mark_all_read', {
-                        method: 'POST'
+                        method: 'POST',
+                        credentials: 'same-origin'
                     });
                 } catch {}
                 document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
                 if (badge) badge.style.display = 'none';
             });
 
-            // click a single notification
-            document.querySelector('.as-notifications')?.addEventListener('click', async (e) => {
+            // ----- Click a single notification -----
+            const list = document.querySelector('.as-notifications');
+            list?.addEventListener('click', async (e) => {
                 const link = e.target.closest('.as-notif-link');
                 if (!link) return;
                 e.preventDefault();
-                const nid = link.dataset.notifId;
-                try {
-                    await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(nid)}`, {
-                        method: 'POST'
-                    });
-                } catch {}
+
+                // Optimistic mark read in UI
+                const row = link.closest('.as-notif-item');
+                const wasUnread = row?.classList.contains('unread');
+                row?.classList.remove('unread');
+
+                // Update badge count if needed
+                if (badge && wasUnread) {
+                    const current = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, current - 1);
+                    if (next <= 0) {
+                        badge.style.display = 'none';
+                    } else {
+                        badge.textContent = String(next);
+                    }
+                }
+
+                // Best-effort server mark
+                const nid = link.dataset.notifId || '';
+                if (nid) {
+                    try {
+                        await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(nid)}`, {
+                            method: 'POST',
+                            credentials: 'same-origin'
+                        });
+                    } catch {}
+                }
+
+                // Routing
                 if (link.dataset.approvalId) {
-                    window.location.href = 'application_status.php';
+                    // Permit-related → Application Status page
+                    window.location.href = 'applicationstatus.php';
                     return;
                 }
                 if (link.dataset.incidentId) {
+                    // Incident-related deep link
                     window.location.href = `user_reportaccident.php?view=${encodeURIComponent(link.dataset.incidentId)}`;
                     return;
                 }
+                // Fallback: Application Status
+                window.location.href = 'applicationstatus.php';
             });
         })();
     </script>
+
 
     <!-- Your existing page JS (left untouched) -->
     <script>

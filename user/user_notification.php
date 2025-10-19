@@ -4,6 +4,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -320,9 +321,17 @@ $current_page = basename($_SERVER['PHP_SELF']);
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         /* Mobile Menu Toggle - Larger */
@@ -379,12 +388,15 @@ $current_page = basename($_SERVER['PHP_SELF']);
             display: flex;
             background-color: #f5f5f5;
             border-bottom: 1px solid #ddd;
-            flex-wrap: nowrap; /* Prevent wrapping */
+            flex-wrap: nowrap;
+            /* Prevent wrapping */
         }
 
         .tab {
-            flex: 1; /* Equal width */
-            min-width: 0; /* Allow flex items to shrink */
+            flex: 1;
+            /* Equal width */
+            min-width: 0;
+            /* Allow flex items to shrink */
             padding: 15px 0;
             text-align: center;
             font-size: 18px;
@@ -393,9 +405,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
             color: #333;
             transition: all 0.3s ease;
             position: relative;
-            white-space: nowrap; /* Prevent text wrapping */
-            overflow: hidden; /* Hide overflow */
-            text-overflow: ellipsis; /* Add ellipsis if text is too long */
+            white-space: nowrap;
+            /* Prevent text wrapping */
+            overflow: hidden;
+            /* Hide overflow */
+            text-overflow: ellipsis;
+            /* Add ellipsis if text is too long */
         }
 
         .tab:hover {
@@ -531,7 +546,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.5);
+            background-color: rgba(0, 0, 0, 0.5);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -545,7 +560,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             border-radius: 8px;
             max-width: 600px;
             width: 90%;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             position: relative;
             max-height: 90vh;
             overflow-y: auto;
@@ -608,14 +623,19 @@ $current_page = basename($_SERVER['PHP_SELF']);
             }
 
             .notification-tabs {
-                flex-direction: row; /* Keep tabs in a row */
-                overflow-x: auto; /* Add horizontal scrolling if needed */
-                -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+                flex-direction: row;
+                /* Keep tabs in a row */
+                overflow-x: auto;
+                /* Add horizontal scrolling if needed */
+                -webkit-overflow-scrolling: touch;
+                /* Smooth scrolling on iOS */
             }
 
             .tab {
-                flex: none; /* Don't grow or shrink */
-                width: 50%; /* Each tab takes half width */
+                flex: none;
+                /* Don't grow or shrink */
+                width: 50%;
+                /* Each tab takes half width */
                 font-size: 16px;
                 padding: 10px;
                 white-space: nowrap;
@@ -720,7 +740,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 font-size: 12px;
                 padding: 8px 0;
             }
-            
+
             .tab-badge {
                 width: 18px;
                 height: 18px;
@@ -730,36 +750,37 @@ $current_page = basename($_SERVER['PHP_SELF']);
         }
     </style>
 </head>
+
 <body>
 
-<header>
-    <div class="logo">
-        <a href="user_home.php">
-            <img src="seal.png" alt="Site Logo">
-        </a>
-    </div>
-    
-    <!-- Mobile menu toggle -->
-    <button class="mobile-toggle">
-        <i class="fas fa-bars"></i>
-    </button>
-    
-    <!-- Navigation on the right -->
-    <div class="nav-container">
-        <!-- Dashboard Dropdown -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon">
-                <i class="fas fa-bars"></i>
-            </div>
-            <div class="dropdown-menu center">
-              
-              <a href="user_reportaccident.php" class="dropdown-item">
+    <header>
+        <div class="logo">
+            <a href="user_home.php">
+                <img src="seal.png" alt="Site Logo">
+            </a>
+        </div>
+
+        <!-- Mobile menu toggle -->
+        <button class="mobile-toggle">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Navigation on the right -->
+        <div class="nav-container">
+            <!-- Dashboard Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-bars"></i>
+                </div>
+                <div class="dropdown-menu center">
+
+                    <a href="user_reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
                         <span>Report Incident</span>
                     </a>
-                   
 
-                      <a href="useraddseed.php" class="dropdown-item">
+
+                    <a href="useraddseed.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i>
                         <span>Request Seedlings</span>
                     </a>
@@ -783,227 +804,229 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
 
-            </div>
-        </div>
-        
-        <!-- Notifications -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon active">
-                <i class="fas fa-bell"></i>
-                <span class="badge">1</span>
-            </div>
-            <div class="dropdown-menu notifications-dropdown">
-                <div class="notification-header">
-                    <h3>Notifications</h3>
-                    <a href="#" class="mark-all-read">Mark all as read</a>
                 </div>
-                
-                <div class="notification-item unread">
-                    <a href="user_each.php?id=1" class="notification-link">
-                        <div class="notification-icon">
-                            <i class="fas fa-exclamation-circle"></i>
-                        </div>
-                        
-                        <div class="notification-content">
-                            <div class="notification-title">Chainsaw Renewal Status</div>
-                            <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                            <div class="notification-time">10 minutes ago</div>
-                        </div>
+            </div>
+
+            <!-- Notifications -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon active">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge">1</span>
+                </div>
+                <div class="dropdown-menu notifications-dropdown">
+                    <div class="notification-header">
+                        <h3>Notifications</h3>
+                        <a href="#" class="mark-all-read">Mark all as read</a>
+                    </div>
+
+                    <div class="notification-item unread">
+                        <a href="user_each.php?id=1" class="notification-link">
+                            <div class="notification-icon">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+
+                            <div class="notification-content">
+                                <div class="notification-title">Chainsaw Renewal Status</div>
+                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
+                                <div class="notification-time">10 minutes ago</div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="notification-footer">
+                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Dropdown -->
+            <div class="nav-item dropdown">
+                <div class="nav-icon">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="dropdown-menu">
+                    <a href="user_profile.php" class="dropdown-item">
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="user_login.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
                     </a>
                 </div>
-                
-                <div class="notification-footer">
-                    <a href="user_notification.php" class="view-all">View All Notifications</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Notifications Content -->
+    <div class="notifications-container">
+        <div class="notifications-header">NOTIFICATIONS</div>
+
+        <div class="notification-tabs">
+            <div id="all-tab" class="tab active">All Notifications</div>
+            <div id="unread-tab" class="tab">Unread <span class="tab-badge">1</span></div>
+        </div>
+
+        <div id="all-notifications" class="notification-list">
+            <!-- Single Tree Cutting Notification -->
+            <div class="notification-item unread" id="tree-cutting-notification">
+                <div class="notification-title">
+                    <div class="notification-icon"><i class="fas fa-tree"></i></div>
+                    Chainsaw Renewal Status
+                </div>
+                <div class="notification-content">
+                    Chainsaw Renewal has been approved.
+                </div>
+                <div class="notification-time">Today, 10:30 AM</div>
+                <div class="notification-actions">
+                    <button class="action-button view-details-btn">View Details</button>
+                    <button class="action-button mark-read-btn">Mark as Read</button>
                 </div>
             </div>
         </div>
-        
-        <!-- Profile Dropdown -->
-        <div class="nav-item dropdown">
-            <div class="nav-icon">
-                <i class="fas fa-user-circle"></i>
-            </div>
-            <div class="dropdown-menu">
-                <a href="user_profile.php" class="dropdown-item">
-                    <i class="fas fa-user-edit"></i>
-                    <span>Edit Profile</span>
-                </a>
-                <a href="user_login.php" class="dropdown-item">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </a>
+
+        <div id="unread-notifications" class="notification-list" style="display: none;">
+            <!-- Same notification appears in unread tab -->
+            <div class="notification-item unread" id="tree-cutting-notification-unread">
+                <div class="notification-title">
+                    <div class="notification-icon"><i class="fas fa-tree"></i></div>
+                    Chainsaw Renewal Status
+                </div>
+                <div class="notification-content">
+                    Chainsaw Renewal has been approved.
+                </div>
+                <div class="notification-time">Today, 10:30 AM</div>
+                <div class="notification-actions">
+                    <button class="action-button view-details-btn">View Details</button>
+                    <button class="action-button mark-read-btn">Mark as Read</button>
+                </div>
             </div>
         </div>
-    </div>
-</header>
 
-<!-- Notifications Content -->
-<div class="notifications-container">
-    <div class="notifications-header">NOTIFICATIONS</div>
-
-    <div class="notification-tabs">
-        <div id="all-tab" class="tab active">All Notifications</div>
-        <div id="unread-tab" class="tab">Unread <span class="tab-badge">1</span></div>
-    </div>
-
-    <div id="all-notifications" class="notification-list">
-        <!-- Single Tree Cutting Notification -->
-        <div class="notification-item unread" id="tree-cutting-notification">
-            <div class="notification-title">
-                <div class="notification-icon"><i class="fas fa-tree"></i></div>
-               Chainsaw Renewal Status
-            </div>
-            <div class="notification-content">
-            Chainsaw Renewal has been approved.
-            </div>
-            <div class="notification-time">Today, 10:30 AM</div>
-            <div class="notification-actions">
-                <button class="action-button view-details-btn">View Details</button>
-                <button class="action-button mark-read-btn">Mark as Read</button>
-            </div>
+        <div class="mark-all-button">
+            <button id="mark-all-read">✓ Mark all as read</button>
         </div>
     </div>
 
-    <div id="unread-notifications" class="notification-list" style="display: none;">
-        <!-- Same notification appears in unread tab -->
-        <div class="notification-item unread" id="tree-cutting-notification-unread">
-            <div class="notification-title">
-                <div class="notification-icon"><i class="fas fa-tree"></i></div>
-                Chainsaw Renewal Status
+    <!-- Modal for Notification Details -->
+    <div class="modal" id="notification-modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div class="modal-header">
+                <h2>Chainsaw Renewal Approval</h2>
             </div>
-            <div class="notification-content">
-            Chainsaw Renewal has been approved.
+            <div class="modal-body">
+                <p><strong>Category:</strong> Chainsaw Permit</p>
+                <p><strong>Received:</strong> 10 minutes ago</p>
+
+                <h3>Chainsaw Registration Renewal Approved</h3>
+
+                <p>Your chainsaw renewal application has been approved by the DENR.</p>
+
+                <p><strong>Chainsaw Model:</strong> STIHL MS 660</p>
+                <p><strong>Serial Number:</strong> ST660123456</p>
+                <p><strong>Date Approved:</strong> June 15, 2023</p>
+                <p><strong>Valid Until:</strong> June 15, 2024</p>
+                <p><strong>Approved By:</strong> DENR Regional Office</p>
+                <p><strong>Next Steps:</strong> You may now claim your renewed chainsaw permit at the DENR office.</p>
             </div>
-            <div class="notification-time">Today, 10:30 AM</div>
-            <div class="notification-actions">
-                <button class="action-button view-details-btn">View Details</button>
-                <button class="action-button mark-read-btn">Mark as Read</button>
-            </div>
+
         </div>
     </div>
-    
-    <div class="mark-all-button">
-        <button id="mark-all-read">✓ Mark all as read</button>
-    </div>
-</div>
 
-<!-- Modal for Notification Details -->
-<div class="modal" id="notification-modal">
-    <div class="modal-content">
-        <span class="close-modal">&times;</span>
-        <div class="modal-header">
-            <h2>Chainsaw Renewal Approval</h2>
-        </div>
-        <div class="modal-body">
-            <p><strong>Category:</strong> Chainsaw Permit</p>
-            <p><strong>Received:</strong> 10 minutes ago</p>
-            
-            <h3>Chainsaw Registration Renewal Approved</h3>
-            
-            <p>Your chainsaw renewal application has been approved by the DENR.</p>
-            
-            <p><strong>Chainsaw Model:</strong> STIHL MS 660</p>
-            <p><strong>Serial Number:</strong> ST660123456</p>
-            <p><strong>Date Approved:</strong> June 15, 2023</p>
-            <p><strong>Valid Until:</strong> June 15, 2024</p>
-            <p><strong>Approved By:</strong> DENR Regional Office</p>
-            <p><strong>Next Steps:</strong> You may now claim your renewed chainsaw permit at the DENR office.</p>
-        </div>
-       
-    </div>
-</div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Mobile menu toggle
+            const mobileToggle = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    // Mobile menu toggle
-    const mobileToggle = document.querySelector('.mobile-toggle');
-    const navContainer = document.querySelector('.nav-container');
+            if (mobileToggle) {
+                mobileToggle.addEventListener('click', () => {
+                    const isActive = navContainer.classList.toggle('active');
+                    document.body.style.overflow = isActive ? 'hidden' : '';
+                });
+            }
 
-    if (mobileToggle) {
-        mobileToggle.addEventListener('click', () => {
-            const isActive = navContainer.classList.toggle('active');
-            document.body.style.overflow = isActive ? 'hidden' : '';
+            // Close menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
+                    navContainer.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            });
+
+            // Tab switching
+            const allTab = document.getElementById('all-tab');
+            const unreadTab = document.getElementById('unread-tab');
+            const allContent = document.getElementById('all-notifications');
+            const unreadContent = document.getElementById('unread-notifications');
+
+            allTab.addEventListener('click', function() {
+                allTab.classList.add('active');
+                unreadTab.classList.remove('active');
+                allContent.style.display = 'block';
+                unreadContent.style.display = 'none';
+            });
+
+            unreadTab.addEventListener('click', function() {
+                unreadTab.classList.add('active');
+                allTab.classList.remove('active');
+                unreadContent.style.display = 'block';
+                allContent.style.display = 'none';
+            });
+
+            // Modal functionality
+            const modal = document.getElementById('notification-modal');
+            const viewDetailsBtns = document.querySelectorAll('.view-details-btn');
+            const closeModal = document.querySelector('.close-modal');
+
+            viewDetailsBtns.forEach((btn) => {
+                btn.addEventListener('click', function() {
+                    modal.style.display = 'flex';
+                });
+            });
+
+            closeModal.addEventListener('click', function() {
+                modal.style.display = 'none';
+            });
+
+            // Close modal when clicking outside
+            window.addEventListener('click', function(event) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+
+            // Mark all as read functionality
+            const markAllRead = document.getElementById('mark-all-read');
+            markAllRead.addEventListener('click', function() {
+                document.querySelectorAll('.notification-item.unread').forEach((item) => {
+                    item.classList.remove('unread');
+                });
+                updateUnreadCount();
+            });
+
+            // Function to update unread count
+            function updateUnreadCount() {
+                const unreadCount = document.querySelectorAll('.notification-item.unread').length;
+                const badge = document.querySelector('.tab-badge');
+                const navBadge = document.querySelector('.badge');
+
+                badge.textContent = unreadCount;
+                navBadge.textContent = unreadCount;
+
+                if (unreadCount === 0) {
+                    badge.style.display = 'none';
+                    navBadge.style.display = 'none';
+                } else {
+                    badge.style.display = 'inline-block';
+                    navBadge.style.display = 'flex';
+                }
+            }
         });
-    }
-
-    // Close menu when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-            navContainer.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-    });
-
-    // Tab switching
-    const allTab = document.getElementById('all-tab');
-    const unreadTab = document.getElementById('unread-tab');
-    const allContent = document.getElementById('all-notifications');
-    const unreadContent = document.getElementById('unread-notifications');
-
-    allTab.addEventListener('click', function () {
-        allTab.classList.add('active');
-        unreadTab.classList.remove('active');
-        allContent.style.display = 'block';
-        unreadContent.style.display = 'none';
-    });
-
-    unreadTab.addEventListener('click', function () {
-        unreadTab.classList.add('active');
-        allTab.classList.remove('active');
-        unreadContent.style.display = 'block';
-        allContent.style.display = 'none';
-    });
-
-    // Modal functionality
-    const modal = document.getElementById('notification-modal');
-    const viewDetailsBtns = document.querySelectorAll('.view-details-btn');
-    const closeModal = document.querySelector('.close-modal');
-
-    viewDetailsBtns.forEach((btn) => {
-        btn.addEventListener('click', function () {
-            modal.style.display = 'flex';
-        });
-    });
-
-    closeModal.addEventListener('click', function () {
-        modal.style.display = 'none';
-    });
-
-    // Close modal when clicking outside
-    window.addEventListener('click', function (event) {
-        if (event.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
-
-    // Mark all as read functionality
-    const markAllRead = document.getElementById('mark-all-read');
-    markAllRead.addEventListener('click', function () {
-        document.querySelectorAll('.notification-item.unread').forEach((item) => {
-            item.classList.remove('unread');
-        });
-        updateUnreadCount();
-    });
-
-    // Function to update unread count
-    function updateUnreadCount() {
-        const unreadCount = document.querySelectorAll('.notification-item.unread').length;
-        const badge = document.querySelector('.tab-badge');
-        const navBadge = document.querySelector('.badge');
-
-        badge.textContent = unreadCount;
-        navBadge.textContent = unreadCount;
-
-        if (unreadCount === 0) {
-            badge.style.display = 'none';
-            navBadge.style.display = 'none';
-        } else {
-            badge.style.display = 'inline-block';
-            navBadge.style.display = 'flex';
-        }
-    }
-});
-</script>
+    </script>
 </body>
+
 </html>

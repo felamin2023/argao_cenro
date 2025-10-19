@@ -6,6 +6,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -57,7 +128,202 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         --transition: all 0.2s ease;
         --accent-color: #3a86ff;
+        --as-primary: #2b6625;
+        --as-primary-dark: #1e4a1a;
+        --as-white: #fff;
+        --as-light-gray: #f5f5f5;
+        --as-radius: 8px;
+        --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+        --as-trans: all .2s ease;
     }
+
+    .as-item {
+        position: relative;
+    }
+
+    /* Bell button */
+    .as-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        cursor: pointer;
+        background: rgb(233, 255, 242);
+        color: #000;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+        transition: var(--as-trans);
+    }
+
+    .as-icon:hover {
+        background: rgba(255, 255, 255, .3);
+        transform: scale(1.15);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+    }
+
+    .as-icon i {
+        font-size: 1.3rem;
+    }
+
+    /* Base dropdown */
+    .as-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        min-width: 300px;
+        background: #fff;
+        border-radius: var(--as-radius);
+        box-shadow: var(--as-shadow);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(10px);
+        transition: var(--as-trans);
+        padding: 0;
+        z-index: 1000;
+    }
+
+    .as-item:hover>.as-dropdown-menu,
+    .as-dropdown-menu:hover {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    /* Notifications-specific sizing */
+    .as-notifications {
+        min-width: 350px;
+        max-height: 500px;
+    }
+
+    /* Sticky header */
+    .as-notif-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px 20px;
+        border-bottom: 1px solid #eee;
+        background: #fff;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .as-notif-header h3 {
+        margin: 0;
+        color: var(--as-primary);
+        font-size: 1.1rem;
+    }
+
+    .as-mark-all {
+        color: var(--as-primary);
+        text-decoration: none;
+        font-size: .9rem;
+        transition: var(--as-trans);
+    }
+
+    .as-mark-all:hover {
+        color: var(--as-primary-dark);
+        transform: scale(1.05);
+    }
+
+    /* Scroll body */
+    .notifcontainer {
+        height: 380px;
+        overflow-y: auto;
+        padding: 5px;
+        background: #fff;
+    }
+
+    /* Rows */
+    .as-notif-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #eee;
+        background: #fff;
+        transition: var(--as-trans);
+    }
+
+    .as-notif-item.unread {
+        background: rgba(43, 102, 37, .05);
+    }
+
+    .as-notif-item:hover {
+        background: #f9f9f9;
+    }
+
+    .as-notif-link {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+        width: 100%;
+    }
+
+    .as-notif-icon {
+        color: var(--as-primary);
+        font-size: 1.2rem;
+    }
+
+    .as-notif-title {
+        font-weight: 600;
+        color: var(--as-primary);
+        margin-bottom: 4px;
+    }
+
+    .as-notif-message {
+        color: #2b6625;
+        font-size: .92rem;
+        line-height: 1.35;
+    }
+
+    .as-notif-time {
+        color: #999;
+        font-size: .8rem;
+        margin-top: 4px;
+    }
+
+    /* Sticky footer */
+    .as-notif-footer {
+        padding: 10px 20px;
+        text-align: center;
+        border-top: 1px solid #eee;
+        background: #fff;
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+    }
+
+    .as-view-all {
+        color: var(--as-primary);
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .as-view-all:hover {
+        text-decoration: underline;
+    }
+
+    /* Red badge on bell */
+    .as-badge {
+        position: absolute;
+        top: 2px;
+        right: 8px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #ff4757;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
 
     * {
         margin: 0;
@@ -1273,39 +1539,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge">
+                            <?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?>
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+
+                <div class="as-dropdown-menu as-notifications">
+                    <!-- sticky header -->
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <!-- scrollable body -->
+                    <div class="notifcontainer"><!-- this holds the records -->
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <!-- sticky footer -->
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
+
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
@@ -2114,7 +2413,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <!-- Confirmation Modal (Submit Application) -->
-    <div id="confirmModal" class="modal" style="display:none;">
+    <!-- <div id="confirmModal" class="modal" style="display:none;">
         <div class="modal-content" style="max-width:400px;text-align:center;">
             <span id="closeConfirmModal" class="close-modal">&times;</span>
             <h3>Confirm Submission</h3>
@@ -2122,10 +2421,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Submit</button>
             <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
         </div>
-    </div>
+    </div> -->
 
     <!-- Modal: Pending NEW request (WPP) -->
-    <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -2135,10 +2434,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Modal: Offer Renewal (user tried NEW but eligible for renewal) -->
-    <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -2149,10 +2448,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Modal: Need Approved NEW (user tried RENEWAL without prior approved NEW) -->
-    <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
             <div style="padding:16px 20px;line-height:1.6">
@@ -2164,7 +2463,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
             </div>
         </div>
+    </div> -->
+    <!-- Universal App Modal -->
+    <!-- Put this once, near the end of <body> -->
+    <div id="appModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <div id="amTitle" style="font-weight:600">Title</div>
+                <button id="amClose" class="close-modal" type="button" aria-label="Close" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer">&times;</button>
+            </div>
+            <div id="amBody" style="padding:16px 20px;line-height:1.6">Body</div>
+            <div id="amFooter" style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee"></div>
+        </div>
     </div>
+
+
 
     <!-- Notification toast -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
@@ -2176,6 +2489,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             const SAVE_URL = new URL('../backend/users/wood/save_wood.php', window.location.href).toString();
             const PRECHECK_URL = new URL('../backend/users/wood/precheck_wood.php', window.location.href).toString();
+
+            async function precheckWith(type, pickedClientId = null) {
+                const fd = new FormData();
+                const first = (type === 'renewal') ? v('r-first-name') : v('new-first-name');
+                const middle = (type === 'renewal') ? v('r-middle-name') : v('new-middle-name');
+                const last = (type === 'renewal') ? v('r-last-name') : v('new-last-name');
+                fd.append('first_name', first);
+                fd.append('middle_name', middle);
+                fd.append('last_name', last);
+                fd.append('desired_permit_type', type);
+                if (pickedClientId) fd.append('use_client_id', pickedClientId);
+
+                const res = await fetch(PRECHECK_URL, {
+                    method: 'POST',
+                    body: fd,
+                    credentials: 'include'
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.message || 'Precheck failed');
+                return json;
+            }
 
             /* ===================== Helpers ===================== */
             const $ = (sel) => document.querySelector(sel);
@@ -2234,11 +2568,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.getElementById('add-machinery-row')?.addEventListener('click', () => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-      <td><input type="text" class="table-input"></td>
-      <td><input type="text" class="table-input"></td>
-      <td><input type="text" class="table-input"></td>
-      <td><input type="number" class="table-input" min="1"></td>
-      <td><button type="button" class="remove-row-btn">Remove</button></td>`;
+        <td><input type="text" class="table-input"></td>
+        <td><input type="text" class="table-input"></td>
+        <td><input type="text" class="table-input"></td>
+        <td><input type="number" class="table-input" min="1"></td>
+        <td><button type="button" class="remove-row-btn">Remove</button></td>`;
                 machTbody.appendChild(tr);
                 tr.querySelector('.remove-row-btn')?.addEventListener('click', () => tr.remove());
             });
@@ -2250,10 +2584,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.getElementById('add-supply-row')?.addEventListener('click', () => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-      <td><input type="text" class="table-input"></td>
-      <td><input type="text" class="table-input"></td>
-      <td><input type="text" class="table-input"></td>
-      <td><button type="button" class="remove-row-btn">Remove</button></td>`;
+        <td><input type="text" class="table-input"></td>
+        <td><input type="text" class="table-input"></td>
+        <td><input type="text" class="table-input"></td>
+        <td><button type="button" class="remove-row-btn">Remove</button></td>`;
                 supplyTbody.appendChild(tr);
                 tr.querySelector('.remove-row-btn')?.addEventListener('click', () => tr.remove());
             });
@@ -2373,6 +2707,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (currentStroke.length > 1) strokes.push(currentStroke);
                 currentStroke = [];
             }
+
             if (canvas) {
                 // mouse
                 canvas.addEventListener('mousedown', startDraw);
@@ -2436,6 +2771,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     for (let i = 0; i < colsExpected; i++) tds.push(`<td>${(ins[i]?.value || '').toString()}</td>`);
                     return `<tr>${tds.join('')}</tr>`;
                 }).join('');
+            }
+
+            function tableToRowsJSON(tbody, colsExpected) {
+                const trs = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+                const rows = trs.map(row => {
+                    const ins = Array.from(row.querySelectorAll('input')).slice(0, colsExpected);
+                    return ins.map(i => (i.value || '').trim());
+                });
+                // keep rows with at least one non-empty cell
+                const filtered = rows.filter(r => r.some(cell => cell));
+                return JSON.stringify(filtered);
             }
 
             function plantTypeValue() {
@@ -2748,11 +3094,160 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const needApprovedNewOk = document.getElementById('needApprovedNewOk');
             const needApprovedNewSwitch = document.getElementById('needApprovedNewSwitch');
 
-            pendingNewOk?.addEventListener('click', () => (pendingNewModal.style.display = 'none'));
-            offerRenewalOk?.addEventListener('click', () => (offerRenewalModal.style.display = 'none'));
-            needApprovedNewOk?.addEventListener('click', () => (needApprovedNewModal.style.display = 'none'));
-            closeConfirmModal?.addEventListener('click', () => (confirmModal.style.display = 'none'));
-            cancelSubmitBtn?.addEventListener('click', () => (confirmModal.style.display = 'none'));
+            // pendingNewOk?.addEventListener('click', () => (pendingNewModal.style.display = 'none'));
+            // offerRenewalOk?.addEventListener('click', () => (offerRenewalModal.style.display = 'none'));
+            // needApprovedNewOk?.addEventListener('click', () => (needApprovedNewModal.style.display = 'none'));
+            // closeConfirmModal?.addEventListener('click', () => (confirmModal.style.display = 'none'));
+            // cancelSubmitBtn?.addEventListener('click', () => (confirmModal.style.display = 'none'));
+
+            /* ===================== Universal Modal (Promise-based) ===================== */
+            const AppModal = (() => {
+                const root = document.getElementById('appModal');
+                const titleEl = document.getElementById('amTitle');
+                const bodyEl = document.getElementById('amBody');
+                const footerEl = document.getElementById('amFooter');
+                const closeBtn = document.getElementById('amClose');
+
+                let resolver = null;
+
+                function close(value = null) {
+                    root.style.display = 'none';
+                    // cleanup footer buttons
+                    footerEl.innerHTML = '';
+                    // release resolver safely
+                    if (resolver) {
+                        const r = resolver;
+                        resolver = null;
+                        r(value);
+                    }
+                    // allow background scroll again if you locked it
+                    document.body.style.overflow = '';
+                }
+
+                function btnEl({
+                    text,
+                    value,
+                    variant
+                }) {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = text;
+                    b.className = variant === 'primary' ? 'btn btn-primary' : 'btn btn-outline';
+                    b.addEventListener('click', () => close(value ?? text));
+                    return b;
+                }
+
+                function open({
+                    title = 'Notice',
+                    html = '',
+                    buttons = [{
+                        text: 'OK',
+                        variant: 'primary',
+                        value: 'ok'
+                    }]
+                }) {
+                    return new Promise(resolve => {
+                        resolver = resolve;
+                        titleEl.textContent = title;
+                        bodyEl.innerHTML = html;
+                        footerEl.innerHTML = '';
+                        buttons.forEach(def => footerEl.appendChild(btnEl(def)));
+                        root.style.display = 'flex';
+                        document.body.style.overflow = 'hidden';
+                    });
+                }
+
+                // backdrop click closes as "cancel"
+                root.addEventListener('click', (e) => {
+                    if (e.target === root) close('cancel');
+                });
+                closeBtn?.addEventListener('click', () => close('cancel'));
+                window.addEventListener('keydown', (e) => {
+                    if (root.style.display !== 'none' && e.key === 'Escape') close('cancel');
+                });
+
+                return {
+                    open,
+                    close
+                };
+            })();
+
+            // tiny helper
+            const openModal = (opts) => AppModal.open(opts);
+
+            // ===== Candidate picker (add) =====
+            let chosenClientId = null;
+            let chosenClientName = null; // { first, middle, last }
+            let confirmNewClient = false;
+
+            // Apply a chosen client's name into the proper inputs.
+            // - Includes middle ('' if empty), per your instruction.
+            // - Also fills the declaration name with "First [Middle] Last"
+            function applyChosenClientNameToInputs(type, nameObj) {
+                const isRenewal = (type === 'renewal');
+                const idFirst = isRenewal ? 'r-first-name' : 'new-first-name';
+                const idMiddle = isRenewal ? 'r-middle-name' : 'new-middle-name';
+                const idLast = isRenewal ? 'r-last-name' : 'new-last-name';
+                const idDecl = isRenewal ? 'declaration-name-renewal' : 'declaration-name-new';
+
+                const f = (nameObj?.first ?? '');
+                const m = (nameObj?.middle ?? ''); // leave empty if table middle is empty
+                const l = (nameObj?.last ?? '');
+
+                const ef = document.getElementById(idFirst);
+                const em = document.getElementById(idMiddle);
+                const el = document.getElementById(idLast);
+                const ed = document.getElementById(idDecl);
+
+                if (ef) ef.value = f;
+                if (em) em.value = m;
+                if (el) el.value = l;
+                if (ed) ed.value = [f, m, l].filter(Boolean).join(' ');
+            }
+
+            // Names the submit should actually use (falls back to current inputs)
+            function getEffectiveNames() {
+                if (chosenClientName) return {
+                    ...chosenClientName
+                };
+                const isRenewal = (activePermitType() === 'renewal');
+                return {
+                    first: v(isRenewal ? 'r-first-name' : 'new-first-name'),
+                    middle: v(isRenewal ? 'r-middle-name' : 'new-middle-name'),
+                    last: v(isRenewal ? 'r-last-name' : 'new-last-name')
+                };
+            }
+
+
+            function escapeHtml(s = '') {
+                return String(s).replace(/[&<>"']/g, c => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [c]));
+            }
+
+            function renderCandidateList(cands) {
+                if (!Array.isArray(cands) || !cands.length) return '';
+                const rows = cands.map((c, i) => {
+                    const name = [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ');
+                    const pct = (c.score != null) ? ` <small style="opacity:.65">~${Math.round((c.score||0)*100)}% match</small>` : '';
+                    return `<label style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #eee;">
+      <input type="radio" name="cand_pick" value="${String(c.client_id)}" ${i===0?'checked':''}>
+      <span>${escapeHtml(name)}${pct}</span>
+    </label>`;
+                }).join('');
+                return `<div style="max-height:220px;overflow:auto;padding-top:6px;">${rows}</div>`;
+            }
+
+            function readSelectedCandidateId() {
+                const r = document.querySelector('input[name="cand_pick"]:checked');
+                return r ? r.value : null;
+            }
+
+
 
             // Autofill helper when switching between types via modals
             function autofillRenewalFromNew() {
@@ -2769,7 +3264,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const d = document.getElementById(dst);
                     if (s && d && typeof s.value === 'string') d.value = s.value;
                 });
-                // Address and declaration
                 if (!v('declaration-name-renewal')) {
                     const nm = [v('new-first-name'), v('new-middle-name'), v('new-last-name')].filter(Boolean).join(' ');
                     const dn = document.getElementById('declaration-name-renewal');
@@ -2794,13 +3288,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const d = document.getElementById(dst);
                     if (s && d && typeof s.value === 'string') d.value = s.value;
                 });
-                // Declaration
                 if (!v('declaration-name-new')) {
                     const nm = [v('r-first-name'), v('r-middle-name'), v('r-last-name')].filter(Boolean).join(' ');
                     const dn = document.getElementById('declaration-name-new');
                     if (dn) dn.value = nm;
                 }
-                // Business address from renewal address if not set
                 if (!v('new-business-address')) {
                     const a = v('r-address');
                     const nb = document.getElementById('new-business-address');
@@ -2808,25 +3300,190 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            offerRenewalSwitch?.addEventListener('click', () => {
-                offerRenewalModal.style.display = 'none';
-                setType('renewal');
-                autofillRenewalFromNew();
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            });
+            // offerRenewalSwitch?.addEventListener('click', () => {
+            //     offerRenewalModal.style.display = 'none';
+            //     setType('renewal');
+            //     autofillRenewalFromNew();
+            //     window.scrollTo({
+            //         top: 0,
+            //         behavior: 'smooth'
+            //     });
+            // });
 
-            needApprovedNewSwitch?.addEventListener('click', () => {
-                needApprovedNewModal.style.display = 'none';
-                setType('new');
-                autofillNewFromRenewal();
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
+            // needApprovedNewSwitch?.addEventListener('click', () => {
+            //     needApprovedNewModal.style.display = 'none';
+            //     setType('new');
+            //     autofillNewFromRenewal();
+            //     window.scrollTo({
+            //         top: 0,
+            //         behavior: 'smooth'
+            //     });
+            // });
+            // Always-confirm modal for RENEWAL before anything else
+            async function confirmExistingClientForRenewal(precheckJson, type) {
+                // build a single candidate from payload (candidates[0] OR existing_client_* echo)
+                const candidate =
+                    (Array.isArray(precheckJson.candidates) && precheckJson.candidates[0]) ||
+                    (precheckJson.existing_client_id ? {
+                            client_id: String(precheckJson.existing_client_id),
+                            first_name: precheckJson.existing_client_first || '',
+                            middle_name: precheckJson.existing_client_middle || '',
+                            last_name: precheckJson.existing_client_last || '',
+                            score: precheckJson.suggestion_score ?? null,
+                        } :
+                        null);
+
+                // show the modal first, always
+                const act = await openModal({
+                    title: 'Use existing client',
+                    html: candidate ?
+                        `Is this the correct client?${renderCandidateList([candidate])}` : `We couldn’t detect an existing client for the name you entered.<br><br><b>Renewals must be tied to an existing client record.</b>`,
+                    buttons: candidate ? [{
+                            text: 'Cancel',
+                            variant: 'outline',
+                            value: 'cancel'
+                        },
+                        {
+                            text: 'Confirm',
+                            variant: 'primary',
+                            value: 'confirm'
+                        },
+                    ] : [{
+                            text: 'Cancel',
+                            variant: 'outline',
+                            value: 'cancel'
+                        },
+                        {
+                            text: 'Switch to New',
+                            variant: 'primary',
+                            value: 'switch'
+                        },
+                    ],
                 });
-            });
+
+                if (act === 'cancel') return {
+                    proceed: false
+                };
+                if (!candidate && act === 'switch') {
+                    setType('new');
+                    autofillNewFromRenewal();
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                    return {
+                        proceed: false
+                    };
+                }
+                if (!candidate) return {
+                    proceed: false
+                };
+
+                // lock selection into the form
+                chosenClientId = candidate.client_id;
+                chosenClientName = {
+                    first: candidate.first_name || '',
+                    middle: candidate.middle_name || '',
+                    last: candidate.last_name || '',
+                };
+                applyChosenClientNameToInputs(type, chosenClientName);
+
+                // re-run precheck now that client is locked to surface blockers tied to THIS client
+                const j = await precheckWith(type, chosenClientId);
+
+                if (j.block === 'for_payment') {
+                    await openModal({
+                        title: 'Payment Due',
+                        html: 'You still have an unpaid wood permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
+                        buttons: [{
+                            text: 'Okay',
+                            variant: 'primary',
+                            value: 'ok'
+                        }],
+                    });
+                    return {
+                        proceed: false
+                    };
+                }
+                if (j.block === 'pending_renewal') {
+                    await openModal({
+                        title: 'Pending Renewal',
+                        html: 'This client already has a pending <b>renewal</b>.',
+                        buttons: [{
+                            text: 'Okay',
+                            variant: 'primary',
+                            value: 'ok'
+                        }],
+                    });
+                    return {
+                        proceed: false
+                    };
+                }
+                if (j.block === 'need_approved_new') {
+                    const sw = await openModal({
+                        title: 'Action Required',
+                        html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.',
+                        buttons: [{
+                                text: 'Okay',
+                                variant: 'outline',
+                                value: 'ok'
+                            },
+                            {
+                                text: 'Switch to New',
+                                variant: 'primary',
+                                value: 'switch'
+                            },
+                        ],
+                    });
+                    if (sw === 'switch') {
+                        setType('new');
+                        autofillNewFromRenewal();
+                        window.scrollTo({
+                            top: 0,
+                            behavior: 'smooth'
+                        });
+                    }
+                    return {
+                        proceed: false
+                    };
+                }
+
+                // final confirm -> submit
+                const conf = await openModal({
+                    title: 'Confirm Submission',
+                    html: 'Are you sure you want to submit this wood processing plant permit renewal?',
+                    buttons: [{
+                            text: 'Cancel',
+                            variant: 'outline',
+                            value: 'cancel'
+                        },
+                        {
+                            text: 'Yes, Submit',
+                            variant: 'primary',
+                            value: 'submit'
+                        },
+                    ],
+                });
+                if (conf === 'submit') {
+                    if (window.validateWPPForm && !window.validateWPPForm()) {
+                        await openModal({
+                            title: 'Fix required fields',
+                            html: 'Please correct the highlighted fields, then submit again.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }],
+                        });
+                    } else {
+                        await doFinalSubmit();
+                    }
+                }
+                return {
+                    proceed: true
+                };
+
+            }
 
             /* ===================== PRECHECK before confirm ===================== */
             const submitApplicationBtn = document.getElementById('submitApplication');
@@ -2846,8 +3503,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return true;
             }
 
+            /* ===================== PRECHECK before confirm (using modal) ===================== */
             submitApplicationBtn?.addEventListener('click', async () => {
                 if (!validateTopInputs()) return;
+                confirmNewClient = false;
 
                 try {
                     const type = activePermitType();
@@ -2867,35 +3526,388 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         credentials: 'include'
                     });
                     const json = await res.json();
+                    if (type === 'renewal') {
+                        const {
+                            proceed
+                        } = await confirmExistingClientForRenewal(json, type);
+                        // The helper handles blockers, switches, and final submit if confirmed.
+                        // We stop the click flow here either way to avoid double-modals.
+                        return;
+                    }
+                    // If backend already knows the exact/best client, keep it for renewals
+                    // If backend already knows the exact/best client, keep it for renewals
+                    const precheckId = (json.existing_client_id || json.exact_match_client_id || json.status_client_id) ?
+                        String(json.existing_client_id || json.exact_match_client_id || json.status_client_id) :
+                        null;
+                    if (activePermitType() === 'renewal' && precheckId) {
+                        chosenClientId = precheckId; // will be sent as use_existing_client_id on submit
+                    }
+
                     if (!res.ok) throw new Error(json.message || 'Precheck failed');
 
+                    // GLOBAL BLOCKER: for_payment
+                    if (json.block === 'for_payment') {
+                        await openModal({
+                            title: 'Payment Due',
+                            html: 'You currently have a Wood approval marked <b>for payment</b>. You can’t file a new or renewal until payment is settled.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
+                        return;
+                    }
+
+
+                    // Blocks (same as before)
                     if (json.block === 'pending_new') {
-                        pendingNewModal.style.display = 'flex';
+                        await openModal({
+                            title: 'Pending Request',
+                            html: 'You already have a pending <b>new</b> Wood Processing Plant permit request. Please wait for updates before submitting another one.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
                         return;
                     }
                     if (json.block === 'pending_renewal') {
-                        toast('You already have a pending wood processing renewal. Please wait for the update first.');
+                        await openModal({
+                            title: 'Pending Renewal',
+                            html: 'You already have a pending <b>renewal</b> for a Wood Processing Plant permit. Please wait for the update first.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
                         return;
                     }
                     if (json.block === 'need_approved_new') {
-                        needApprovedNewModal.style.display = 'flex';
+                        const act = await openModal({
+                            title: 'Action Required',
+                            html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.<br><br>You can switch to a NEW permit request. We’ll copy over what you’ve already entered.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'outline',
+                                value: 'ok'
+                            }, {
+                                text: 'Request new',
+                                variant: 'primary',
+                                value: 'switch'
+                            }]
+                        });
+                        if (act === 'switch') {
+                            setType('new');
+                            autofillNewFromRenewal();
+                            window.scrollTo({
+                                top: 0,
+                                behavior: 'smooth'
+                            });
+                        }
                         return;
                     }
+
+                    // Offer (same as before)
                     if (json.offer === 'renewal' && type === 'new') {
-                        offerRenewalModal.style.display = 'flex';
+                        const act = await openModal({
+                            title: 'Renewal Available',
+                            html: 'You can’t request a <b>new</b> WPP permit because you already have an released one. You’re allowed to request a <b>renewal</b> instead.',
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'outline',
+                                value: 'ok'
+                            }, {
+                                text: 'Request renewal',
+                                variant: 'primary',
+                                value: 'switch'
+                            }]
+                        });
+                        if (act === 'switch') {
+                            setType('renewal');
+                            autofillRenewalFromNew();
+                            window.scrollTo({
+                                top: 0,
+                                behavior: 'smooth'
+                            });
+                        }
                         return;
                     }
-                    confirmModal.style.display = 'block';
+
+                    // ===== New bits: show candidates if backend found similar names
+                    chosenClientId = null;
+                    const cands = Array.isArray(json.candidates) ? json.candidates :
+                        (json.existing_client_id ? [{
+                            client_id: json.existing_client_id,
+                            first_name: json.existing_client_first || '',
+                            middle_name: json.existing_client_middle || '',
+                            last_name: json.existing_client_last || '',
+                            score: json.suggestion_score || 0.7
+                        }] : []);
+
+                    if (cands.length) {
+                        if (type === 'new') {
+                            const act = await openModal({
+                                title: 'Use existing client?',
+                                html: `We found existing client records that look like a match. Do you want to use one of them?${renderCandidateList(cands)}`,
+                                buttons: [{
+                                        text: 'Cancel',
+                                        variant: 'outline',
+                                        value: 'cancel'
+                                    },
+                                    {
+                                        text: 'Create as new',
+                                        variant: 'outline',
+                                        value: 'new'
+                                    },
+                                    {
+                                        text: 'Use existing',
+                                        variant: 'primary',
+                                        value: 'use'
+                                    }
+                                ]
+                            });
+                            if (act === 'cancel') return;
+
+                            if (act === 'new') {
+                                confirmNewClient = true;
+                                chosenClientId = null;
+                                chosenClientName = null;
+
+                                // RE-CHECK RULES without binding to a client
+                                const j = await precheckWith(type, null);
+                                if (j.block === 'for_payment') {
+                                    await openModal({
+                                        title: 'Payment Due',
+                                        html: 'You have a WOOD approval <b>for payment</b>.',
+                                        buttons: [{
+                                            text: 'Okay',
+                                            variant: 'primary',
+                                            value: 'ok'
+                                        }]
+                                    });
+                                    return;
+                                }
+                                if (j.block === 'pending_new') {
+                                    await openModal({
+                                        title: 'Pending Request',
+                                        html: 'You already have a pending <b>new</b> request.',
+                                        buttons: [{
+                                            text: 'Okay',
+                                            variant: 'primary',
+                                            value: 'ok'
+                                        }]
+                                    });
+                                    return;
+                                }
+                                if (j.block === 'pending_renewal') {
+                                    await openModal({
+                                        title: 'Pending Renewal',
+                                        html: 'You already have a pending <b>renewal</b>.',
+                                        buttons: [{
+                                            text: 'Okay',
+                                            variant: 'primary',
+                                            value: 'ok'
+                                        }]
+                                    });
+                                    return;
+                                }
+                                if (j.offer === 'renewal') {
+                                    const sw = await openModal({
+                                        title: 'Renewal Available',
+                                        html: 'You can’t request a <b>new</b> WPP permit because you already have an released one. You’re allowed to request a <b>renewal</b> instead.',
+                                        buttons: [{
+                                            text: 'Okay',
+                                            variant: 'outline',
+                                            value: 'ok'
+                                        }, {
+                                            text: 'Request renewal',
+                                            variant: 'primary',
+                                            value: 'switch'
+                                        }]
+                                    });
+                                    if (sw === 'switch') {
+                                        setType('renewal');
+                                        autofillRenewalFromNew();
+                                        window.scrollTo({
+                                            top: 0,
+                                            behavior: 'smooth'
+                                        });
+                                        return;
+                                    }
+                                }
+                            } else if (act === 'use') {
+                                confirmNewClient = false;
+                                const picked = readSelectedCandidateId();
+                                if (picked) {
+                                    chosenClientId = picked;
+                                    const match = cands.find(c => String(c.client_id) === String(picked));
+                                    chosenClientName = match ? {
+                                        first: match.first_name || '',
+                                        middle: match.middle_name || '',
+                                        last: match.last_name || ''
+                                    } : null;
+                                    if (chosenClientName) applyChosenClientNameToInputs(type, chosenClientName);
+
+                                    // RE-CHECK RULES bound to this client
+                                    const j = await precheckWith(type, picked);
+                                    if (j.block === 'for_payment') {
+                                        await openModal({
+                                            title: 'Payment Due',
+                                            html: 'You still have an unpaid lumber permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'primary',
+                                                value: 'ok'
+                                            }]
+                                        });
+                                        return;
+                                    }
+                                    if (j.block === 'pending_new') {
+                                        await openModal({
+                                            title: 'Pending Request',
+                                            html: 'This client already has a pending <b>new</b> request.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'primary',
+                                                value: 'ok'
+                                            }]
+                                        });
+                                        return;
+                                    }
+                                    if (j.block === 'pending_renewal') {
+                                        await openModal({
+                                            title: 'Pending Renewal',
+                                            html: 'This client already has a pending <b>renewal</b>.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'primary',
+                                                value: 'ok'
+                                            }]
+                                        });
+                                        return;
+                                    }
+                                    if (j.block === 'need_approved_new' && type === 'renewal') {
+                                        const sw = await openModal({
+                                            title: 'Action Required',
+                                            html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'outline',
+                                                value: 'ok'
+                                            }, {
+                                                text: 'Request new',
+                                                variant: 'primary',
+                                                value: 'switch'
+                                            }]
+                                        });
+                                        if (sw === 'switch') {
+                                            setType('new');
+                                            autofillNewFromRenewal();
+                                            window.scrollTo({
+                                                top: 0,
+                                                behavior: 'smooth'
+                                            });
+                                            return;
+                                        }
+                                    }
+                                    if (j.offer === 'renewal' && type === 'new') {
+                                        const sw = await openModal({
+                                            title: 'Renewal Available',
+                                            html: 'You can’t request a <b>new</b> WPP permit because you already have an approved one.',
+                                            buttons: [{
+                                                text: 'Okay',
+                                                variant: 'outline',
+                                                value: 'ok'
+                                            }, {
+                                                text: 'Request renewal',
+                                                variant: 'primary',
+                                                value: 'switch'
+                                            }]
+                                        });
+                                        if (sw === 'switch') {
+                                            setType('renewal');
+                                            autofillRenewalFromNew();
+                                            window.scrollTo({
+                                                top: 0,
+                                                behavior: 'smooth'
+                                            });
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+
+
+                        } else {
+
+
+                        }
+                    }
+
+
+                    // Final confirmation
+                    const conf = await openModal({
+                        title: 'Confirm Submission',
+                        html: 'Are you sure you want to submit this wood processing plant permit request?',
+                        buttons: [{
+                                text: 'Cancel',
+                                variant: 'outline',
+                                value: 'cancel'
+                            },
+                            {
+                                text: 'Yes, Submit',
+                                variant: 'primary',
+                                value: 'submit'
+                            }
+                        ]
+                    });
+                    if (conf === 'submit') {
+                        if (window.validateWPPForm && !window.validateWPPForm()) {
+                            await openModal({
+                                title: 'Fix required fields',
+                                html: 'Please correct the highlighted fields, then submit again.',
+                                buttons: [{
+                                    text: 'Okay',
+                                    variant: 'primary',
+                                    value: 'ok'
+                                }],
+                            });
+                        } else {
+                            await doFinalSubmit();
+                        }
+                    }
+
+
                 } catch (e) {
                     console.error(e);
-                    // If precheck fails unexpectedly, still allow manual confirm so user gets feedback.
-                    confirmModal.style.display = 'block';
+                    const conf = await openModal({
+                        title: 'Confirm Submission',
+                        html: 'Precheck failed unexpectedly. Do you still want to submit?',
+                        buttons: [{
+                            text: 'Cancel',
+                            variant: 'outline',
+                            value: 'cancel'
+                        }, {
+                            text: 'Yes, Submit',
+                            variant: 'primary',
+                            value: 'submit'
+                        }]
+                    });
+                    if (conf === 'submit') await doFinalSubmit();
                 }
             });
 
-            /* ===================== FINAL SUBMIT (generate doc + upload + save) ===================== */
-            confirmSubmitBtn?.addEventListener('click', async () => {
-                confirmModal.style.display = 'none';
+            /* ===== send table HTML too (for application_form columns) ===== */
+
+
+
+
+
+            /* ===================== Final Submit (same logic, callable) ===================== */
+            async function doFinalSubmit() {
                 // block UI
                 loading.style.display = 'flex';
                 submitApplicationBtn.disabled = true;
@@ -2919,8 +3931,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         type: 'application/msword'
                     });
 
-                    const fullApplicantName =
-                        activePermitType() === 'renewal' ? [v('r-first-name'), v('r-middle-name'), v('r-last-name')].filter(Boolean).join(' ') : [v('new-first-name'), v('new-middle-name'), v('new-last-name')].filter(Boolean).join(' ');
+                    const eff = getEffectiveNames();
+                    const fullApplicantName = [eff.first, eff.middle, eff.last].filter(Boolean).join(' ');
 
                     const docFilename =
                         (activePermitType() === 'renewal' ? 'WPP_Renewal_' : 'WPP_New_') +
@@ -2931,26 +3943,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const type = activePermitType();
                     fd.append('permit_type', type);
 
+                    if (chosenClientId) {
+                        fd.append('use_existing_client_id', String(chosenClientId)); // bind to an existing client
+                    }
+                    if (confirmNewClient) {
+                        fd.append('confirm_new_client', '1'); // explicitly create a NEW client despite fuzzy matches
+                    }
+
+
+
+                    // Names
+                    fd.append('first_name', eff.first);
+                    fd.append('middle_name', eff.middle); // '' if empty in table, as required
+                    fd.append('last_name', eff.last);
+
+                    // NEW vs RENEWAL
                     if (type === 'renewal') {
-                        fd.append('first_name', v('r-first-name'));
-                        fd.append('middle_name', v('r-middle-name'));
-                        fd.append('last_name', v('r-last-name'));
-                        fd.append('address', v('r-address'));
-                        fd.append('plant_location', v('r-plant-location'));
-                        fd.append('contact_number', v('r-contact-number'));
-                        fd.append('email_address', v('r-email-address'));
-                        fd.append('ownership_type', document.querySelector('input[name="r-ownership-type"]:checked')?.value || '');
-                        fd.append('previous_permit_no', v('r-previous-permit'));
-                        fd.append('expiry_date', v('r-expiry-date'));
+                        fd.append('r_address', v('r-address'));
+                        fd.append('r_plant_location', v('r-plant-location'));
+                        fd.append('r_contact_number', v('r-contact-number'));
+                        fd.append('r_email_address', v('r-email-address'));
+                        fd.append('r_ownership_type', document.querySelector('input[name="r-ownership-type"]:checked')?.value || '');
+                        fd.append('r_previous_permit', v('r-previous-permit'));
+                        fd.append('r_expiry_date', v('r-expiry-date'));
                     } else {
-                        fd.append('first_name', v('new-first-name'));
-                        fd.append('middle_name', v('new-middle-name'));
-                        fd.append('last_name', v('new-last-name'));
-                        fd.append('business_address', v('new-business-address'));
-                        fd.append('plant_location', v('new-plant-location'));
-                        fd.append('contact_number', v('new-contact-number'));
-                        fd.append('email_address', v('new-email-address'));
-                        fd.append('ownership_type', document.querySelector('input[name="new-ownership-type"]:checked')?.value || '');
+                        fd.append('new_business_address', v('new-business-address'));
+                        fd.append('new_plant_location', v('new-plant-location'));
+                        fd.append('new_contact_number', v('new-contact-number'));
+                        fd.append('new_email_address', v('new-email-address'));
+                        fd.append('new_ownership_type', document.querySelector('input[name="new-ownership-type"]:checked')?.value || '');
                     }
 
                     // Shared plant details
@@ -2958,11 +3979,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     fd.append('daily_capacity', v('daily-capacity'));
                     fd.append('power_source', powerSourceValue());
 
-                    // Tables as minimal HTML (backend may store text or ignore)
-                    fd.append('machinery_table_html', buildRows(machTbody, 4));
-                    fd.append('supply_table_html', buildRows(supplyTbody, 3));
+                    // Dynamic tables as JSON
+                    fd.append('machinery_rows_json', tableToRowsJSON(machTbody, 4));
+                    fd.append('supply_rows_json', tableToRowsJSON(supplyTbody, 3));
+                    // NEW: also send pretty HTML so the backend can store it directly in application_form
 
-                    // Generated application document
+
+                    // Declaration
+                    fd.append('declaration_name', type === 'renewal' ? v('declaration-name-renewal') : v('declaration-name-new'));
+                    fd.append('declaration_address', v('declaration-address'));
+
+                    // Generated .doc
                     fd.append('application_doc', new File([docBlob], docFilename, {
                         type: 'application/msword'
                     }));
@@ -2975,7 +4002,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }));
                     }
 
-                    // Attach ALL chosen files present in UI (IDs unchanged)
+                    // Attach ALL chosen files present in UI
                     $$('input[type="file"]').forEach((fi) => {
                         if (fi.files?.[0]) fd.append(fi.id, fi.files[0]);
                     });
@@ -3004,7 +4031,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     loading.style.display = 'none';
                     submitApplicationBtn.disabled = false;
                 }
-            });
+            }
+
+
+
+
+            /* ===================== FINAL SUBMIT (generate doc + upload + save) ===================== */
+            // confirmSubmitBtn?.addEventListener('click', async () => {
+            //     confirmModal.style.display = 'none';
+            //     // block UI
+            //     loading.style.display = 'flex';
+            //     submitApplicationBtn.disabled = true;
+
+            //     try {
+            //         // 1) Build Word (MHTML) with embedded signature
+            //         const sigData = getSignatureDataURL();
+            //         const hasSig = !!sigData;
+            //         const sigLocation = 'signature.png';
+            //         const html =
+            //             activePermitType() === 'renewal' ?
+            //             buildRenewalDocHTML(sigLocation, hasSig) :
+            //             buildNewDocHTML(sigLocation, hasSig);
+            //         const parts = hasSig ? [{
+            //             location: sigLocation,
+            //             contentType: 'image/png',
+            //             base64: (sigData.split(',')[1] || '')
+            //         }] : [];
+            //         const mhtml = makeMHTML(html, parts);
+            //         const docBlob = new Blob([mhtml], {
+            //             type: 'application/msword'
+            //         });
+
+            //         const fullApplicantName =
+            //             activePermitType() === 'renewal' ? [v('r-first-name'), v('r-middle-name'), v('r-last-name')].filter(Boolean).join(' ') : [v('new-first-name'), v('new-middle-name'), v('new-last-name')].filter(Boolean).join(' ');
+
+            //         const docFilename =
+            //             (activePermitType() === 'renewal' ? 'WPP_Renewal_' : 'WPP_New_') +
+            //             (fullApplicantName || 'Applicant').replace(/\s+/g, '_') + '.doc';
+
+            //         // 2) Collect fields & files for backend save
+            //         const fd = new FormData();
+            //         const type = activePermitType();
+            //         fd.append('permit_type', type);
+
+            //         // Names (shared)
+            //         fd.append('first_name', type === 'renewal' ? v('r-first-name') : v('new-first-name'));
+            //         fd.append('middle_name', type === 'renewal' ? v('r-middle-name') : v('new-middle-name'));
+            //         fd.append('last_name', type === 'renewal' ? v('r-last-name') : v('new-last-name'));
+
+            //         // NEW vs RENEWAL: send the keys the backend expects
+            //         if (type === 'renewal') {
+            //             fd.append('r_address', v('r-address'));
+            //             fd.append('r_plant_location', v('r-plant-location'));
+            //             fd.append('r_contact_number', v('r-contact-number'));
+            //             fd.append('r_email_address', v('r-email-address'));
+            //             fd.append('r_ownership_type', document.querySelector('input[name="r-ownership-type"]:checked')?.value || '');
+            //             fd.append('r_previous_permit', v('r-previous-permit'));
+            //             fd.append('r_expiry_date', v('r-expiry-date'));
+            //         } else {
+            //             fd.append('new_business_address', v('new-business-address'));
+            //             fd.append('new_plant_location', v('new-plant-location'));
+            //             fd.append('new_contact_number', v('new-contact-number'));
+            //             fd.append('new_email_address', v('new-email-address'));
+            //             fd.append('new_ownership_type', document.querySelector('input[name="new-ownership-type"]:checked')?.value || '');
+            //         }
+
+            //         // Shared plant details
+            //         fd.append('plant_type', plantTypeValue());
+            //         fd.append('daily_capacity', v('daily-capacity'));
+            //         fd.append('power_source', powerSourceValue());
+
+            //         // Dynamic tables as JSON (what backend expects)
+            //         fd.append('machinery_rows_json', tableToRowsJSON(machTbody, 4));
+            //         fd.append('supply_rows_json', tableToRowsJSON(supplyTbody, 3));
+
+            //         // Declaration fields (saved into additional_information)
+            //         fd.append('declaration_name',
+            //             type === 'renewal' ? v('declaration-name-renewal') : v('declaration-name-new')
+            //         );
+            //         fd.append('declaration_address', v('declaration-address'));
+
+            //         // Generated application document
+            //         fd.append('application_doc', new File([docBlob], docFilename, {
+            //             type: 'application/msword'
+            //         }));
+
+            //         // Signature file (optional)
+            //         if (hasSig) {
+            //             const sigBlob = dataURLToBlob(sigData);
+            //             fd.append('signature_file', new File([sigBlob], 'signature.png', {
+            //                 type: 'image/png'
+            //             }));
+            //         }
+
+            //         // Attach ALL chosen files present in UI (IDs unchanged)
+            //         $$('input[type="file"]').forEach((fi) => {
+            //             if (fi.files?.[0]) fd.append(fi.id, fi.files[0]);
+            //         });
+
+            //         // 3) Submit to backend
+            //         const res = await fetch(SAVE_URL, {
+            //             method: 'POST',
+            //             body: fd,
+            //             credentials: 'include'
+            //         });
+            //         let json;
+            //         try {
+            //             json = await res.json();
+            //         } catch {
+            //             const text = await res.text();
+            //             throw new Error(`HTTP ${res.status} – ${text.slice(0, 200)}`);
+            //         }
+            //         if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+
+            //         toast("Application submitted. We'll notify you once reviewed.");
+            //         resetAllFields();
+            //     } catch (e) {
+            //         console.error(e);
+            //         toast(e?.message || 'Submission failed. Please try again.');
+            //     } finally {
+            //         loading.style.display = 'none';
+            //         submitApplicationBtn.disabled = false;
+            //     }
+            // });
 
             /* ===================== Reset ===================== */
             function resetAllFields() {
@@ -3048,13 +4197,598 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 repaint(true);
                 // Back to NEW view
                 setType('new');
+                chosenClientId = null;
+                confirmNewClient = false;
                 window.scrollTo({
                     top: 0,
                     behavior: 'smooth'
                 });
+
             }
         })();
     </script>
+    <script>
+        /* =======================================================================
+   Wood Processing Plant (WPP) — Client-side Validation (standalone script)
+   - Shows red error TEXT under each input (no red borders)
+   - Validates **New** & **Renewal** sections + both tables
+   - Blocks the Submit button if anything is invalid (capture phase)
+   - Safe to paste after your existing scripts
+   - Does NOT validate the file uploads nor the signature pad
+======================================================================= */
+        (function() {
+            'use strict';
+
+            /* ------------------ tiny helpers ------------------ */
+            const $ = (s, r = document) => r.querySelector(s);
+            const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+            const isBlank = (v) => !v || !String(v).trim();
+            const minChars = (v, n) => String(v || '').trim().length >= n;
+            const hasDigits = (v) => /\d/.test(String(v || ''));
+            const onlyNum = (v) => (String(v || '').match(/[\d.]+/g) || []).join('');
+            const toFloat = (v) => parseFloat(onlyNum(v));
+            const toInt = (v) => parseInt(onlyNum(v), 10);
+
+            // create/get an error line right after the element (or container)
+            function ensureErrorEl(el) {
+                if (!el) return null;
+                let next = el.nextElementSibling;
+                if (!(next && next.classList && next.classList.contains('field-error'))) {
+                    next = document.createElement('div');
+                    next.className = 'field-error';
+                    next.style.cssText = 'color:#d32f2f;margin:6px 0 0;display:none;font-size:.92rem;';
+                    el.insertAdjacentElement('afterend', next);
+                }
+                return next;
+            }
+            // let chosenClientId = null;
+
+            function escapeHtml(s = '') {
+                return s.replace(/[&<>"']/g, c => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [c]));
+            }
+
+            function renderCandidateList(cands) {
+                if (!Array.isArray(cands) || !cands.length) return '';
+                const rows = cands.map((c, i) => {
+                    const name = [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ');
+                    const pct = c.score != null ? ` <small style="opacity:.7">match ~${Math.round((c.score||0)*100)}%</small>` : '';
+                    return `<label style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #eee;">
+      <input type="radio" name="cand_pick" value="${String(c.client_id)}" ${i===0?'checked':''}>
+      <span>${escapeHtml(name)}${pct}</span>
+    </label>`;
+                }).join('');
+                return `<div style="max-height:220px;overflow:auto;padding-top:6px;">${rows}</div>`;
+            }
+
+            function readSelectedCandidateId() {
+                const r = document.querySelector('input[name="cand_pick"]:checked');
+                return r ? r.value : null;
+            }
+            // RUN PRECHECK AGAIN (optionally bound to a picked client)
+            // async function precheckWith(type, pickedClientId = null) {
+            //     const fd = new FormData();
+            //     const first = type === 'renewal' ? v('r-first-name') : v('new-first-name');
+            //     const middle = type === 'renewal' ? v('r-middle-name') : v('new-middle-name');
+            //     const last = type === 'renewal' ? v('r-last-name') : v('new-last-name');
+            //     fd.append('first_name', first);
+            //     fd.append('middle_name', middle);
+            //     fd.append('last_name', last);
+            //     fd.append('desired_permit_type', type);
+            //     if (pickedClientId) fd.append('use_client_id', pickedClientId);
+            //     const res = await fetch(PRECHECK_URL, {
+            //         method: 'POST',
+            //         body: fd,
+            //         credentials: 'include'
+            //     });
+            //     const json = await res.json();
+            //     if (!res.ok) throw new Error(json.message || 'Precheck failed');
+            //     return json;
+            // }
+
+
+            function setError(afterEl, msg) {
+                if (!afterEl) return;
+                const holder = ensureErrorEl(afterEl);
+                if (!holder) return;
+                if (msg) {
+                    holder.textContent = msg;
+                    holder.style.display = 'block';
+                } else {
+                    holder.textContent = '';
+                    holder.style.display = 'none';
+                }
+                // keep borders clean
+                if (afterEl.classList) {
+                    afterEl.classList.remove('error', 'is-invalid');
+                }
+                afterEl.style.borderColor = '';
+                afterEl.style.boxShadow = '';
+                afterEl.style.outline = '';
+            }
+
+            /* ------------------ find active permit type ------------------ */
+            const activeType = () =>
+                (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
+
+            /* ------------------ radio group helpers ------------------ */
+            function groupContainerByName(name) {
+                // radio group wrapper is the ".checkbox-group" near the radios
+                const first = document.querySelector(`input[name="${name}"]`);
+                return first ? first.closest('.checkbox-group') || first.parentElement : null;
+            }
+
+            function groupValue(name) {
+                const r = document.querySelector(`input[name="${name}"]:checked`);
+                return r ? r.value : '';
+            }
+
+            /* ------------------ per-field rules ------------------ */
+            // Names: allow letters incl. accents + space/hyphen/apostrophe
+            const NAME_RX = /^[A-Za-zÀ-ž' -]{2,50}$/;
+            const MID_RX = /^[A-Za-zÀ-ž' -]{1,50}$/;
+            const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+            const SIMPLE_ID_RX = /^[A-Za-z0-9\-\/. ]{3,}$/; // generic doc/permit format
+
+            // contact numbers: allow comma-separated list; each item must have ≥7 digits
+            // PH mobile only: allow comma/newline separated values; ignore separators inside each number
+            // PH mobile only; support comma/newline separated values
+            function contactRule(v) {
+                if (isBlank(v)) return 'Required.';
+                const parts = String(v).split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+                if (!parts.length) return 'Required.';
+
+                const normalize = s => s.replace(/[ \t\-()./]/g, '');
+                const ok = parts.every(p => {
+                    const n = normalize(p);
+                    // 09171234567  or  +639171234567
+                    return /^09\d{9}$/.test(n) || /^\+639\d{9}$/.test(n);
+                });
+
+                if (!ok) return 'Use 09XXXXXXXXX or +639XXXXXXXX (comma-separate if many).';
+            }
+
+
+
+            // address should contain letters & numbers and be ≥10 chars
+            function addressRule(v) {
+                if (isBlank(v)) return 'Address is required.';
+                if (!minChars(v, 10)) return 'Enter at least 10 characters.';
+                if (!/[A-Za-z]/.test(v) || !/\d/.test(v)) return 'Include both street/house number and area.';
+            }
+
+            // location: require letters and min 5 chars
+            function locationRule(v) {
+                if (isBlank(v)) return 'Location is required.';
+                if (!minChars(v, 5)) return 'Enter at least 5 characters.';
+                if (!/[A-Za-z]/.test(v)) return 'Use letters to describe the location.';
+            }
+
+            // daily capacity: require positive number; units optional
+            function capacityRule(v) {
+                if (isBlank(v)) return 'Daily rated capacity is required.';
+                const num = toFloat(v);
+                if (!isFinite(num) || num <= 0) return 'Enter a valid positive number (units optional).';
+            }
+
+            // email: optional, but must be valid if present
+            function emailRule(v) {
+                if (!v) return;
+                if (!EMAIL_RX.test(v.trim())) return 'Enter a valid email address.';
+            }
+
+            // declaration name must be present & sensible
+            function declNameRule(v, firstId, lastId) {
+                if (isBlank(v)) return 'Enter your full name here.';
+                if (!/^[A-Za-zÀ-ž' .-]{4,100}$/.test(v)) return 'Use letters and spaces only.';
+                const f = $(firstId)?.value?.trim().toLowerCase();
+                const l = $(lastId)?.value?.trim().toLowerCase();
+                if (f && l) {
+                    const lower = v.trim().toLowerCase();
+                    if (!(lower.includes(f) && lower.includes(l))) return 'Include your first and last name.';
+                }
+            }
+
+            /* ------------------ TABLES ------------------ */
+
+            // MACHINERY table validation
+            function validateMachinery() {
+                const tbody = $('#machinery-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                let hasAnyContent = false;
+                let hasCompleteRow = false;
+
+                Array.from(tbody.querySelectorAll('tr')).forEach((tr, idx) => {
+                    const [typeEl, brandEl, hpEl, qtyEl] = Array.from(tr.querySelectorAll('input')).slice(0, 4);
+
+                    // prepare error holders once
+                    [typeEl, brandEl, hpEl, qtyEl].forEach(ensureErrorEl);
+
+                    const type = (typeEl?.value || '').trim();
+                    const brand = (brandEl?.value || '').trim();
+                    const hp = (hpEl?.value || '').trim();
+                    const qty = (qtyEl?.value || '').trim();
+
+                    const rowBlank = !type && !brand && !hp && !qty;
+                    if (rowBlank) { // ignore empty rows
+                        setError(typeEl, '');
+                        setError(brandEl, '');
+                        setError(hpEl, '');
+                        setError(qtyEl, '');
+                        return;
+                    }
+
+                    hasAnyContent = true;
+
+                    // validations (per-cell)
+                    if (!minChars(type, 2)) {
+                        setError(typeEl, 'Type is required.');
+                        ok = false;
+                    } else setError(typeEl, '');
+                    if (!minChars(brand, 2)) {
+                        setError(brandEl, 'Brand/Model is required.');
+                        ok = false;
+                    } else setError(brandEl, '');
+                    const hpNum = toFloat(hp);
+                    if (!isFinite(hpNum) || hpNum <= 0) {
+                        setError(hpEl, 'Enter numeric horsepower/capacity.');
+                        ok = false;
+                    } else setError(hpEl, '');
+                    const qNum = toInt(qty);
+                    if (!Number.isInteger(qNum) || qNum < 1) {
+                        setError(qtyEl, 'Quantity must be a whole number ≥ 1.');
+                        ok = false;
+                    } else setError(qtyEl, '');
+
+                    if (minChars(type, 2) && minChars(brand, 2) && isFinite(hpNum) && hpNum > 0 && Number.isInteger(qNum) && qNum >= 1) {
+                        hasCompleteRow = true;
+                    }
+                });
+
+                // table-level requirement
+                if (!hasAnyContent) {
+                    const firstTypeInput = $('#machinery-table tbody tr input');
+                    setError(firstTypeInput, 'Add at least one machinery/equipment.');
+                    ok = false;
+                }
+
+                return ok && hasCompleteRow;
+            }
+
+            // SUPPLY table validation
+            function validateSupply() {
+                const tbody = $('#supply-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                let hasAnyContent = false;
+                let hasCompleteRow = false;
+
+                Array.from(tbody.querySelectorAll('tr')).forEach((tr) => {
+                    const [suppEl, specieEl, volEl] = Array.from(tr.querySelectorAll('input')).slice(0, 3);
+                    [suppEl, specieEl, volEl].forEach(ensureErrorEl);
+
+                    const s = (suppEl?.value || '').trim();
+                    const sp = (specieEl?.value || '').trim();
+                    const v = (volEl?.value || '').trim();
+
+                    const rowBlank = !s && !sp && !v;
+                    if (rowBlank) {
+                        setError(suppEl, '');
+                        setError(specieEl, '');
+                        setError(volEl, '');
+                        return;
+                    }
+
+                    hasAnyContent = true;
+
+                    if (!/^[A-Za-zÀ-ž0-9' .,-]{3,}$/.test(s)) {
+                        setError(suppEl, 'Supplier name (3+ chars).');
+                        ok = false;
+                    } else setError(suppEl, '');
+                    if (!/^[A-Za-zÀ-ž' .,-]{2,}$/.test(sp)) {
+                        setError(specieEl, 'Species must be letters.');
+                        ok = false;
+                    } else setError(specieEl, '');
+                    const volNum = toFloat(v);
+                    if (!isFinite(volNum) || volNum <= 0) {
+                        setError(volEl, 'Enter a numeric volume (units optional).');
+                        ok = false;
+                    } else setError(volEl, '');
+
+                    if (/^[A-Za-zÀ-ž0-9' .,-]{3,}$/.test(s) && /^[A-Za-zÀ-ž' .,-]{2,}$/.test(sp) && isFinite(volNum) && volNum > 0) {
+                        hasCompleteRow = true;
+                    }
+                });
+
+                if (!hasAnyContent) {
+                    const firstSupp = $('#supply-table tbody tr input');
+                    setError(firstSupp, 'Add at least one supplier contract.');
+                    ok = false;
+                }
+
+                return ok && hasCompleteRow;
+            }
+
+            /* ------------------ field-by-field validation ------------------ */
+
+            const rules = {
+                // NEW
+                '#new-first-name': v => {
+                    if (isBlank(v)) return 'First name is required.';
+                    if (!NAME_RX.test(v)) return '2–50 letters only.';
+                },
+                '#new-middle-name': v => {
+                    if (v && !MID_RX.test(v)) return 'Letters only.';
+                },
+                '#new-last-name': v => {
+                    if (isBlank(v)) return 'Last name is required.';
+                    if (!NAME_RX.test(v)) return '2–50 letters only.';
+                },
+                '#new-business-address': addressRule,
+                '#new-plant-location': locationRule,
+                '#new-contact-number': contactRule,
+                '#new-email-address': emailRule,
+
+                // RENEWAL
+                '#r-first-name': v => {
+                    if (isBlank(v)) return 'First name is required.';
+                    if (!NAME_RX.test(v)) return '2–50 letters only.';
+                },
+                '#r-middle-name': v => {
+                    if (v && !MID_RX.test(v)) return 'Letters only.';
+                },
+                '#r-last-name': v => {
+                    if (isBlank(v)) return 'Last name is required.';
+                    if (!NAME_RX.test(v)) return '2–50 letters only.';
+                },
+                '#r-address': addressRule,
+                '#r-plant-location': locationRule,
+                '#r-contact-number': contactRule,
+                '#r-email-address': emailRule,
+                '#r-previous-permit': v => {
+                    if (v && !SIMPLE_ID_RX.test(v)) return 'Use letters/numbers, slashes or dashes.';
+                },
+                '#r-expiry-date': v => {
+                    /* validated together below when paired */
+                },
+
+                // SHARED
+                '#daily-capacity': capacityRule,
+                '#declaration-name-new': v => declNameRule(v, '#new-first-name', '#new-last-name'),
+                '#declaration-address': v => {
+                    if (isBlank(v)) return 'Enter your address.';
+                    if (!minChars(v, 10)) return 'Address must be at least 10 characters.';
+                },
+                '#declaration-name-renewal': v => declNameRule(v, '#r-first-name', '#r-last-name'),
+                '#other-plant-specify': v => {
+                    /* required only when plant-type=Other */
+                },
+                '#other-power-specify': v => {
+                    /* required only when power-source=Other */
+                },
+            };
+
+            // validate one field by selector
+            function validateField(sel) {
+                const el = $(sel);
+                if (!el) return true;
+                ensureErrorEl(el);
+                const rule = rules[sel];
+                let msg = rule ? (rule(el.value) || '') : '';
+
+                // pair rule for renewal previous-permit + expiry-date
+                if (sel === '#r-previous-permit' || sel === '#r-expiry-date') {
+                    const prev = $('#r-previous-permit')?.value?.trim();
+                    const exp = $('#r-expiry-date')?.value?.trim();
+                    if ((prev && !exp) || (!prev && exp)) msg = 'Provide BOTH previous permit no. and expiry date, or leave both empty.';
+                    else if (sel === '#r-previous-permit' && prev && !SIMPLE_ID_RX.test(prev)) msg = 'Use letters/numbers, slashes or dashes.';
+                    else msg = '';
+                }
+
+                setError(el, msg);
+                return !msg;
+            }
+
+            // ownership group (new/renewal)
+            function validateOwnership(type) {
+                const name = type === 'new' ? 'new-ownership-type' : 'r-ownership-type';
+                const container = groupContainerByName(name);
+                if (!container) return true;
+                ensureErrorEl(container);
+                let msg = '';
+                if (!groupValue(name)) msg = 'Select a type of ownership.';
+                setError(container, msg);
+                return !msg;
+            }
+
+            // plant type group + "other" specify
+            function validatePlantType() {
+                const container = groupContainerByName('plant-type');
+                if (!container) return true;
+                ensureErrorEl(container);
+                let msg = '';
+                const val = groupValue('plant-type');
+                if (!val) msg = 'Select a plant type.';
+                setError(container, msg);
+
+                // other specify
+                const otherInp = $('#other-plant-specify');
+                if (val === 'Other') {
+                    const v = otherInp?.value || '';
+                    const msg2 = !minChars(v, 3) ? 'Please specify (min 3 characters).' : '';
+                    setError(otherInp, msg2);
+                    return !msg && !msg2;
+                } else {
+                    setError(otherInp, '');
+                    return !msg;
+                }
+            }
+
+            // power source group + "other" specify
+            function validatePowerSource() {
+                const container = groupContainerByName('power-source');
+                if (!container) return true;
+                ensureErrorEl(container);
+                let msg = '';
+                const val = groupValue('power-source');
+                if (!val) msg = 'Select a source of power.';
+                setError(container, msg);
+
+                const otherInp = $('#other-power-specify');
+                if (val === 'Other') {
+                    const v = otherInp?.value || '';
+                    const msg2 = !minChars(v, 3) ? 'Please specify (min 3 characters).' : '';
+                    setError(otherInp, msg2);
+                    return !msg && !msg2;
+                } else {
+                    setError(otherInp, '');
+                    return !msg;
+                }
+            }
+
+            /* ------------------ validate a whole section ------------------ */
+            function validateSection(type) {
+                const isNew = type === 'new';
+                let ok = true;
+
+                const toCheck = isNew ? ['#new-first-name', '#new-middle-name', '#new-last-name',
+                    '#new-business-address', '#new-plant-location',
+                    '#new-contact-number', '#new-email-address',
+                    '#daily-capacity',
+                    '#declaration-name-new', '#declaration-address'
+                ] : ['#r-first-name', '#r-middle-name', '#r-last-name',
+                    '#r-address', '#r-plant-location',
+                    '#r-contact-number', '#r-email-address',
+                    '#r-previous-permit', '#r-expiry-date',
+                    '#daily-capacity',
+                    '#declaration-name-renewal'
+                ];
+
+                toCheck.forEach(sel => {
+                    if (!validateField(sel)) ok = false;
+                });
+
+                if (!validateOwnership(type)) ok = false;
+                if (!validatePlantType()) ok = false;
+                if (!validatePowerSource()) ok = false;
+
+                if (!validateMachinery()) ok = false;
+                if (!validateSupply()) ok = false;
+
+                // hard guard: numbers in first/last names
+                (isNew ? ['#new-first-name', '#new-last-name'] : ['#r-first-name', '#r-last-name'])
+                .forEach(sel => {
+                    const el = $(sel);
+                    if (!el) return;
+                    if (/\d/.test(el.value)) {
+                        setError(el, 'Names cannot contain numbers.');
+                        ok = false;
+                    }
+                });
+
+                return ok;
+            }
+
+            /* ------------------ live validation listeners ------------------ */
+            function addLiveValidation() {
+                Object.keys(rules).forEach(sel => {
+                    const el = $(sel);
+                    if (!el) return;
+                    ensureErrorEl(el);
+                    const handler = () => validateField(sel);
+                    el.addEventListener('input', handler);
+                    el.addEventListener('blur', handler);
+                    el.classList?.remove('error', 'is-invalid');
+                });
+
+                // radios
+                ['new-ownership-type', 'r-ownership-type', 'plant-type', 'power-source'].forEach(name => {
+                    $$(`input[name="${name}"]`).forEach(r => {
+                        r.addEventListener('change', () => {
+                            if (name === 'plant-type') validatePlantType();
+                            else if (name === 'power-source') validatePowerSource();
+                            else if (name === 'new-ownership-type') validateOwnership('new');
+                            else if (name === 'r-ownership-type') validateOwnership('renewal');
+                        });
+                    });
+                });
+
+                // tables: validate when typing, plus when adding rows
+                $('#machinery-table')?.addEventListener('input', (e) => {
+                    if (e.target && e.target.tagName === 'INPUT') validateMachinery();
+                });
+                $('#supply-table')?.addEventListener('input', (e) => {
+                    if (e.target && e.target.tagName === 'INPUT') validateSupply();
+                });
+
+                // hook after row add buttons (rows are added by your other script)
+                $('#add-machinery-row')?.addEventListener('click', () =>
+                    setTimeout(() => {
+                        // ensure new inputs get error placeholders
+                        Array.from($('#machinery-table tbody')?.querySelectorAll('tr input') || []).forEach(ensureErrorEl);
+                        validateMachinery();
+                    }, 0)
+                );
+                $('#add-supply-row')?.addEventListener('click', () =>
+                    setTimeout(() => {
+                        Array.from($('#supply-table tbody')?.querySelectorAll('tr input') || []).forEach(ensureErrorEl);
+                        validateSupply();
+                    }, 0)
+                );
+            }
+
+            /* ------------------ submit interception ------------------ */
+            /* ------------------ submit interception ------------------ */
+            function interceptSubmit() {
+                const submitBtn = $('#submitApplication');
+                if (!submitBtn) return;
+
+                const guard = (e) => {
+                    const ok = validateSection(activeType());
+                    if (!ok) {
+                        // block all later handlers (including precheck)
+                        e.preventDefault?.();
+                        e.stopImmediatePropagation?.();
+
+                        // focus/scroll to first visible error
+                        const firstErr = document.querySelector('.field-error:not([style*="display: none"])');
+                        const target = firstErr?.previousElementSibling;
+                        if (target && typeof target.focus === 'function') target.focus();
+                        if (firstErr?.scrollIntoView) {
+                            firstErr.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center'
+                            });
+                        }
+                        return false;
+                    }
+                    return true; // let precheck run
+                };
+
+                // IMPORTANT: capture=true so this runs BEFORE your main click handler
+                submitBtn.addEventListener('click', guard, {
+                    capture: true
+                });
+            }
+
+
+
+            // expose manual trigger in case you want to call it elsewhere
+            window.validateWPPForm = () => validateSection(activeType());
+
+            // init
+            addLiveValidation();
+            interceptSubmit();
+        })();
+    </script>
+
 
 </body>
 

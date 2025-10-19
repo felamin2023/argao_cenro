@@ -41,7 +41,7 @@ function supa_upload(string $bucket, string $path, string $tmpPath, string $mime
         CURLOPT_HTTPHEADER     => [
             'Authorization: Bearer ' . SUPABASE_SERVICE_KEY,
             'Content-Type: ' . $mime,
-            // IMPORTANT: do not overwrite existing files
+            // Do not overwrite existing files
             'x-upsert: false',
         ],
         CURLOPT_POSTFIELDS     => file_get_contents($tmpPath),
@@ -67,11 +67,13 @@ function slugify_name(string $s): string
     $s = preg_replace('~_+~', '_', $s);
     return strtolower($s ?: 'file');
 }
+
 function pick_ext(array $file, string $fallback): string
 {
     $ext = pathinfo($file['name'] ?? '', PATHINFO_EXTENSION);
     return $ext ? ('.' . strtolower($ext)) : $fallback;
 }
+
 function norm(?string $s): string
 {
     return strtolower(trim((string)$s));
@@ -82,7 +84,7 @@ try {
     if (!isset($_SESSION['user_id'])) throw new Exception('Not authenticated');
     if (!$pdo) throw new Exception('DB not available');
 
-    // users.user_id lookup
+    // users.user_id lookup (your schema has both id and user_id)
     $idOrUuid = (string)$_SESSION['user_id'];
     $stmt = $pdo->prepare("SELECT user_id FROM public.users WHERE id::text = :v OR user_id::text = :v LIMIT 1");
     $stmt->execute([':v' => $idOrUuid]);
@@ -94,10 +96,17 @@ try {
     $permit_type = isset($_POST['permit_type']) && in_array(strtolower($_POST['permit_type']), ['new', 'renewal'], true)
         ? strtolower($_POST['permit_type']) : 'new';
 
+    // Client choice flags from the UI modal
+    $override_client_id = trim((string)($_POST['use_client_id'] ?? '')); // if user picked “Use existing”
+    $force_new_client   = !empty($_POST['force_new_client']);            // if user picked “Create new”
+
     // Names (accept both new/renewal field names)
     $first_name  = trim($_POST['first_name']   ?? ($_POST['first_name_ren']   ?? ''));
     $middle_name = trim($_POST['middle_name']  ?? ($_POST['middle_name_ren']  ?? ''));
     $last_name   = trim($_POST['last_name']    ?? ($_POST['last_name_ren']    ?? ''));
+
+    // Business/company name (accept both new/renewal field names just in case)
+    $business_name = trim($_POST['business_name'] ?? ($_POST['business_name_ren'] ?? ''));
 
     // Basic profile (Lumber-specific fields)
     $applicant_age = trim($_POST['applicant_age'] ?? ($_POST['applicant_age_ren'] ?? ''));
@@ -120,8 +129,11 @@ try {
     $suppliers_json = (string)($_POST['suppliers_json'] ?? ($_POST['suppliers_json_ren'] ?? ''));
     if ($suppliers_json === '') $suppliers_json = '[]';
 
-    // Renewal-only extras (gracefully accept from multiple names)
-    $prev_cert_no  = trim($_POST['prev_certificate'] ?? ($_POST['previous_certificate'] ?? ($_POST['permit_number'] ?? '')));
+    // Renewal-only extras (accept a few aliases)
+    $prev_cert_no  = trim($_POST['prev_certificate_no']
+        ?? $_POST['prev_certificate']
+        ?? $_POST['previous_certificate']
+        ?? ($_POST['permit_number'] ?? ''));
     $issued_date   = trim($_POST['issued_date'] ?? '');
     $expiry_date   = trim($_POST['expiry_date'] ?? ($_POST['expires_on'] ?? ''));
     $cr_license_no = trim($_POST['cr_license_no'] ?? '');
@@ -136,7 +148,7 @@ try {
     $nm = norm($middle_name);
     $nl = norm($last_name);
 
-    // Try normalized columns; fallback
+    // Try normalized columns; fallback to case-insensitive
     $hasNormCols = false;
     try {
         $pdo->query("SELECT norm_first, norm_middle, norm_last FROM public.client LIMIT 0");
@@ -148,30 +160,51 @@ try {
         $stmt = $pdo->prepare("SELECT client_id FROM public.client WHERE norm_first=:f AND norm_middle=:m AND norm_last=:l LIMIT 1");
     } else {
         $stmt = $pdo->prepare("
-      SELECT client_id
-      FROM public.client
-      WHERE lower(trim(coalesce(first_name,'')))  = :f
-        AND lower(trim(coalesce(middle_name,''))) = :m
-        AND lower(trim(coalesce(last_name,'')))   = :l
-      LIMIT 1
-    ");
+            SELECT client_id
+            FROM public.client
+            WHERE lower(trim(coalesce(first_name,'')))  = :f
+              AND lower(trim(coalesce(middle_name,''))) = :m
+              AND lower(trim(coalesce(last_name,'')))   = :l
+            LIMIT 1
+        ");
     }
     $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
     $existing_client_id = $stmt->fetchColumn() ?: null;
 
     $pdo->beginTransaction();
 
-    // --- Client: reuse if found, else create ---
-    if ($existing_client_id) {
-        $client_id = $existing_client_id;
-    } else {
+    // --- Client: honor user choice (override or force new), else reuse by exact name, else create ---
+    $client_id = null;
+
+    // 1) If the UI sent an explicit existing id, verify and use it
+    if ($override_client_id !== '') {
+        $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
+        $chk->execute([':cid' => $override_client_id]);
+        $client_id = $chk->fetchColumn() ?: null;
+        if (!$client_id) {
+            throw new Exception('Invalid existing client id.');
+        }
+
+        // When using existing client, enforce DB names and force declaration = FIRST + LAST
+        $nq = $pdo->prepare("SELECT first_name, middle_name, last_name FROM public.client WHERE client_id = :cid LIMIT 1");
+        $nq->execute([':cid' => $client_id]);
+        $nr = $nq->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $first_name  = (string)($nr['first_name']  ?? $first_name);
+        $middle_name = (string)($nr['middle_name'] ?? $middle_name);
+        $last_name   = (string)($nr['last_name']   ?? $last_name);
+        $declaration_name = trim($first_name . ' ' . $last_name);
+    }
+
+    // 2) If no override and user explicitly wants a new client, create it now
+    if (!$client_id && $force_new_client) {
         $stmt = $pdo->prepare("
-      INSERT INTO public.client
-        (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
-      VALUES
-        (:uid, :first, :middle, :last, NULL, NULL, NULL, NULL)
-      RETURNING client_id
-    ");
+            INSERT INTO public.client
+              (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
+            VALUES
+              (:uid, :first, :middle, :last, NULL, NULL, NULL, NULL)
+            RETURNING client_id
+        ");
         $stmt->execute([
             ':uid'    => $user_uuid,
             ':first'  => $first_name,
@@ -182,51 +215,93 @@ try {
         if (!$client_id) throw new Exception('Failed to create client record');
     }
 
-    // ---- Status flags on this client (LUMBER) ----
+    // 3) Otherwise, reuse by exact name if found, else create
+    if (!$client_id) {
+        if ($existing_client_id) {
+            $client_id = $existing_client_id;
+        } else {
+            $stmt = $pdo->prepare("
+                INSERT INTO public.client
+                  (user_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, contact_number)
+                VALUES
+                  (:uid, :first, :middle, :last, NULL, NULL, NULL, NULL)
+                RETURNING client_id
+            ");
+            $stmt->execute([
+                ':uid'    => $user_uuid,
+                ':first'  => $first_name,
+                ':middle' => $middle_name,
+                ':last'   => $last_name,
+            ]);
+            $client_id = $stmt->fetchColumn();
+            if (!$client_id) throw new Exception('Failed to create client record');
+        }
+    }
+
+    /* ---- Status flags on this client (LUMBER) ----
+       NOTE: your approval_status allowed values are:
+             'pending', 'for payment', 'released', 'canceled', 'rejected'
+    */
+
+    // Global: any "for payment" on lumber?
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'lumber'
+          AND lower(approval_status) = 'for payment'
+        LIMIT 1
+    ");
+    $stmt->execute([':cid' => $client_id]);
+    $hasForPayment = (bool)$stmt->fetchColumn();
+
     // PENDING NEW
     $stmt = $pdo->prepare("
-    SELECT 1 FROM public.approval
-    WHERE client_id = :cid
-      AND lower(request_type) = 'lumber'
-      AND lower(permit_type)  = 'new'
-      AND lower(approval_status) = 'pending'
-    LIMIT 1
-  ");
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'lumber'
+          AND lower(permit_type)  = 'new'
+          AND lower(approval_status) = 'pending'
+        LIMIT 1
+    ");
     $stmt->execute([':cid' => $client_id]);
     $hasPendingNew = (bool)$stmt->fetchColumn();
 
-    // APPROVED NEW
+    // RELEASED NEW
     $stmt = $pdo->prepare("
-    SELECT 1 FROM public.approval
-    WHERE client_id = :cid
-      AND lower(request_type) = 'lumber'
-      AND lower(permit_type)  = 'new'
-      AND lower(approval_status) = 'approved'
-    ORDER BY approved_at DESC NULLS LAST
-    LIMIT 1
-  ");
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'lumber'
+          AND lower(permit_type)  = 'new'
+          AND lower(approval_status) = 'released'
+        ORDER BY approved_at DESC NULLS LAST
+        LIMIT 1
+    ");
     $stmt->execute([':cid' => $client_id]);
-    $hasApprovedNew = (bool)$stmt->fetchColumn();
+    $hasReleasedNew = (bool)$stmt->fetchColumn();
 
     // PENDING RENEWAL
     $stmt = $pdo->prepare("
-    SELECT 1 FROM public.approval
-    WHERE client_id = :cid
-      AND lower(request_type) = 'lumber'
-      AND lower(permit_type)  = 'renewal'
-      AND lower(approval_status) = 'pending'
-    LIMIT 1
-  ");
+        SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'lumber'
+          AND lower(permit_type)  = 'renewal'
+          AND lower(approval_status) = 'pending'
+        LIMIT 1
+    ");
     $stmt->execute([':cid' => $client_id]);
     $hasPendingRenewal = (bool)$stmt->fetchColumn();
 
     // ---- Enforce rules (HARD BLOCKS) ----
+    if ($hasForPayment) {
+        throw new Exception('You have a Lumber application marked FOR PAYMENT. Please settle it before filing another.');
+    }
+
     if ($permit_type === 'renewal') {
         if ($hasPendingRenewal) {
             throw new Exception('You already have a pending RENEWAL lumber application.');
         }
-        if (!$hasApprovedNew) {
-            throw new Exception('To file a renewal, you must have an APPROVED new lumber dealer permit on record.');
+        if (!$hasReleasedNew) {
+            throw new Exception('To file a renewal, you must have a RELEASED new lumber dealer permit on record.');
         }
     } else { // NEW
         if ($hasPendingNew) {
@@ -234,6 +309,9 @@ try {
         }
         if ($hasPendingRenewal) {
             throw new Exception('You have a pending RENEWAL; please wait for the update first.');
+        }
+        if ($hasReleasedNew) {
+            throw new Exception('You already have a RELEASED NEW lumber dealer permit; please file a renewal instead.');
         }
     }
 
@@ -253,18 +331,18 @@ try {
 
     // --- uploads container ---
     $urls = [
-        'lumber_csw_document'            => null, // 1
-        'geo_photos'                     => null, // 2
-        'application_form'               => null, // generated doc
-        'lumber_supply_contract'         => null, // 4
-        'lumber_business_plan'           => null, // 5 (new only)
-        'lumber_mayors_permit'           => null, // 6
+        'lumber_csw_document'             => null, // 1
+        'geo_photos'                      => null, // 2
+        'application_form'                => null, // generated doc
+        'lumber_supply_contract'          => null, // 4
+        'lumber_business_plan'            => null, // 5 (new only)
+        'lumber_mayors_permit'            => null, // 6
         'lumber_registration_certificate' => null, // 7
-        'lumber_tax_return'              => null, // 8 (new only)
-        'lumber_monthly_reports'         => null, // 9 (renewal only)
-        'lumber_or_copy'                 => null, // 10a
-        'lumber_op_copy'                 => null, // 10b
-        'signature'                      => null,
+        'lumber_tax_return'               => null, // 8 (new only)
+        'lumber_monthly_reports'          => null, // 9 (renewal only)
+        'lumber_or_copy'                  => null, // 10a
+        'lumber_op_copy'                  => null, // 10b
+        'signature'                       => null,
     ];
 
     // generated application document (Word via MHTML)
@@ -329,40 +407,40 @@ try {
     $province = null;
     $location = $operation_place;
 
-    // Add a small "additional_information" concatenation for fields without dedicated columns
+    // Additional info blob for misc fields (and to keep storage run key)
     $extraInfo = [];
     if ($sawmill_permit_no !== '') $extraInfo[] = "sawmill_permit_no={$sawmill_permit_no}";
-    // include the unique submission key so each request can be traced to its storage folder
     $extraInfo[] = "submission_key={$run}";
     $additional_info = $extraInfo ? implode('; ', $extraInfo) : null;
 
     $stmt = $pdo->prepare("
-    INSERT INTO public.application_form
-      (client_id, contact_number, application_for, type_of_permit,
-       complete_name, present_address, province, location,
-       applicant_age, is_government_employee,
-       proposed_place_of_operation, expected_annual_volume, estimated_annual_worth,
-       total_number_of_employees, total_number_of_dependents,
-       intended_market, my_experience_as_alumber_dealer, declaration_name,
-       suppliers_json, signature_of_applicant,
-       permit_number, expiry_date, cr_license_no, buying_from_other_sources,
-       additional_information, date_today)
-    VALUES
-      (:client_id, NULL, 'lumber', :permit_type,
-       :complete_name, :present_address, :province, :location,
-       :applicant_age, :is_govt,
-       :operation_place, :annual_volume, :annual_worth,
-       :employees_count, :dependents_count,
-       :intended_market, :experience, :declaration_name,
-       :suppliers_json, :signature_url,
-       :permit_number, :expiry_date, :cr_license_no, :buying_sources,
-       :additional_info, to_char(now(),'YYYY-MM-DD'))
-    RETURNING application_id
-  ");
+        INSERT INTO public.application_form
+          (client_id, contact_number, application_for, type_of_permit,
+           complete_name, company_name, present_address, province, location,
+           applicant_age, is_government_employee,
+           proposed_place_of_operation, expected_annual_volume, estimated_annual_worth,
+           total_number_of_employees, total_number_of_dependents,
+           intended_market, my_experience_as_alumber_dealer, declaration_name,
+           suppliers_json, signature_of_applicant,
+           permit_number, expiry_date, cr_license_no, buying_from_other_sources,
+           additional_information, date_today)
+        VALUES
+          (:client_id, NULL, 'lumber', :permit_type,
+           :complete_name, :company_name, :present_address, :province, :location,
+           :applicant_age, :is_govt,
+           :operation_place, :annual_volume, :annual_worth,
+           :employees_count, :dependents_count,
+           :intended_market, :experience, :declaration_name,
+           :suppliers_json, :signature_url,
+           :permit_number, :expiry_date, :cr_license_no, :buying_sources,
+           :additional_info, to_char(now(),'YYYY-MM-DD'))
+        RETURNING application_id
+    ");
     $stmt->execute([
         ':client_id'        => $client_id,
         ':permit_type'      => $permit_type,
         ':complete_name'    => $complete_name,
+        ':company_name'     => ($business_name !== '') ? $business_name : null,
         ':present_address'  => $present_address ?: null,
         ':province'         => $province,
         ':location'         => $location ?: null,
@@ -389,12 +467,12 @@ try {
 
     // --- approval row ---
     $stmt = $pdo->prepare("
-    INSERT INTO public.approval
-      (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
-    VALUES
-      (:client_id, :requirement_id, 'lumber', 'pending', NULL, :permit_type, :application_id, now())
-    RETURNING approval_id
-  ");
+        INSERT INTO public.approval
+          (client_id, requirement_id, request_type, approval_status, seedl_req_id, permit_type, application_id, submitted_at)
+        VALUES
+          (:client_id, :requirement_id, 'lumber', 'pending', NULL, :permit_type, :application_id, now())
+        RETURNING approval_id
+    ");
     $stmt->execute([
         ':client_id'      => $client_id,
         ':requirement_id' => $requirement_id,
@@ -408,33 +486,29 @@ try {
     $nicePermit = strtolower($permit_type); // "new" or "renewal"
     $msg = sprintf('%s requested a lumber %s permit.', $first_name ?: $complete_name, $nicePermit);
     $stmt = $pdo->prepare("
-    INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
-    VALUES (:approval_id, NULL, :message, false, :from_user, :to_value)
-    RETURNING notif_id
-  ");
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
+        VALUES (:approval_id, NULL, :message, false, :from_user, :to_value)
+        RETURNING notif_id
+    ");
     $stmt->execute([
         ':approval_id' => $approval_id,
         ':message'     => $msg,
-        ':from_user'   => $user_uuid,       // current logged-in user
-        ':to_value'    => 'Tree Cutting',   // target destination
+        ':from_user'   => (string)$user_uuid,
+        ':to_value'    => 'admin',
     ]);
-    $notif_id = $stmt->fetchColumn();
 
     $pdo->commit();
 
     echo json_encode([
-        'ok'              => true,
-        'client_id'       => $client_id,
-        'requirement_id'  => $requirement_id,
-        'application_id'  => $application_id,
-        'approval_id'     => $approval_id,
-        'notification_id' => $notif_id,
-        'storage_prefix'  => $prefix,
-        'bucket'          => $bucket,
-        'submission_key'  => $run,
+        'ok' => true,
+        'approval_id' => (string)$approval_id,
+        'application_id' => (string)$application_id,
+        'message' => 'Lumber application submitted.'
     ]);
-} catch (\Throwable $e) {
-    if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+} catch (Throwable $e) {
+    if ($pdo && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

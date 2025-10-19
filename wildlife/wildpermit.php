@@ -259,11 +259,12 @@ body{margin:0;background:#fff}
   </div>
 
   <div class="permit-number">
-    NEW PERMIT<br>
-    WFP No. <span class="small-underline">' . $e($d['wfp_no']) . '</span><br>
-    SERIES OF ' . $e($d['series']) . '<br>
-    Date Issued: <span class="small-underline">' . $e($d['date_issued_fmt']) . '</span><br>
-    Expiry Date: <span class="small-underline">' . $e($d['expiry_date_fmt']) . '</span>
+    <p>WFP No. ' . $e($d['wfp_no']) . '</p>
+    <p>' . $e(strtoupper((string)$d['permit_type'])) . ' PERMIT</p>
+    <p>SERIES OF ' . $e($d['series']) . '</p>
+    <p>Date Issued: ' . $e($d['date_issued_fmt']) . '</p>
+    <p>Expiry Date: ' . $e($d['expiry_date_fmt']) . '</p>
+    
   </div>
 
   <div class="permit-title">WILDLIFE FARM PERMIT</div>
@@ -333,7 +334,7 @@ function generate_and_store_permit(PDO $pdo, string $approvalId, array $inputs):
 
     // Fetch application & client
     $st = $pdo->prepare("
-        SELECT a.application_id, a.client_id,
+        SELECT a.application_id, a.client_id, a.permit_type,
                af.additional_information,
                c.first_name, c.last_name
         FROM public.approval a
@@ -344,6 +345,7 @@ function generate_and_store_permit(PDO $pdo, string $approvalId, array $inputs):
     ");
     $st->execute([':aid' => $approvalId]);
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+    $permitType = (string)($row['permit_type'] ?? '');
 
     $clientId = (string)($row['client_id'] ?? '');
     $ai = [];
@@ -369,6 +371,7 @@ function generate_and_store_permit(PDO $pdo, string $approvalId, array $inputs):
         'establishment_address' => $ai['establishment_address'] ?? ($ai['establishmentAddress'] ?? ''),
         'client_name'           => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
         'animals'               => is_array($ai['animals'] ?? null) ? $ai['animals'] : [],
+        'permit_type'           => $permitType,
     ];
 
     // Render HTML → PDF
@@ -528,6 +531,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                     }
                 } elseif (preg_match('~^https?://~i', $val)) {
                     $kind = 'link';
+                    // If it's a signature and the URL points to an image, render it as an image
+                    $path = parse_url($val, PHP_URL_PATH) ?? '';
+                    $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                    $isImg = in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true);
+                    if ($isImg && stripos($label, 'signature') !== false) {
+                        $kind = 'image';
+                    }
                 }
                 $appFields[] = ['label' => $label, 'key' => $k, 'kind' => $kind, 'value' => $val];
             }
@@ -576,13 +586,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
     $action     = strtolower(trim((string)($_POST['action'] ?? '')));
     $reason     = trim((string)($_POST['reason'] ?? ''));
 
-    if (!$approvalId || !in_array($action, ['approve', 'reject'], true)) {
+    if (!$approvalId || !in_array($action, ['approve', 'reject', 'release'], true)) {
         echo json_encode(['ok' => false, 'error' => 'invalid params']);
         exit();
     }
 
     try {
         $pdo->beginTransaction();
+
         $st = $pdo->prepare("
             SELECT a.approval_id, a.approval_status, a.request_type, a.client_id
             FROM public.approval a
@@ -596,14 +607,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
             echo json_encode(['ok' => false, 'error' => 'approval not found']);
             exit;
         }
-        if (strtolower((string)$row['approval_status']) !== 'pending') {
-            $pdo->rollBack();
-            echo json_encode(['ok' => false, 'error' => 'already decided']);
-            exit;
-        }
 
+        $status   = strtolower((string)($row['approval_status'] ?? 'pending'));
         $adminId  = $user_id;
         $fromDept = isset($me['department']) ? (string)$me['department'] : null;
+
+        // who to notify (client user_id)
         $toUserId = null;
         if (!empty($row['client_id'])) {
             $stCli = $pdo->prepare("SELECT user_id FROM public.client WHERE client_id=:cid LIMIT 1");
@@ -612,27 +621,52 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
         }
 
         if ($action === 'approve') {
-            // Required inputs from confirmation modal
+            /* ---- PENDING -> FOR PAYMENT ---- */
+            if ($status !== 'pending') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'invalid state']);
+                exit;
+            }
+
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='for payment',
+                       approved_at=NULL, approved_by=NULL,
+                       rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
+                 WHERE approval_id=:aid
+            ")->execute([':aid' => $approvalId]);
+
+            // Notify client (client-facing)
+            $pdo->prepare("
+                INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
+                VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
+            ")->execute([
+                ':aid'      => $approvalId,
+                ':msg'      => 'Your wildlife permit was approved. You have to pay personally.',
+                ':fromDept' => $fromDept,
+                ':toUser'   => $toUserId
+            ]);
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'status' => 'for payment']);
+        } elseif ($action === 'release') {
+            /* ---- FOR PAYMENT -> RELEASED (WITH PDF) ---- */
+            if ($status !== 'for payment') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'invalid state']);
+                exit;
+            }
+
             $wfpNo  = trim((string)($_POST['wfp_no'] ?? ''));
             $series = trim((string)($_POST['series'] ?? ''));
             $meet   = trim((string)($_POST['meeting_date'] ?? '')); // YYYY-MM-DD
-
             if ($wfpNo === '' || $series === '' || $meet === '') {
                 $pdo->rollBack();
                 echo json_encode(['ok' => false, 'error' => 'Missing WFP No., Series, or Meeting Date']);
                 exit;
             }
 
-            // Flip status
-            $pdo->prepare("
-                UPDATE public.approval
-                   SET approval_status='approved',
-                       approved_at=now(), approved_by=:by,
-                       rejected_at=NULL, reject_by=NULL, rejection_reason=NULL
-                 WHERE approval_id=:aid
-            ")->execute([':by' => $adminId, ':aid' => $approvalId]);
-
-            // Generate PDF & insert/update approved_docs
+            // Generate + store PDF
             $docInfo = generate_and_store_permit($pdo, $approvalId, [
                 'wfp_no'       => $wfpNo,
                 'series'       => $series,
@@ -640,20 +674,34 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
             ]);
             $docUrl = $docInfo['url'] ?? null;
 
-            // Notify client
+            // Flip to released and stamp approver
+            $pdo->prepare("
+                UPDATE public.approval
+                   SET approval_status='released',
+                       approved_at=now(), approved_by=:by
+                 WHERE approval_id=:aid
+            ")->execute([':by' => $adminId, ':aid' => $approvalId]);
+
+            // Notify client (client-facing)
             $pdo->prepare("
                 INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
                 VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
             ")->execute([
                 ':aid'      => $approvalId,
-                ':msg'      => 'Your wildlife permit was approved. You can download you permit now.',
+                ':msg'      => 'Your wildlife permit was released. You can download your permit now.',
                 ':fromDept' => $fromDept,
                 ':toUser'   => $toUserId
             ]);
 
             $pdo->commit();
-            echo json_encode(['ok' => true, 'status' => 'approved', 'document_url' => $docUrl]);
+            echo json_encode(['ok' => true, 'status' => 'released', 'document_url' => $docUrl]);
         } else {
+            /* ---- PENDING -> REJECTED ---- */
+            if ($status !== 'pending') {
+                $pdo->rollBack();
+                echo json_encode(['ok' => false, 'error' => 'invalid state']);
+                exit;
+            }
             if ($reason === '') {
                 $pdo->rollBack();
                 echo json_encode(['ok' => false, 'error' => 'reason required']);
@@ -671,10 +719,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                 INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")
                 VALUES (:aid, :msg, false, now(), :fromDept, :toUser)
             ")->execute([
-                ':aid' => $approvalId,
-                ':msg' => 'Your wildlife permit request was rejected. Reason: ' . $reason,
+                ':aid'      => $approvalId,
+                ':msg'      => 'Your wildlife permit request was rejected. Reason: ' . $reason,
                 ':fromDept' => $fromDept,
-                ':toUser' => $toUserId
+                ':toUser'   => $toUserId
             ]);
 
             $pdo->commit();
@@ -687,6 +735,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
     }
     exit();
 }
+
 
 /* ---------------- AJAX (mark notifications for approval) ---------------- */
 /* ---------------- AJAX (mark notifications for approval) ---------------- */
@@ -1642,6 +1691,29 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             border-radius: 4px;
             background: #1b5e20;
         }
+
+        .status-val.for-payment {
+            color: #1d4ed8;
+        }
+
+        /* blue */
+        .status-val.released {
+            color: #065f46;
+        }
+
+        .form-image {
+            display: block;
+            max-width: 320px;
+            /* keep it reasonable in the def list */
+            max-height: 240px;
+            width: auto;
+            height: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+
+        /* green */
     </style>
 </head>
 
@@ -1947,6 +2019,21 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             </div>
         </div>
     </div>
+    <div id="releaseConfirm" class="confirm-wrap" role="dialog" aria-modal="true">
+        <div class="confirm-backdrop" data-close-confirm></div>
+        <div class="confirm-panel">
+            <h4 class="confirm-title">Release this wildlife permit?</h4>
+            <p>This action will mark the request as <strong>Released</strong>, generate the PDF, and notify the client.</p>
+
+            <!-- inputs are injected here by JS (WFP No., Series, Meeting Date) -->
+
+            <div class="confirm-actions">
+                <button class="btn ghost" data-cancel-confirm>Cancel</button>
+                <button class="btn success" id="releaseConfirmBtn"><i class="fas fa-file-export"></i> Confirm</button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -2302,7 +2389,13 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         const dt = document.createElement('dt');
                         dt.textContent = label;
                         const dd = document.createElement('dd');
-                        if (kind === 'link') {
+                        if (kind === 'image') {
+                            const img = document.createElement('img');
+                            img.src = value;
+                            img.alt = label || 'Signature';
+                            img.className = 'form-image';
+                            dd.appendChild(img);
+                        } else if (kind === 'link') {
                             const a = document.createElement('a');
                             a.href = value;
                             a.target = '_blank';
@@ -2314,6 +2407,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         } else {
                             dd.textContent = value;
                         }
+
                         row.appendChild(dt);
                         row.appendChild(dd);
                         list.appendChild(row);
@@ -2342,39 +2436,22 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     filesEmpty.classList.remove('hidden');
                 }
 
-                // Actions (only for pending)
-                modalActions.innerHTML = '';
-                if (st === 'pending') {
-                    const approveBtn = document.createElement('button');
-                    approveBtn.className = 'btn success';
-                    approveBtn.innerHTML = '<i class="fas fa-check"></i> Approve';
-                    approveBtn.addEventListener('click', () => openConfirm('approve'));
-
-                    const rejectBtn = document.createElement('button');
-                    rejectBtn.className = 'btn danger';
-                    rejectBtn.innerHTML = '<i class="fas fa-times"></i> Reject';
-                    rejectBtn.addEventListener('click', () => openConfirm('reject'));
-
-                    modalActions.appendChild(approveBtn);
-                    modalActions.appendChild(rejectBtn);
-                    modalActions.classList.remove('hidden');
-                } else {
-                    modalActions.classList.add('hidden');
-                }
+                // Actions based on status
+                renderActionsForStatus(st);
+                modalActions.classList.toggle('hidden', !(st === 'pending' || st === 'for payment'));
 
                 hideModalSkeleton();
             });
 
-            /* Approve / Reject flow (with WFP inputs on approve) */
+            /* ====== Approve / Release / Reject flow ====== */
             let pendingAction = null;
 
-            // Inject inputs into approve modal if not present (NOTE: no expiry-date note)
-            function ensureApproveInputs() {
-                const panel = document.querySelector('#approveConfirm .confirm-panel');
-                if (!panel || document.getElementById('fieldWfpNo')) return;
+            // Show inputs on the RELEASE confirm modal
+            function ensureReleaseInputs() {
+                const panel = document.querySelector('#releaseConfirm .confirm-panel');
+                if (!panel || document.getElementById('relFieldWfpNo')) return;
 
                 const block = document.createElement('div');
-                block.className = 'confirm-form';
                 block.style.display = 'grid';
                 block.style.gridTemplateColumns = '1fr 1fr';
                 block.style.gap = '10px';
@@ -2385,16 +2462,16 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
                 block.innerHTML = `
             <div style="grid-column:1/-1;">
-                <label for="fieldWfpNo" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">WFP No.</label>
-                <input id="fieldWfpNo" class="input" type="text" placeholder="e.g., WFP-${thisYear}-00001" />
+                <label for="relFieldWfpNo" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">WFP No.</label>
+                <input id="relFieldWfpNo" class="input" type="text" placeholder="e.g., WFP-${thisYear}-00001" />
             </div>
             <div>
-                <label for="fieldSeries" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Series</label>
-                <input id="fieldSeries" class="input" type="text" value="${thisYear}" />
+                <label for="relFieldSeries" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Series</label>
+                <input id="relFieldSeries" class="input" type="text" value="${thisYear}" />
             </div>
             <div>
-                <label for="fieldMeetingDate" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Meeting Date</label>
-                <input id="fieldMeetingDate" class="input" type="date" value="${todayISO}" />
+                <label for="relFieldMeetingDate" style="display:block;font-size:.9rem;color:#374151;margin-bottom:4px;">Meeting Date</label>
+                <input id="relFieldMeetingDate" class="input" type="date" value="${todayISO}" />
             </div>
         `;
                 panel.insertBefore(block, panel.querySelector('.confirm-actions'));
@@ -2403,37 +2480,41 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             function openConfirm(which) {
                 pendingAction = which;
                 if (which === 'approve') {
-                    ensureApproveInputs();
-                    document.getElementById('approveConfirm').classList.add('show');
+                    document.getElementById('approveConfirm')?.classList.add('show');
+                } else if (which === 'release') {
+                    ensureReleaseInputs();
+                    document.getElementById('releaseConfirm')?.classList.add('show');
                 } else {
-                    document.getElementById('rejectConfirm').classList.add('show');
-                    document.getElementById('rejectReason').value = '';
+                    document.getElementById('rejectConfirm')?.classList.add('show');
+                    const rr = document.getElementById('rejectReason');
+                    if (rr) rr.value = '';
                 }
             }
 
             function closeAllConfirms() {
-                document.getElementById('approveConfirm').classList.remove('show');
-                document.getElementById('rejectConfirm').classList.remove('show');
+                document.getElementById('approveConfirm')?.classList.remove('show');
+                document.getElementById('releaseConfirm')?.classList.remove('show');
+                document.getElementById('rejectConfirm')?.classList.remove('show');
             }
             document.querySelectorAll('[data-close-confirm],[data-cancel-confirm]').forEach(el => el.addEventListener('click', closeAllConfirms));
 
-            // Helpers for sending decisions (with extra fields on approve)
+            // Send decisions (approve = for payment, release = with inputs & PDF, reject = needs reason)
             async function sendDecision(action, reason = '') {
                 if (!currentApprovalId) return {
                     ok: false,
                     error: 'Missing approval id'
                 };
+
                 const form = new URLSearchParams();
                 form.set('approval_id', currentApprovalId);
                 form.set('action', action);
-                if (action === 'reject') form.set('reason', reason);
 
-                if (action === 'approve') {
-                    // collect WFP fields
-                    const wfpNo = (document.getElementById('fieldWfpNo')?.value || '').trim();
-                    const series = (document.getElementById('fieldSeries')?.value || '').trim();
-                    const meet = (document.getElementById('fieldMeetingDate')?.value || '').trim();
-
+                if (action === 'reject') {
+                    form.set('reason', reason);
+                } else if (action === 'release') {
+                    const wfpNo = (document.getElementById('relFieldWfpNo')?.value || '').trim();
+                    const series = (document.getElementById('relFieldSeries')?.value || '').trim();
+                    const meet = (document.getElementById('relFieldMeetingDate')?.value || '').trim();
                     if (!wfpNo || !series || !meet) {
                         return {
                             ok: false,
@@ -2442,7 +2523,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     }
                     form.set('wfp_no', wfpNo);
                     form.set('series', series);
-                    form.set('meeting_date', meet); // yyyy-mm-dd
+                    form.set('meeting_date', meet);
                 }
 
                 return fetch('<?php echo basename(__FILE__); ?>?ajax=decide', {
@@ -2458,20 +2539,54 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }));
             }
 
+            function slugStatus(s) {
+                return (s || '').toLowerCase().replace(/\s+/g, '-');
+            }
+
+            function renderActionsForStatus(st) {
+                modalActions.innerHTML = '';
+                if (st === 'pending') {
+                    const approveBtn = document.createElement('button');
+                    approveBtn.className = 'btn success';
+                    approveBtn.innerHTML = '<i class="fas fa-check"></i> Approve';
+                    approveBtn.addEventListener('click', () => openConfirm('approve'));
+
+                    const rejectBtn = document.createElement('button');
+                    rejectBtn.className = 'btn danger';
+                    rejectBtn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                    rejectBtn.addEventListener('click', () => openConfirm('reject'));
+
+                    modalActions.appendChild(approveBtn);
+                    modalActions.appendChild(rejectBtn);
+                    modalActions.classList.remove('hidden');
+                } else if (st === 'for payment') {
+                    const releaseBtn = document.createElement('button');
+                    releaseBtn.className = 'btn success';
+                    releaseBtn.innerHTML = '<i class="fas fa-file-export"></i> Release';
+                    releaseBtn.addEventListener('click', () => openConfirm('release'));
+                    modalActions.appendChild(releaseBtn);
+                    modalActions.classList.remove('hidden');
+                } else {
+                    modalActions.classList.add('hidden');
+                }
+            }
+
             function applyDecisionUI(status) {
+                const title = status[0].toUpperCase() + status.slice(1);
                 const ms = document.getElementById('metaStatus');
-                ms.textContent = status[0].toUpperCase() + status.slice(1);
+                ms.textContent = title;
                 ms.className = 'status-text';
-                document.getElementById('modalActions').innerHTML = '';
+
+                renderActionsForStatus(status);
 
                 const tr = document.querySelector(`tr[data-approval-id="${CSS.escape(currentApprovalId)}"]`);
                 if (tr) {
                     const tdStatus = tr.children[3];
-                    if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
+                    if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${slugStatus(status)}">${title}</span>`;
                 }
             }
 
-            // Approve
+            // Approve -> For payment (no inputs)
             document.getElementById('approveConfirmBtn')?.addEventListener('click', async () => {
                 if (pendingAction !== 'approve') return;
 
@@ -2483,16 +2598,32 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     alert(res.error || 'Failed to approve');
                     return;
                 }
-                applyDecisionUI('approved');
+                applyDecisionUI('for payment');
                 closeAllConfirms();
-                showToast('Request approved', 'success');
-                // NOTE: do not open permit.php — per requirements
+                showToast('Requirement approved', 'success');
             });
 
-            // Reject
+            // Release -> Released (with inputs & PDF)
+            document.getElementById('releaseConfirmBtn')?.addEventListener('click', async () => {
+                if (pendingAction !== 'release') return;
+
+                block(true);
+                const res = await sendDecision('release');
+                block(false);
+
+                if (!res.ok) {
+                    alert(res.error || 'Failed to release');
+                    return;
+                }
+                applyDecisionUI('released');
+                closeAllConfirms();
+                showToast('Request released', 'success');
+            });
+
+            // Reject (reason required)
             document.getElementById('rejectConfirmBtn')?.addEventListener('click', async () => {
                 if (pendingAction !== 'reject') return;
-                const reason = (document.getElementById('rejectReason').value || '').trim();
+                const reason = (document.getElementById('rejectReason')?.value || '').trim();
                 if (!reason) {
                     alert('Please provide a reason.');
                     return;
@@ -2537,6 +2668,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             }
         });
     </script>
+
 
 </body>
 

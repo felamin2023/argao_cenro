@@ -99,14 +99,28 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             height: 60px;
             transition: width .5s, height .5s
         }
+
+        /* Inline field error visuals */
+        .field-error {
+            color: red;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+            line-height: 1.3;
+        }
+
+        .invalid {
+            border-color: red !important;
+            outline-color: red !important;
+        }
     </style>
 </head>
 
 <body>
     <!-- Loading overlay -->
-    <div id="loadingScreen">
-        <div class="loading-text">Loading...</div>
-        <img id="loadingLogo" src="../denr.png" alt="Loading Logo">
+    <div id="loadingScreen" style="display:none;position:fixed;z-index:2000;inset:0;width:100vw;height:100vh;background:rgba(0,0,0,.1);align-items:center;justify-content:center;gap:10px;flex-direction:row;backdrop-filter:blur(3px)">
+        <div class="loading-text" style="font-size:1.5rem;color:#008031;font-weight:bold;letter-spacing:1px">Loading...</div>
+        <img id="loadingLogo" src="../denr.png" alt="Loading Logo" style="width:60px;height:60px;transition:width .5s,height .5s">
     </div>
 
     <header>
@@ -156,7 +170,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             <div class="nav-item">
                 <div class="nav-icon">
                     <a href="treemessage.php" aria-label="Messages">
-                        <i class="fas fa-envelope" style="color: black;"></i>
+                        <i class="fas fa-envelope" style="color:black;"></i>
                     </a>
                 </div>
             </div>
@@ -172,7 +186,6 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-
                     <div class="notification-item unread">
                         <a href="treeeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -185,7 +198,6 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                             </div>
                         </a>
                     </div>
-
                     <div class="notification-footer">
                         <a href="treenotification.php" class="view-all">View All Notifications</a>
                     </div>
@@ -212,13 +224,14 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
     </header>
 
     <!-- Toast -->
-    <div id="toast" class="toast"></div>
+    <div id="toast" class="toast" style="display:none;position:fixed;top:5px;left:50%;transform:translateX(-50%);background:#323232;color:#fff;padding:14px 22px;border-radius:8px;font-size:1rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.15)"></div>
 
     <div class="profile-container">
         <div class="profile-header">
             <h1 class="profile-title">Admin Profile</h1>
             <p class="profile-subtitle">View and manage your account information</p>
         </div>
+
         <div class="profile-body-main">
             <form id="profile-form" class="profile-body" enctype="multipart/form-data" autocomplete="off">
                 <input type="hidden" id="current-email" value="<?php echo $email; ?>">
@@ -226,7 +239,6 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 <div class="profile-picture-container">
                     <img src="<?php echo $profile_image; ?>" alt="Profile Picture" class="profile-picture" id="profile-picture"
                         onerror="this.onerror=null;this.src='/denr/superadmin/default-profile.jpg';">
-
                     <div class="profile-picture-placeholder" id="profile-placeholder" style="display:none;">
                         <i class="fas fa-user"></i>
                     </div>
@@ -234,33 +246,52 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                         <i class="fas fa-camera"></i>
                     </div>
                 </div>
+
                 <input type="file" id="profile-upload-input" name="profile_image" accept="image/*" style="display:none;">
+                <div id="image-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
 
                 <div class="profile-info-grid">
                     <div class="profile-info-item">
                         <div class="profile-info-label">First Name</div>
-                        <input type="text" class="profile-info-value" id="first-name" name="first_name" value="<?php echo $first_name; ?>">
+                        <input type="text" class="profile-info-value" id="first-name" name="first_name"
+                            value="<?php echo $first_name; ?>" maxlength="60" required>
+                        <div id="first-name-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Last Name</div>
-                        <input type="text" class="profile-info-value" id="last-name" name="last_name" value="<?php echo $last_name; ?>">
+                        <input type="text" class="profile-info-value" id="last-name" name="last_name"
+                            value="<?php echo $last_name; ?>" maxlength="60" required>
+                        <div id="last-name-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Age</div>
-                        <input type="number" class="profile-info-value" id="age" name="age" value="<?php echo $age; ?>" min="0">
+                        <input type="number" class="profile-info-value" id="age" name="age"
+                            value="<?php echo $age; ?>" min="0" max="120">
+                        <div id="age-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Email</div>
-                        <input type="email" class="profile-info-value" id="email" name="email" value="<?php echo $email; ?>">
+                        <input type="email" class="profile-info-value" id="email" name="email"
+                            value="<?php echo $email; ?>" maxlength="254">
+                        <div id="email-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Role</div>
-                        <input type="text" class="profile-info-value" id="role" name="role" value="<?php echo $role; ?>" disabled>
+                        <input type="text" class="profile-info-value" id="role" name="role"
+                            value="<?php echo $role; ?>" disabled>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Phone</div>
-                        <input type="text" class="profile-info-value" id="phone" name="phone" value="<?php echo $phone; ?>">
+                        <input type="text" class="profile-info-value" id="phone" name="phone"
+                            value="<?php echo $phone; ?>" maxlength="20">
+                        <div id="phone-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Department</div>
                         <select class="profile-info-value" id="department" name="department" required>
@@ -270,15 +301,21 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                             <option value="Tree Cutting" <?php if ($department === "Tree Cutting") echo 'selected'; ?>>Tree Cutting</option>
                             <option value="Cenro" <?php if ($department === "Cenro") echo 'selected'; ?>>Cenro</option>
                         </select>
+                        <div id="department-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">New Password</div>
-                        <input type="password" class="profile-info-value" id="password" name="password" placeholder="Enter new password">
+                        <input type="password" class="profile-info-value" id="password" name="password"
+                            placeholder="Enter new password" minlength="8" maxlength="72">
+                        <div id="password-rule-error" class="field-error" style="color:red;font-size:12px;display:none;"></div>
                     </div>
+
                     <div class="profile-info-item">
                         <div class="profile-info-label">Confirm Password</div>
-                        <input type="password" class="profile-info-value" id="confirm-password" name="confirm_password" placeholder="Confirm new password">
-                        <div id="password-error" style="color:red;font-size:12px;display:none;">Passwords do not match</div>
+                        <input type="password" class="profile-info-value" id="confirm-password" name="confirm_password"
+                            placeholder="Confirm new password" minlength="8" maxlength="72">
+                        <div id="password-error" class="field-error" style="color:red;font-size:12px;display:none;">Passwords do not match</div>
                     </div>
                 </div>
 
@@ -329,10 +366,9 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
         (function() {
             const $ = (id) => document.getElementById(id);
 
-            // Use ABSOLUTE path (or adjust to ../ if you prefer relative)
             const API_URL = '/denr/superadmin/backend/admins/profile/update_profile.php';
 
-            // Loading helpers
+            // Loading
             const loading = $('loadingScreen');
             const showLoading = () => {
                 if (loading) loading.style.display = 'flex';
@@ -343,8 +379,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
 
             // Toast
             const toastEl = $('toast');
-
-            function toast(msg) {
+            const toast = (msg) => {
                 if (!toastEl) return;
                 toastEl.textContent = msg;
                 toastEl.style.display = 'block';
@@ -353,12 +388,14 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                     toastEl.style.opacity = '0';
                     setTimeout(() => toastEl.style.display = 'none', 400);
                 }, 2000);
-            }
+            };
 
             // Elements
             const form = $('profile-form');
             const imgEl = $('profile-picture');
             const fileInput = $('profile-upload-input');
+            const imgErr = $('image-error');
+
             const confirmModal = $('profile-confirm-modal');
             const confirmBtn = $('confirm-profile-update-btn');
             const cancelConfirmBtn = $('cancel-profile-update-btn');
@@ -367,9 +404,28 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
 
             const hiddenEmailEl = $('current-email');
             let currentEmail = (hiddenEmailEl?.value || '').trim();
-            const emailInput = $('email');
 
-            // OTP Modal
+            // Inputs
+            const firstNameEl = $('first-name');
+            const lastNameEl = $('last-name');
+            const ageEl = $('age');
+            const emailEl = $('email');
+            const phoneEl = $('phone');
+            const deptEl = $('department');
+            const pwdEl = $('password');
+            const cpwdEl = $('confirm-password');
+
+            // Error nodes
+            const fnErr = $('first-name-error');
+            const lnErr = $('last-name-error');
+            const ageErr = $('age-error');
+            const emErr = $('email-error');
+            const phErr = $('phone-error');
+            const depErr = $('department-error');
+            const pwRuleErr = $('password-rule-error');
+            const pwMismatchErr = $('password-error');
+
+            // OTP modal
             const otpModal = $('otpModal');
             const otpInput = $('otpInput');
             const otpSendBtn = $('sendOtpBtn');
@@ -387,19 +443,153 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 otpModal.style.display = 'none';
             }
 
-            // Track original values to restore after success
-            const originalImageSrc = imgEl?.src || '/denr/superadmin/default-profile.jpg';
-            const original = {
-                first_name: ($('first-name')?.value || ''),
-                last_name: ($('last-name')?.value || ''),
-                age: ($('age')?.value || ''),
-                email: (emailInput?.value || ''),
-                phone: ($('phone')?.value || ''),
-                department: ($('department')?.value || '')
-            };
+            // Helpers to show/hide errors
+            function setErr(inputEl, errEl, msg) {
+                if (errEl) {
+                    errEl.textContent = msg;
+                    errEl.style.display = 'block';
+                }
+                if (inputEl) {
+                    inputEl.classList.add('invalid');
+                    inputEl.style.borderColor = 'red';
+                }
+            }
 
-            // Preview
-            fileInput && fileInput.addEventListener('change', (e) => {
+            function clearErr(inputEl, errEl) {
+                if (errEl) errEl.style.display = 'none';
+                if (inputEl) {
+                    inputEl.classList.remove('invalid');
+                    inputEl.style.borderColor = '';
+                }
+            }
+
+            function clearAllErrors() {
+                [
+                    [firstNameEl, fnErr],
+                    [lastNameEl, lnErr],
+                    [ageEl, ageErr],
+                    [emailEl, emErr],
+                    [phoneEl, phErr],
+                    [deptEl, depErr],
+                    [fileInput, imgErr]
+                ].forEach(([i, e]) => clearErr(i, e));
+                if (pwRuleErr) pwRuleErr.style.display = 'none';
+                if (pwMismatchErr) pwMismatchErr.style.display = 'none';
+                pwdEl?.classList.remove('invalid');
+                cpwdEl?.classList.remove('invalid');
+            }
+
+            // Patterns
+            const nameRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]{1,60}$/; // letters + space . ' -
+            const phoneRe = /^[0-9+()\-\s]{6,20}$/;
+            const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            // Per-field validators (return true/false and show red message immediately)
+            function validateFirst() {
+                const v = (firstNameEl?.value || '').trim();
+                if (!v) {
+                    setErr(firstNameEl, fnErr, 'First name is required.');
+                    return false;
+                }
+                if (!nameRe.test(v)) {
+                    setErr(firstNameEl, fnErr, 'Use letters/spaces/.’- only (max 60).');
+                    return false;
+                }
+                clearErr(firstNameEl, fnErr);
+                return true;
+            }
+
+            function validateLast() {
+                const v = (lastNameEl?.value || '').trim();
+                if (!v) {
+                    setErr(lastNameEl, lnErr, 'Last name is required.');
+                    return false;
+                }
+                if (!nameRe.test(v)) {
+                    setErr(lastNameEl, lnErr, 'Use letters/spaces/.’- only (max 60).');
+                    return false;
+                }
+                clearErr(lastNameEl, lnErr);
+                return true;
+            }
+
+            function validateAge() {
+                const s = (ageEl?.value || '').trim();
+                if (s === '') {
+                    clearErr(ageEl, ageErr);
+                    return true;
+                } // optional
+                const n = Number(s);
+                if (!Number.isInteger(n) || n < 0 || n > 120 || s.length > 3) {
+                    setErr(ageEl, ageErr, 'Age must be a whole number 0–120.');
+                    return false;
+                }
+                clearErr(ageEl, ageErr);
+                return true;
+            }
+
+            function validateEmail() {
+                const v = (emailEl?.value || '').trim();
+                if (v && !emailRe.test(v)) {
+                    setErr(emailEl, emErr, 'Enter a valid email address.');
+                    return false;
+                }
+                clearErr(emailEl, emErr);
+                return true;
+            }
+
+            function validatePhone() {
+                const v = (phoneEl?.value || '').trim();
+                if (v && !phoneRe.test(v)) {
+                    setErr(phoneEl, phErr, 'Use digits and + ( ) - (6–20 chars).');
+                    return false;
+                }
+                clearErr(phoneEl, phErr);
+                return true;
+            }
+
+            function validateDept() {
+                const v = (deptEl?.value || '').trim();
+                if (!v) {
+                    setErr(deptEl, depErr, 'Please select a department.');
+                    return false;
+                }
+                clearErr(deptEl, depErr);
+                return true;
+            }
+
+            function validatePasswords() {
+                const pw = pwdEl?.value || '';
+                const cpw = cpwdEl?.value || '';
+                let ok = true;
+                if (pw && pw.length < 8) {
+                    setErr(pwdEl, pwRuleErr, 'Password must be at least 8 characters.');
+                    ok = false;
+                } else {
+                    clearErr(pwdEl, pwRuleErr);
+                }
+                if ((pw || cpw) && pw !== cpw) {
+                    setErr(cpwdEl, pwMismatchErr, 'Passwords do not match');
+                    ok = false;
+                } else {
+                    clearErr(cpwdEl, pwMismatchErr);
+                }
+                return ok;
+            }
+
+            // Live validation
+            firstNameEl?.addEventListener('input', validateFirst);
+            lastNameEl?.addEventListener('input', validateLast);
+            ageEl?.addEventListener('input', validateAge);
+            emailEl?.addEventListener('input', validateEmail);
+            phoneEl?.addEventListener('input', validatePhone);
+            deptEl?.addEventListener('change', validateDept);
+            pwdEl?.addEventListener('input', validatePasswords);
+            cpwdEl?.addEventListener('input', validatePasswords);
+
+            // Image preview clears error
+            fileInput?.addEventListener('change', (e) => {
+                clearErr(fileInput, imgErr);
                 const f = e.target.files && e.target.files[0];
                 if (!f) return;
                 const reader = new FileReader();
@@ -409,7 +599,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 reader.readAsDataURL(f);
             });
 
-            // Safe JSON fetch helper
+            // JSON fetch
             async function fetchJSON(url, options) {
                 const res = await fetch(url, {
                     credentials: 'same-origin',
@@ -419,41 +609,43 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                     },
                     ...options
                 });
-                const ctype = res.headers.get('Content-Type') || '';
-                if (!ctype.includes('application/json')) {
+                const ct = res.headers.get('Content-Type') || '';
+                if (!ct.includes('application/json')) {
                     const txt = await res.text().catch(() => '');
-                    throw new Error(`Non-JSON (${res.status}): ${txt.slice(0, 200)}`);
+                    throw new Error(`Non-JSON (${res.status}): ${txt.slice(0,200)}`);
                 }
                 const data = await res.json();
                 if (!res.ok) {
-                    const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-                    throw new Error(msg);
+                    const err = new Error(data?.error || data?.message || `HTTP ${res.status}`);
+                    err.__server = data || {};
+                    throw err;
                 }
                 return data;
             }
 
-            // Validate → Confirm modal
-            form && form.addEventListener('submit', (e) => {
+            // Submit → validate all → confirm
+            form?.addEventListener('submit', (e) => {
                 e.preventDefault();
-                const pw = $('password')?.value || '';
-                const cpw = $('confirm-password')?.value || '';
-                const err = $('password-error');
-                if (pw !== cpw) {
-                    if (err) err.style.display = 'block';
-                    return;
-                }
-                if (err) err.style.display = 'none';
+                const ok =
+                    validateFirst() &
+                    validateLast() &
+                    validateAge() &
+                    validateEmail() &
+                    validatePhone() &
+                    validateDept() &
+                    validatePasswords();
+                if (!ok) return;
                 confirmModal.style.display = 'flex';
             });
 
-            cancelConfirmBtn && cancelConfirmBtn.addEventListener('click', () => {
+            cancelConfirmBtn?.addEventListener('click', () => {
                 confirmModal.style.display = 'none';
             });
-            infoOkBtn && infoOkBtn.addEventListener('click', () => {
+            infoOkBtn?.addEventListener('click', () => {
                 infoModal.style.display = 'none';
             });
 
-            // POST helper to update_profile.php with action
+            // POST helper with action
             async function postProfileAction(action, payload) {
                 const fd = new FormData();
                 fd.append('action', action);
@@ -467,7 +659,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 });
             }
 
-            // Real submit (insert request)
+            // Final submit
             async function doSubmitRequest() {
                 const fd = new FormData(form);
                 showLoading();
@@ -479,17 +671,16 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                             'X-Requested-With': 'XMLHttpRequest'
                         }
                     });
-
                     if (data.code === 'PENDING_EXISTS') {
                         toast('You already have a pending request.');
                         return;
                     }
                     if (data.code === 'OTP_REQUIRED') {
-                        toast('Please verify your new email first.');
+                        setErr(emailEl, emErr, 'Please verify your new email first (check your inbox).');
                         return;
                     }
                     if (data.code === 'EMAIL_IN_USE') {
-                        toast('That email is already in use.');
+                        setErr(emailEl, emErr, 'That email is already in use.');
                         return;
                     }
                     if (!data.success) {
@@ -497,19 +688,26 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                         return;
                     }
 
-                    // Success — reset to original values
                     form.reset();
-                    if (fileInput) fileInput.value = '';
-                    if (imgEl) imgEl.src = originalImageSrc;
-                    if (hiddenEmailEl) hiddenEmailEl.value = original.email;
-                    currentEmail = original.email;
-                    const pwEl = $('password');
-                    if (pwEl) pwEl.value = '';
-                    const cpwEl = $('confirm-password');
-                    if (cpwEl) cpwEl.value = '';
+                    if (imgEl) imgEl.src = '<?php echo $profile_image; ?>';
+                    clearAllErrors();
+                    if (hiddenEmailEl) hiddenEmailEl.value = currentEmail;
                     infoModal.style.display = 'flex';
                 } catch (e) {
-                    toast(e?.message || 'Network error.');
+                    const raw = String(e?.message || '');
+                    if (/out of range for type integer|invalid input syntax for type integer/i.test(raw)) {
+                        setErr(ageEl, ageErr, 'Age is invalid or too large. Use 0–120.');
+                        return;
+                    }
+                    if (/invalid email/i.test(raw)) {
+                        setErr(emailEl, emErr, 'Enter a valid email address.');
+                        return;
+                    }
+                    if (/upload.*failed|curl|invalid image type|failed reading uploaded file/i.test(raw)) {
+                        setErr(fileInput, imgErr, 'Image upload failed or file type is not allowed.');
+                        return;
+                    }
+                    toast(raw || 'Server error.');
                 } finally {
                     hideLoading();
                 }
@@ -517,19 +715,19 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
 
             // Confirm → possibly OTP → submit
             let verifyBound = false;
-            confirmBtn && confirmBtn.addEventListener('click', async () => {
+            confirmBtn?.addEventListener('click', async () => {
                 confirmBtn.disabled = true;
-                const newEmail = (emailInput?.value || '').trim();
+                const newEmail = (emailEl?.value || '').trim();
                 const changed = newEmail && newEmail.toLowerCase() !== currentEmail.toLowerCase();
 
                 if (changed) {
                     showLoading();
                     try {
-                        const sendRes = await postProfileAction('send_email_otp', {
+                        const r = await postProfileAction('send_email_otp', {
                             email: newEmail
                         });
-                        if (!sendRes.success) {
-                            toast(sendRes.error || 'Failed to send code.');
+                        if (!r.success) {
+                            setErr(emailEl, emErr, r.error || 'Failed to send code.');
                             confirmModal.style.display = 'none';
                             return;
                         }
@@ -538,8 +736,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
 
                         if (!verifyBound) {
                             verifyBound = true;
-
-                            otpSendBtn.addEventListener('click', async () => {
+                            otpSendBtn?.addEventListener('click', async () => {
                                 const code = (otpInput.value || '').trim();
                                 if (!/^\d{6}$/.test(code)) {
                                     otpMsg.textContent = 'Enter the 6-digit code.';
@@ -547,41 +744,43 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                                 }
                                 showLoading();
                                 try {
-                                    const verRes = await postProfileAction('verify_email_otp', {
+                                    const v = await postProfileAction('verify_email_otp', {
                                         otp: code
                                     });
-                                    if (!verRes.success) {
-                                        otpMsg.textContent = verRes.error || 'Invalid or expired code.';
+                                    if (!v.success) {
+                                        otpMsg.textContent = v.error || 'Invalid/expired code.';
                                         return;
                                     }
                                     hideOtp();
                                     await doSubmitRequest();
                                 } catch (err) {
-                                    otpMsg.textContent = (err && err.message) ? err.message : 'Network error.';
+                                    otpMsg.textContent = String(err?.message || 'Network error.');
                                 } finally {
                                     hideLoading();
                                 }
                             });
 
-                            otpResendBtn.addEventListener('click', async () => {
+                            otpResendBtn?.addEventListener('click', async () => {
                                 otpMsg.textContent = '';
                                 showLoading();
                                 try {
-                                    const r = await postProfileAction('send_email_otp', {
+                                    const r2 = await postProfileAction('send_email_otp', {
                                         email: newEmail
                                     });
-                                    otpMsg.textContent = r.success ? 'OTP resent!' : (r.error || 'Failed to resend.');
+                                    otpMsg.textContent = r2.success ? 'OTP resent!' : (r2.error || 'Failed to resend.');
                                 } catch (err) {
-                                    otpMsg.textContent = (err && err.message) ? err.message : 'Network error.';
+                                    otpMsg.textContent = String(err?.message || 'Network error.');
                                 } finally {
                                     hideLoading();
                                 }
                             });
 
-                            otpClose && otpClose.addEventListener('click', hideOtp);
+                            otpClose?.addEventListener('click', hideOtp);
                         }
                     } catch (e) {
-                        toast(e?.message || 'Network error.');
+                        const raw = String(e?.message || 'Network error.');
+                        if (/email.*in use|email already exists/i.test(raw)) setErr(emailEl, emErr, 'That email is already in use.');
+                        else toast(raw);
                     } finally {
                         hideLoading();
                         confirmBtn.disabled = false;
@@ -594,8 +793,10 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 confirmBtn.disabled = false;
                 confirmModal.style.display = 'none';
             });
+
         })();
     </script>
 </body>
+
 
 </html>

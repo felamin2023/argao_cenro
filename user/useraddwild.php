@@ -6,6 +6,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
 }
 include_once __DIR__ . '/../backend/connection.php';
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -57,6 +128,196 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             --transition: all 0.2s ease;
             --accent-color: #3a86ff;
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
+        }
+
+        /* bell icon container */
+        .as-item {
+            position: relative;
+        }
+
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        /* dropdown shell */
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* notifications panel */
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        /* 🔽 the scrolling list wrapper (this holds the records) */
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         * {
@@ -1756,6 +2017,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-color: #2b6625;
             color: white;
         }
+
+        .field-error {
+            color: #d22;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none
+        }
     </style>
 </head>
 
@@ -1810,39 +2078,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-tools"></i>
                         <span>Chainsaw Permit</span>
                     </a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge">
+                            <?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?>
+                        </span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+
+                <div class="as-dropdown-menu as-notifications">
+                    <!-- sticky header -->
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <!-- scrollable body -->
+                    <div class="notifcontainer"><!-- this holds the records -->
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Seedling Request Status</div>
-                                <div class="notification-message">Your seedling request has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <!-- sticky footer -->
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
+
 
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
@@ -1892,6 +2193,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="checkbox" id="private-collection">
                             <label for="private-collection">Private Collection</label>
                         </div>
+
+                        <!-- group error (at least one must be checked) -->
+                        <div id="new-category-error" class="field-error group" style="display:none"></div>
                     </div>
 
                     <div class="form-section">
@@ -1901,42 +2205,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-group">
                                 <label for="first-name" class="required">First Name:</label>
                                 <input type="text" id="first-name" name="first_name" />
+                                <div id="first-name-error" class="field-error" style="display:none"></div>
                             </div>
                             <div class="form-group">
                                 <label for="middle-name">Middle Name:</label>
                                 <input type="text" id="middle-name" name="middle_name" />
+                                <!-- no error div (excluded by request) -->
                             </div>
                             <div class="form-group">
                                 <label for="last-name" class="required">Last Name:</label>
                                 <input type="text" id="last-name" name="last_name" />
+                                <div id="last-name-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="residence-address" class="required">Residence Address:</label>
                             <input type="text" id="residence-address">
+                            <div id="residence-address-error" class="field-error" style="display:none"></div>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="telephone-number">Telephone Number:</label>
                                 <input type="text" id="telephone-number">
+                                <div id="telephone-number-error" class="field-error" style="display:none"></div>
                             </div>
 
                             <div class="form-group">
                                 <label for="establishment-name" class="required">Name of Establishment:</label>
                                 <input type="text" id="establishment-name">
+                                <div id="establishment-name-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="establishment-address" class="required">Address of Establishment:</label>
                             <input type="text" id="establishment-address">
+                            <div id="establishment-address-error" class="field-error" style="display:none"></div>
                         </div>
 
                         <div class="form-group">
                             <label for="establishment-telephone">Establishment Telephone Number:</label>
                             <input type="text" id="establishment-telephone">
+                            <div id="establishment-telephone-error" class="field-error" style="display:none"></div>
                         </div>
                     </div>
 
@@ -1954,9 +2266,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><input type="text" class="table-input"></td>
-                                    <td><input type="text" class="table-input"></td>
-                                    <td><input type="number" class="table-input" min="1"></td>
+                                    <td>
+                                        <input type="text" class="table-input">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
+                                    <td>
+                                        <input type="text" class="table-input">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
+                                    <td>
+                                        <input type="number" class="table-input" min="1">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
                                     <td><button type="button" class="remove-row-btn">Remove</button></td>
                                 </tr>
                             </tbody>
@@ -1980,7 +2301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
                                     <div class="signature-actions">
                                         <button type="button" class="signature-btn clear-signature" id="clear-signature">Clear</button>
-                                        <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button>
+                                        <!-- <button type="button" class="signature-btn save-signature" id="save-signature">Save Signature</button> -->
                                     </div>
                                     <div class="signature-preview">
                                         <img id="signature-image" class="hidden" alt="Signature">
@@ -1991,6 +2312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-group">
                                 <label for="postal-address">Postal Address:</label>
                                 <input type="text" id="postal-address">
+                                <div id="postal-address-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
                     </div>
@@ -2016,6 +2338,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="checkbox" id="renewal-private-collection">
                             <label for="renewal-private-collection">Private Collection</label>
                         </div>
+
+                        <!-- group error (at least one must be checked) -->
+                        <div id="renewal-category-error" class="field-error group" style="display:none"></div>
                     </div>
 
                     <div class="form-section">
@@ -2025,56 +2350,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-group">
                                 <label for="renewal-first-name" class="required">First Name:</label>
                                 <input type="text" id="renewal-first-name">
+                                <div id="renewal-first-name-error" class="field-error" style="display:none"></div>
                             </div>
 
                             <div class="form-group">
                                 <label for="renewal-middle-name">Middle Name:</label>
                                 <input type="text" id="renewal-middle-name">
+                                <!-- no error div (excluded by request) -->
                             </div>
 
                             <div class="form-group">
                                 <label for="renewal-last-name" class="required">Last Name:</label>
                                 <input type="text" id="renewal-last-name">
+                                <div id="renewal-last-name-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="renewal-residence-address" class="required">Residence Address:</label>
                             <input type="text" id="renewal-residence-address">
+                            <div id="renewal-residence-address-error" class="field-error" style="display:none"></div>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="renewal-telephone-number">Telephone Number:</label>
                                 <input type="text" id="renewal-telephone-number">
+                                <div id="renewal-telephone-number-error" class="field-error" style="display:none"></div>
                             </div>
 
                             <div class="form-group">
                                 <label for="renewal-establishment-name" class="required">Name of Establishment:</label>
                                 <input type="text" id="renewal-establishment-name">
+                                <div id="renewal-establishment-name-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="renewal-establishment-address" class="required">Address of Establishment:</label>
                             <input type="text" id="renewal-establishment-address">
+                            <div id="renewal-establishment-address-error" class="field-error" style="display:none"></div>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="renewal-establishment-telephone">Establishment Telephone Number:</label>
                                 <input type="text" id="renewal-establishment-telephone">
+                                <div id="renewal-establishment-telephone-error" class="field-error" style="display:none"></div>
                             </div>
 
                             <div class="form-group">
                                 <label for="renewal-wfp-number" class="required">Original WFP No.:</label>
                                 <input type="text" id="renewal-wfp-number">
+                                <div id="renewal-wfp-number-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="renewal-issue-date" class="required">Issued on:</label>
                             <input type="date" id="renewal-issue-date">
+                            <div id="renewal-issue-date-error" class="field-error" style="display:none"></div>
                         </div>
                     </div>
 
@@ -2093,14 +2428,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><input type="text" class="table-input"></td>
-                                    <td><input type="text" class="table-input"></td>
-                                    <td><input type="number" class="table-input" min="1"></td>
+                                    <td>
+                                        <input type="text" class="table-input">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
+                                    <td>
+                                        <input type="text" class="table-input">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
+                                    <td>
+                                        <input type="number" class="table-input" min="1">
+                                        <div class="field-error" style="display:none"></div>
+                                    </td>
                                     <td>
                                         <select class="table-input">
                                             <option value="Alive">Alive</option>
                                             <option value="Deceased">Deceased</option>
                                         </select>
+                                        <!-- no error div for remarks -->
                                     </td>
                                     <td><button type="button" class="remove-row-btn">Remove</button></td>
                                 </tr>
@@ -2136,6 +2481,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-group">
                                 <label for="renewal-postal-address">Postal Address:</label>
                                 <input type="text" id="renewal-postal-address">
+                                <div id="renewal-postal-address-error" class="field-error" style="display:none"></div>
                             </div>
                         </div>
                     </div>
@@ -2145,6 +2491,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- /RENEWAL upper sections -->
 
                 <!-- ============ NEW PERMIT REQUIREMENTS (default visible) ============ -->
+                <!-- (unchanged – file uploads don’t get error divs) -->
                 <div class="requirements-list" id="new-requirements" style="display: grid;">
                     <!-- 1 -->
                     <div class="requirement-item">
@@ -2279,15 +2626,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="uploaded-files" id="uploaded-files-7"></div>
                         </div>
                     </div>
-                    <!-- 8a/8b -->
+                    <!-- 8 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">8</span>
                                 Legal Acquisition of Wildlife:
-
                             </div>
-
                         </div>
                         <div class="file-upload">
                             <h4>Proof of Purchase (Official Receipt/Deed of Sale or Captive Bred Certificate)</h4>
@@ -2299,9 +2644,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="file-name">No file chosen</span>
                             </div>
                             <div class="uploaded-files" id="uploaded-files-8a"></div>
+
                             <h4>Deed of Donation with Notary</h4>
                             <div class="file-input-container" style="margin-top:8px;">
-
                                 <label for="file-8b" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload Deed of Donation
                                 </label>
@@ -2340,6 +2685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- =============== /NEW REQUIREMENTS =============== -->
 
                 <!-- ================= RENEWAL REQUIREMENTS ================= -->
+                <!-- (unchanged – file uploads don’t get error divs) -->
                 <div class="requirements-list" id="renewal-requirements" style="display: none;">
                     <!-- 1 -->
                     <div class="requirement-item">
@@ -2521,6 +2867,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             </div>
 
+
             <div class="form-footer">
                 <button class="btn btn-primary" id="submitApplication">
                     <i class="fas fa-paper-plane"></i> Submit Request
@@ -2573,7 +2920,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
             <div style="padding:16px 20px;line-height:1.6">
-                You can’t request a <b>new</b> wildlife permit because you already have an approved one. You’re allowed to request a <b>renewal</b> instead.
+                You can’t request a <b>new</b> wildlife permit because you already have a <b>released</b> one. You’re allowed to request a <b>renewal</b> instead.
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
                 <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
@@ -2582,12 +2929,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- Unpaid permit (“for payment”) modal -->
+    <div id="forPaymentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Payment Required</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                You still have an unpaid wildlife permit on record (<b>for payment</b>).<br>
+                Please settle this <b>personally at the office</b> before filing another request.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="forPaymentOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+    <div id="suggestClientModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Use Existing Client?</div>
+            <div style="padding:16px 20px;line-height:1.6">
+                We found a similar existing client:
+                <div id="suggestClientName" style="margin:8px 0;font-weight:600"></div>
+                Do you want to use this client for this request, or submit as a <b>new client</b>?
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="suggestClientNew" class="btn btn-outline" type="button">Submit as new</button>
+                <button id="suggestClientUse" class="btn btn-primary" type="button">Use existing</button>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Need Approved NEW modal (when attempting renewal with no approved new) -->
     <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
             <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
             <div style="padding:16px 20px;line-height:1.6">
-                To request a renewal, you must have an approved <b>NEW</b> wildlife permit on record.<br><br>
+                To request a renewal, you must have a <b>released</b> NEW wildlife permit on record.<br><br>
                 You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
@@ -2693,6 +3069,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clearSigPad(false);
                 clearSigPad(true);
                 setPermit('new');
+                chosenClientId = null;
+                pendingSuggestedClient = null;
                 window.scrollTo({
                     top: 0,
                     behavior: 'smooth'
@@ -2913,8 +3291,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const needApprovedNewModal = byId('needApprovedNewModal');
             const needApprovedNewOk = byId('needApprovedNewOk');
             const needApprovedNewSwitch = byId('needApprovedNewSwitch');
+            const forPaymentModal = byId('forPaymentModal');
+            const forPaymentOk = byId('forPaymentOk');
+            forPaymentOk?.addEventListener('click', () => forPaymentModal.style.display = 'none');
+
+            const suggestClientModal = byId('suggestClientModal');
+            const suggestClientName = byId('suggestClientName');
+            const suggestClientUse = byId('suggestClientUse');
+            const suggestClientNew = byId('suggestClientNew');
+            let chosenClientId = null; // what we’ll send to the backend if user picks “Use existing”
+            let pendingSuggestedClient = null; // holds server suggestion until user decides
+            suggestClientUse?.addEventListener('click', async () => {
+                if (pendingSuggestedClient?.client_id) chosenClientId = String(pendingSuggestedClient.client_id);
+                suggestClientModal.style.display = 'none';
+
+                try {
+                    const type = activePermitType(); // 'new' or 'renewal'
+                    const fd = new FormData();
+                    fd.append('first_name', type === 'renewal' ? v('renewal-first-name') : v('first-name'));
+                    fd.append('middle_name', type === 'renewal' ? v('renewal-middle-name') : v('middle-name'));
+                    fd.append('last_name', type === 'renewal' ? v('renewal-last-name') : v('last-name'));
+                    fd.append('desired_permit_type', type);
+                    fd.append('use_existing_client_id', chosenClientId); // ⟵ important
+
+                    const res = await fetch(PRECHECK_URL, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'include'
+                    });
+                    const json = await res.json();
+
+                    if (json.block === 'pending_new') {
+                        pendingNewModal.style.display = 'flex';
+                        return;
+                    }
+                    if (json.block === 'pending_renewal') {
+                        toast('You already have a pending wildlife renewal.');
+                        return;
+                    }
+                    if (json.block === 'for_payment') {
+                        forPaymentModal.style.display = 'flex';
+                        return;
+                    }
+                    if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
+                        needApprovedNewModal.style.display = 'flex';
+                        return;
+                    }
+                    if (json.offer === 'renewal' && type === 'new') { // ⟵ show offer now
+                        offerRenewalModal.style.display = 'flex';
+                        return;
+                    }
+
+                    confirmModal.style.display = 'flex'; // otherwise proceed
+                } catch {
+                    // fall back to confirm (same as your current UX on precheck errors)
+                    confirmModal.style.display = 'flex';
+                }
+            });
+
+            suggestClientNew?.addEventListener('click', () => {
+                chosenClientId = null;
+                suggestClientModal.style.display = 'none';
+                confirmModal.style.display = 'flex';
+            });
 
             const loading = byId('loadingIndicator');
+
+
+
 
             pendingNewOk?.addEventListener('click', () => pendingNewModal.style.display = 'none');
             offerRenewalOk?.addEventListener('click', () => offerRenewalModal.style.display = 'none');
@@ -3029,12 +3473,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         toast('You already have a pending wildlife renewal. Please wait for the update first.');
                         return;
                     }
-                    if (json.block === 'need_approved_new') {
+                    if (json.block === 'for_payment') {
+                        forPaymentModal.style.display = 'flex';
+                        return;
+                    }
+                    if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
                         needApprovedNewModal.style.display = 'flex';
                         return;
                     }
                     if (json.offer === 'renewal' && type === 'new') {
                         offerRenewalModal.style.display = 'flex';
+                        return;
+                    }
+                    if (json.suggest_existing_client?.client_id) {
+                        pendingSuggestedClient = json.suggest_existing_client;
+                        suggestClientName.textContent = String(pendingSuggestedClient.full_name || 'Existing client');
+                        suggestClientModal.style.display = 'flex';
                         return;
                     }
                     confirmModal.style.display = 'flex';
@@ -3296,6 +3750,7 @@ ${
                 // Build FormData for backend
                 const fd = new FormData();
                 fd.append('permit_type', isRenewal ? 'renewal' : 'new');
+                if (chosenClientId) fd.append('use_existing_client_id', chosenClientId);
 
                 // Identity / contact
                 fd.append('first_name', firstName);
@@ -3403,6 +3858,825 @@ ${
 
         })();
     </script>
+    <script>
+        (() => {
+            const $ = (id) => document.getElementById(id);
+            const activeType = () => (document.querySelector('.permit-type-btn.active')?.dataset.type || 'new');
+
+            // ---------- error helpers ----------
+            function errElFor(input) {
+                if (!input) return null;
+                let n = input.nextElementSibling;
+                if (!n || !n.classList || !n.classList.contains('field-error')) {
+                    n = document.createElement('div');
+                    n.className = 'field-error';
+                    n.style.cssText = 'color:#d22;font-size:12px;margin-top:4px;display:none;';
+                    input.insertAdjacentElement('afterend', n);
+                }
+                return n;
+            }
+
+            function setErr(input, msg) {
+                const el = errElFor(input);
+                if (el) {
+                    el.textContent = msg || 'Invalid value.';
+                    el.style.display = 'block';
+                }
+                if (input) {
+                    input.classList.add('invalid');
+                    input.setAttribute('aria-invalid', 'true');
+                    // no border styling
+                }
+                return false;
+            }
+
+            function clearErr(input) {
+                const el = input?.nextElementSibling;
+                if (el?.classList?.contains('field-error')) el.style.display = 'none';
+                if (input) {
+                    input.classList.remove('invalid');
+                    input.removeAttribute('aria-invalid');
+                    // no border styling
+                }
+                return true;
+            }
+
+
+            function setGroupErr(container, msg) {
+                if (!container) return;
+                let n = container.querySelector('.field-error.group');
+                if (!n) {
+                    n = document.createElement('div');
+                    n.className = 'field-error group';
+                    n.style.cssText = 'color:#d22;font-size:12px;margin-top:6px;display:none;';
+                    container.appendChild(n);
+                }
+                n.textContent = msg;
+                n.style.display = 'block';
+            }
+
+            function clearGroupErr(container) {
+                const n = container?.querySelector('.field-error.group');
+                if (n) n.style.display = 'none';
+            }
+
+            function clearAllErrors(scope = document) {
+                scope.querySelectorAll('.field-error').forEach(d => d.style.display = 'none');
+                scope.querySelectorAll('.invalid').forEach(i => {
+                    i.classList.remove('invalid');
+                    i.style.borderColor = i.dataset.__origBorder || '';
+                });
+            }
+
+            // ---------- patterns ----------
+            const personNameRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]{1,60}$/; // for first/last names
+            const alphaOnlyRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'()\-]{2,100}$/; // for common/scientific names (no digits)
+            const phoneRe = /^[0-9+()\-\s]{6,20}$/;
+            const addressBadCharsRe = /[^A-Za-z0-9À-ÖØ-öø-ÿ\s.,#\/\-()]/;
+
+            function validateAddress(id, label, required = false) {
+                const el = $(id);
+                if (!el) return true;
+                const val = (el.value || '').trim();
+
+                if (!val) {
+                    if (required) return setErr(el, `${label} is required.`);
+                    return clearErr(el);
+                }
+                if (val.length < 5) return setErr(el, `${label} must be at least 5 characters.`);
+                if (addressBadCharsRe.test(val)) {
+                    return setErr(el, `Use letters, numbers, spaces, and . , - # / ( ) only.`);
+                }
+                return clearErr(el);
+            }
+
+
+            // ---------- field validators ----------
+            function requireName(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) {
+                    setErr(el, `${label} is required.`);
+                    return false;
+                }
+                if (!personNameRe.test(v)) {
+                    setErr(el, `Use letters/spaces/.’- only (max 60).`);
+                    return false;
+                }
+                clearErr(el);
+                return true;
+            }
+
+            function requireText(id, label, min = 1, max = 200) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) {
+                    setErr(el, `${label} is required.`);
+                    return false;
+                }
+                if (v.length < min) {
+                    setErr(el, `${label} must be at least ${min} characters.`);
+                    return false;
+                }
+                if (v.length > max) {
+                    setErr(el, `${label} is too long (max ${max}).`);
+                    return false;
+                }
+                clearErr(el);
+                return true;
+            }
+
+            function optionalText(id, label, max = 200) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) {
+                    clearErr(el);
+                    return true;
+                }
+                if (v.length > max) {
+                    setErr(el, `${label} is too long (max ${max}).`);
+                    return false;
+                }
+                clearErr(el);
+                return true;
+            }
+
+            function optionalPhone(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) {
+                    clearErr(el);
+                    return true;
+                }
+                if (!phoneRe.test(v)) {
+                    setErr(el, `Use digits and + ( ) - (6–20 chars).`);
+                    return false;
+                }
+                clearErr(el);
+                return true;
+            }
+
+            function requireDate(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) {
+                    setErr(el, `${label} is required.`);
+                    return false;
+                }
+                clearErr(el);
+                return true;
+            }
+
+            // ---------- checkbox group (must choose at least one) ----------
+            function validateCategories(isRenewal) {
+                const ids = isRenewal ? ['renewal-zoo', 'renewal-botanical-garden', 'renewal-private-collection'] : ['zoo', 'botanical-garden', 'private-collection'];
+                const group = document.querySelector(isRenewal ? '#renewal-upper-block .checkbox-group' : '#new-upper-block .checkbox-group');
+                const anyChecked = ids.some(id => $(id)?.checked);
+                if (!anyChecked) {
+                    setGroupErr(group, 'Select at least one category.');
+                    return false;
+                }
+                clearGroupErr(group);
+                return true;
+            }
+            // Clear group error when any box toggles
+            [
+                ['zoo', 'botanical-garden', 'private-collection', '#new-upper-block .checkbox-group'],
+                ['renewal-zoo', 'renewal-botanical-garden', 'renewal-private-collection', '#renewal-upper-block .checkbox-group']
+            ]
+            .forEach(([a, b, c, sel]) => {
+                [$(a), $(b), $(c)].forEach(cb => cb && cb.addEventListener('change', () => clearGroupErr(document.querySelector(sel))));
+            });
+
+            // ---------- table validators ----------
+            function validateAnimalsNew() {
+                const tbody = document.querySelector('#animals-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (!rows.length) return true;
+
+                rows.forEach((tr, idx) => {
+                    const inputs = tr.querySelectorAll('input');
+                    const common = inputs[0],
+                        sci = inputs[1],
+                        qty = inputs[2];
+                    const hasAny = [common, sci, qty].some(i => (i?.value || '').trim() !== '');
+
+                    function checkName(el, label) {
+                        const s = (el?.value || '').trim();
+                        if (!s) {
+                            setErr(el, 'Required.');
+                            return false;
+                        }
+                        if (!alphaOnlyRe.test(s)) {
+                            setErr(el, `${label}: letters/spaces/.’()- only.`);
+                            return false;
+                        }
+                        clearErr(el);
+                        return true;
+                    }
+
+                    function checkQty(el) {
+                        const n = Number((el?.value || '').trim());
+                        if (!Number.isFinite(n) || n < 1) {
+                            setErr(el, 'Quantity must be ≥ 1.');
+                            return false;
+                        }
+                        clearErr(el);
+                        return true;
+                    }
+
+                    if (idx === 0) {
+                        ok &= checkName(common, 'Common Name');
+                        ok &= checkName(sci, 'Scientific Name');
+                        ok &= checkQty(qty);
+                        return;
+                    }
+
+                    if (hasAny) {
+                        ok &= checkName(common, 'Common Name');
+                        ok &= checkName(sci, 'Scientific Name');
+                        ok &= checkQty(qty);
+                    } else {
+                        [common, sci, qty].forEach(clearErr);
+                    }
+                });
+
+                return !!ok;
+            }
+
+            function validateAnimalsRenewal() {
+                const tbody = document.querySelector('#renewal-animals-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (!rows.length) return true;
+
+                rows.forEach((tr, idx) => {
+                    const cells = tr.querySelectorAll('input, select');
+                    const common = cells[0],
+                        sci = cells[1],
+                        qty = cells[2];
+                    const hasAny = [common, sci, qty].some(i => (i?.value || '').trim() !== '');
+
+                    const checkName = (el, label) => {
+                        const s = (el?.value || '').trim();
+                        if (!s) {
+                            setErr(el, 'Required.');
+                            return false;
+                        }
+                        if (!alphaOnlyRe.test(s)) {
+                            setErr(el, `${label}: letters/spaces/.’()- only.`);
+                            return false;
+                        }
+                        clearErr(el);
+                        return true;
+                    };
+                    const checkQty = (el) => {
+                        const n = Number((el?.value || '').trim());
+                        if (!Number.isFinite(n) || n < 1) {
+                            setErr(el, 'Quantity must be ≥ 1.');
+                            return false;
+                        }
+                        clearErr(el);
+                        return true;
+                    };
+
+                    if (idx === 0) {
+                        ok &= checkName(common, 'Common Name');
+                        ok &= checkName(sci, 'Scientific Name');
+                        ok &= checkQty(qty);
+                        return;
+                    }
+
+                    if (hasAny) {
+                        ok &= checkName(common, 'Common Name');
+                        ok &= checkName(sci, 'Scientific Name');
+                        ok &= checkQty(qty);
+                    } else {
+                        [common, sci, qty].forEach(clearErr);
+                    }
+                });
+
+                return !!ok;
+            }
+
+            // ---------- overall validation ----------
+            function validateAll() {
+                let ok = true;
+                const type = activeType();
+
+                if (type === 'new') {
+                    ok &= requireName('first-name', 'First Name');
+                    ok &= requireName('last-name', 'Last Name');
+                    ok &= requireText('residence-address', 'Residence Address', 5);
+                    ok &= optionalPhone('telephone-number', 'Telephone Number');
+                    ok &= requireText('establishment-name', 'Name of Establishment', 5);
+                    ok &= requireText('establishment-address', 'Address of Establishment', 5);
+                    ok &= optionalPhone('establishment-telephone', 'Establishment Telephone Number');
+                    ok &= validateAddress('postal-address', 'Postal Address', false);
+                    ok &= validateCategories(false);
+                    ok &= validateAnimalsNew();
+                } else {
+                    ok &= requireName('renewal-first-name', 'First Name');
+                    ok &= requireName('renewal-last-name', 'Last Name');
+                    ok &= requireText('renewal-residence-address', 'Residence Address', 5);
+                    ok &= optionalPhone('renewal-telephone-number', 'Telephone Number');
+                    ok &= requireText('renewal-establishment-name', 'Name of Establishment', 5);
+                    ok &= requireText('renewal-establishment-address', 'Address of Establishment', 5);
+                    ok &= optionalPhone('renewal-establishment-telephone', 'Establishment Telephone Number');
+                    ok &= requireText('renewal-wfp-number', 'Original WFP No.', 1, 100);
+                    ok &= requireDate('renewal-issue-date', 'Issued on');
+                    ok &= validateAddress('renewal-postal-address', 'Postal Address', false);
+                    ok &= validateCategories(true);
+                    ok &= validateAnimalsRenewal();
+                }
+
+                return !!ok;
+            }
+
+            function scrollFirstErrorIntoView() {
+                const first = document.querySelector('.invalid') || document.querySelector('.field-error[style*="display: block"]');
+                if (first) first.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+
+            // ---------- live bindings (min-length aware) ----------
+            function bindLive(id, fn) {
+                const el = $(id);
+                el && el.addEventListener('input', fn);
+            }
+            // NEW
+            bindLive('first-name', () => requireName('first-name', 'First Name'));
+            bindLive('last-name', () => requireName('last-name', 'Last Name'));
+            bindLive('residence-address', () => requireText('residence-address', 'Residence Address', 5));
+            bindLive('telephone-number', () => optionalPhone('telephone-number', 'Telephone Number'));
+            bindLive('establishment-name', () => requireText('establishment-name', 'Name of Establishment', 5));
+            bindLive('establishment-address', () => requireText('establishment-address', 'Address of Establishment', 5));
+            bindLive('establishment-telephone', () => optionalPhone('establishment-telephone', 'Establishment Telephone Number'));
+            bindLive('postal-address', () => validateAddress('postal-address', 'Postal Address', false));
+            // RENEWAL
+            bindLive('renewal-first-name', () => requireName('renewal-first-name', 'First Name'));
+            bindLive('renewal-last-name', () => requireName('renewal-last-name', 'Last Name'));
+            bindLive('renewal-residence-address', () => requireText('renewal-residence-address', 'Residence Address', 5));
+            bindLive('renewal-telephone-number', () => optionalPhone('renewal-telephone-number', 'Telephone Number'));
+            bindLive('renewal-establishment-name', () => requireText('renewal-establishment-name', 'Name of Establishment', 5));
+            bindLive('renewal-establishment-address', () => requireText('renewal-establishment-address', 'Address of Establishment', 5));
+            bindLive('renewal-establishment-telephone', () => optionalPhone('renewal-establishment-telephone', 'Establishment Telephone Number'));
+            bindLive('renewal-wfp-number', () => requireText('renewal-wfp-number', 'Original WFP No.', 1, 100));
+            bindLive('renewal-issue-date', () => requireDate('renewal-issue-date', 'Issued on'));
+            bindLive('renewal-postal-address', () => validateAddress('renewal-postal-address', 'Postal Address', false));
+
+            // Table inputs: prevent digits in Common/Scientific Name in real-time
+            document.addEventListener('input', (e) => {
+                const t = e.target;
+                const inAnimalsTable = t && t.tagName === 'INPUT' && t.type === 'text' &&
+                    (t.closest('#animals-table') || t.closest('#renewal-animals-table'));
+                if (inAnimalsTable) {
+                    const cleaned = t.value.replace(/[0-9]/g, '');
+                    if (cleaned !== t.value) t.value = cleaned;
+                    clearErr(t); // remove stale error while typing
+                }
+            });
+
+            // Permit switch clears errors (so group error doesn’t stick)
+            document.querySelectorAll('.permit-type-btn').forEach(btn =>
+                btn.addEventListener('click', () => clearAllErrors(document))
+            );
+
+            // ---------- gate submit (runs BEFORE your handlers) ----------
+            const btnSubmit = $('submitApplication');
+            if (btnSubmit) {
+                btnSubmit.addEventListener('click', (ev) => {
+                    clearAllErrors();
+                    if (!validateAll()) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        scrollFirstErrorIntoView();
+                    }
+                }, true);
+            }
+        })();
+    </script>
+    <script>
+        /* Validation + “touched/submit gating”
+   - Nothing is red on load
+   - Errors show only after you interact with a field or click Submit
+   - Middle Name is optional (validated only if filled)
+   - Red border clears live as soon as value becomes valid
+*/
+        (() => {
+            const $ = (id) => document.getElementById(id);
+            const activeType = () => (document.querySelector('.permit-type-btn.active')?.dataset.type || 'new');
+
+            // ===== gating =====
+            let submitted = false;
+            const touched = new WeakSet();
+
+            // ===== error helpers =====
+            function errElFor(input) {
+                if (!input) return null;
+                // Prefer an existing sibling error div if present
+                let n = input.nextElementSibling;
+                if (!n || !n.classList || !n.classList.contains('field-error')) {
+                    n = document.createElement('div');
+                    n.className = 'field-error';
+                    n.style.cssText = 'color:#d22;font-size:12px;margin-top:4px;display:none;';
+                    input.insertAdjacentElement('afterend', n);
+                }
+                return n;
+            }
+
+            function shouldPaint(inputEl) {
+                return submitted || touched.has(inputEl);
+            }
+
+            function setErr(inputEl, errEl, msg) {
+                if (!inputEl) return false;
+                errEl = errEl || errElFor(inputEl);
+                if (errEl) {
+                    errEl.textContent = msg || 'Invalid value.';
+                    if (shouldPaint(inputEl)) errEl.style.display = 'block';
+                }
+                if (shouldPaint(inputEl)) {
+                    inputEl.classList.add('invalid');
+                    inputEl.setAttribute('aria-invalid', 'true');
+                }
+                // no border/outline styling
+                return false;
+            }
+
+            function clearErr(inputEl, errEl) {
+                if (!inputEl) return true;
+                errEl = errEl || (inputEl.nextElementSibling?.classList?.contains('field-error') ? inputEl.nextElementSibling : null);
+                if (errEl) errEl.style.display = 'none';
+                inputEl.classList.remove('invalid');
+                inputEl.removeAttribute('aria-invalid');
+                // no border/outline styling
+                return true;
+            }
+
+
+            function setGroupErr(container, msg) {
+                if (!container) return;
+                let n = container.querySelector('.field-error.group');
+                if (!n) {
+                    n = document.createElement('div');
+                    n.className = 'field-error group';
+                    n.style.cssText = 'color:#d22;font-size:12px;margin-top:6px;display:none;';
+                    container.appendChild(n);
+                }
+                n.textContent = msg || 'This field is required.';
+                // paint immediately (group messages don’t need gating)
+                n.style.display = submitted ? 'block' : 'block';
+            }
+
+            function clearGroupErr(container) {
+                const n = container?.querySelector('.field-error.group');
+                if (n) n.style.display = 'none';
+            }
+
+            function clearAllErrors(scope = document) {
+                scope.querySelectorAll('.field-error').forEach(d => d.style.display = 'none');
+                scope.querySelectorAll('.invalid').forEach(i => {
+                    i.classList.remove('invalid');
+                    i.removeAttribute('aria-invalid');
+                    i.style.removeProperty('border-color');
+                    i.style.removeProperty('border-width');
+                    i.style.removeProperty('border-style');
+                    i.style.removeProperty('outline');
+                    i.style.removeProperty('box-shadow');
+                });
+            }
+
+            // ===== patterns =====
+            const personNameRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]{1,60}$/; // first/last
+            const optionalNameRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]{1,60}$/; // middle (optional)
+            const alphaOnlyRe = /^[A-Za-zÀ-ÖØ-öø-ÿ\s.'()\-]{2,100}$/; // common/scientific names
+            const phoneRe = /^[0-9+()\-\s]{6,20}$/;
+
+            // ===== field validators =====
+            function requireName(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return setErr(el, null, `${label} is required.`);
+                if (!personNameRe.test(v)) return setErr(el, null, `Use letters/spaces/.’- only (max 60).`);
+                return clearErr(el);
+            }
+
+            function optionalName(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return clearErr(el); // empty OK
+                if (!optionalNameRe.test(v)) return setErr(el, null, `Use letters/spaces/.’- only (max 60).`);
+                return clearErr(el);
+            }
+
+            function requireText(id, label, min = 1, max = 200) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return setErr(el, null, `${label} is required.`);
+                if (v.length < min) return setErr(el, null, `${label} must be at least ${min} characters.`);
+                if (v.length > max) return setErr(el, null, `${label} is too long (max ${max}).`);
+                return clearErr(el);
+            }
+
+            function optionalText(id, label, max = 200) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return clearErr(el);
+                if (v.length > max) return setErr(el, null, `${label} is too long (max ${max}).`);
+                return clearErr(el);
+            }
+
+            function optionalPhone(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return clearErr(el);
+                if (!phoneRe.test(v)) return setErr(el, null, `Use digits and + ( ) - (6–20 chars).`);
+                return clearErr(el);
+            }
+
+            function requireDate(id, label) {
+                const el = $(id);
+                if (!el) return true;
+                const v = (el.value || '').trim();
+                if (!v) return setErr(el, null, `${label} is required.`);
+                return clearErr(el);
+            }
+
+            // ===== checkbox groups =====
+            function validateCategories(isRenewal) {
+                const ids = isRenewal ? ['renewal-zoo', 'renewal-botanical-garden', 'renewal-private-collection'] : ['zoo', 'botanical-garden', 'private-collection'];
+                const group = document.querySelector(isRenewal ? '#renewal-upper-block .checkbox-group' :
+                    '#new-upper-block .checkbox-group');
+                const anyChecked = ids.some(id => $(id)?.checked);
+                if (!anyChecked) {
+                    setGroupErr(group, 'Select at least one category.');
+                    return false;
+                }
+                clearGroupErr(group);
+                return true;
+            }
+            // clear group error on toggle
+            [
+                ['zoo', 'botanical-garden', 'private-collection', '#new-upper-block .checkbox-group'],
+                ['renewal-zoo', 'renewal-botanical-garden', 'renewal-private-collection', '#renewal-upper-block .checkbox-group']
+            ].forEach(([a, b, c, sel]) => {
+                [$(a), $(b), $(c)].forEach(cb => cb && cb.addEventListener('change', () => clearGroupErr(document.querySelector(sel))));
+            });
+
+            // ===== animals tables =====
+            function validateAnimalsNew() {
+                const tbody = document.querySelector('#animals-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (!rows.length) return true;
+
+                rows.forEach((tr, idx) => {
+                    const inputs = tr.querySelectorAll('input');
+                    const common = inputs[0],
+                        sci = inputs[1],
+                        qty = inputs[2];
+                    const hasAny = [common, sci, qty].some(i => (i?.value || '').trim() !== '');
+
+                    function checkName(el, label) {
+                        const s = (el?.value || '').trim();
+                        if (!s) return setErr(el, null, 'Required.');
+                        if (!alphaOnlyRe.test(s)) return setErr(el, null, `${label}: letters/spaces/.’()- only.`);
+                        return clearErr(el);
+                    }
+
+                    function checkQty(el) {
+                        const n = Number((el?.value || '').trim());
+                        if (!Number.isFinite(n) || n < 1) return setErr(el, null, 'Quantity must be ≥ 1.');
+                        return clearErr(el);
+                    }
+
+                    if (idx === 0) {
+                        ok = checkName(common, 'Common Name') && ok;
+                        ok = checkName(sci, 'Scientific Name') && ok;
+                        ok = checkQty(qty) && ok;
+                        return;
+                    }
+                    if (hasAny) {
+                        ok = checkName(common, 'Common Name') && ok;
+                        ok = checkName(sci, 'Scientific Name') && ok;
+                        ok = checkQty(qty) && ok;
+                    } else {
+                        [common, sci, qty].forEach(el => clearErr(el));
+                    }
+                });
+                return !!ok;
+            }
+
+            function validateAnimalsRenewal() {
+                const tbody = document.querySelector('#renewal-animals-table tbody');
+                if (!tbody) return true;
+                let ok = true;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (!rows.length) return true;
+
+                rows.forEach((tr, idx) => {
+                    const cells = tr.querySelectorAll('input, select');
+                    const common = cells[0],
+                        sci = cells[1],
+                        qty = cells[2];
+                    const hasAny = [common, sci, qty].some(i => (i?.value || '').trim() !== '');
+
+                    const checkName = (el, label) => {
+                        const s = (el?.value || '').trim();
+                        if (!s) return setErr(el, null, 'Required.');
+                        if (!alphaOnlyRe.test(s)) return setErr(el, null, `${label}: letters/spaces/.’()- only.`);
+                        return clearErr(el);
+                    };
+                    const checkQty = (el) => {
+                        const n = Number((el?.value || '').trim());
+                        if (!Number.isFinite(n) || n < 1) return setErr(el, null, 'Quantity must be ≥ 1.');
+                        return clearErr(el);
+                    };
+
+                    if (idx === 0) {
+                        ok = checkName(common, 'Common Name') && ok;
+                        ok = checkName(sci, 'Scientific Name') && ok;
+                        ok = checkQty(qty) && ok;
+                        return;
+                    }
+                    if (hasAny) {
+                        ok = checkName(common, 'Common Name') && ok;
+                        ok = checkName(sci, 'Scientific Name') && ok;
+                        ok = checkQty(qty) && ok;
+                    } else {
+                        [common, sci, qty].forEach(el => clearErr(el));
+                    }
+                });
+                return !!ok;
+            }
+
+            // prevent digits in common/scientific names live + mark touched
+            document.addEventListener('input', (e) => {
+                const t = e.target;
+                const inAnimals = t && t.tagName === 'INPUT' && t.type === 'text' &&
+                    (t.closest('#animals-table') || t.closest('#renewal-animals-table'));
+                if (inAnimals) {
+                    const cleaned = t.value.replace(/[0-9]/g, '');
+                    if (cleaned !== t.value) t.value = cleaned;
+                    touched.add(t);
+                }
+            }, true);
+
+            // ===== overall validate =====
+            function validateAll() {
+                let ok = true;
+                const type = activeType();
+
+                if (type === 'new') {
+                    ok = requireName('first-name', 'First Name') && ok;
+                    ok = optionalName('middle-name', 'Middle Name') && ok; // optional
+                    ok = requireName('last-name', 'Last Name') && ok;
+                    ok = requireText('residence-address', 'Residence Address', 5) && ok;
+                    ok = optionalPhone('telephone-number', 'Telephone Number') && ok;
+                    ok = requireText('establishment-name', 'Name of Establishment', 5) && ok;
+                    ok = requireText('establishment-address', 'Address of Establishment', 5) && ok;
+                    ok = optionalPhone('establishment-telephone', 'Establishment Telephone Number') && ok;
+                    ok = optionalText('postal-address', 'Postal Address') && ok;
+                    ok = validateCategories(false) && ok;
+                    ok = validateAnimalsNew() && ok;
+                } else {
+                    ok = requireName('renewal-first-name', 'First Name') && ok;
+                    ok = optionalName('renewal-middle-name', 'Middle Name') && ok; // optional
+                    ok = requireName('renewal-last-name', 'Last Name') && ok;
+                    ok = requireText('renewal-residence-address', 'Residence Address', 5) && ok;
+                    ok = optionalPhone('renewal-telephone-number', 'Telephone Number') && ok;
+                    ok = requireText('renewal-establishment-name', 'Name of Establishment', 5) && ok;
+                    ok = requireText('renewal-establishment-address', 'Address of Establishment', 5) && ok;
+                    ok = optionalPhone('renewal-establishment-telephone', 'Establishment Telephone Number') && ok;
+                    ok = requireText('renewal-wfp-number', 'Original WFP No.', 1, 100) && ok;
+                    ok = requireDate('renewal-issue-date', 'Issued on') && ok;
+                    ok = optionalText('renewal-postal-address', 'Postal Address') && ok;
+                    ok = validateCategories(true) && ok;
+                    ok = validateAnimalsRenewal() && ok;
+                }
+                return !!ok;
+            }
+
+            function scrollFirstErrorIntoView() {
+                const first = document.querySelector('.invalid') ||
+                    document.querySelector('.field-error[style*="display: block"]');
+                if (first) first.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+
+            // ===== live gating: mark fields touched and validate their own rule =====
+            function revalidateField(el) {
+                switch (el.id) {
+                    // new
+                    case 'first-name':
+                        return requireName('first-name', 'First Name');
+                    case 'middle-name':
+                        return optionalName('middle-name', 'Middle Name');
+                    case 'last-name':
+                        return requireName('last-name', 'Last Name');
+                    case 'residence-address':
+                        return requireText('residence-address', 'Residence Address', 5);
+                    case 'telephone-number':
+                        return optionalPhone('telephone-number', 'Telephone Number');
+                    case 'establishment-name':
+                        return requireText('establishment-name', 'Name of Establishment', 5);
+                    case 'establishment-address':
+                        return requireText('establishment-address', 'Address of Establishment', 5);
+                    case 'establishment-telephone':
+                        return optionalPhone('establishment-telephone', 'Establishment Telephone Number');
+                    case 'postal-address':
+                        return optionalText('postal-address', 'Postal Address');
+                        // renewal
+                    case 'renewal-first-name':
+                        return requireName('renewal-first-name', 'First Name');
+                    case 'renewal-middle-name':
+                        return optionalName('renewal-middle-name', 'Middle Name');
+                    case 'renewal-last-name':
+                        return requireName('renewal-last-name', 'Last Name');
+                    case 'renewal-residence-address':
+                        return requireText('renewal-residence-address', 'Residence Address', 5);
+                    case 'renewal-telephone-number':
+                        return optionalPhone('renewal-telephone-number', 'Telephone Number');
+                    case 'renewal-establishment-name':
+                        return requireText('renewal-establishment-name', 'Name of Establishment', 5);
+                    case 'renewal-establishment-address':
+                        return requireText('renewal-establishment-address', 'Address of Establishment', 5);
+                    case 'renewal-establishment-telephone':
+                        return optionalPhone('renewal-establishment-telephone', 'Establishment Telephone Number');
+                    case 'renewal-wfp-number':
+                        return requireText('renewal-wfp-number', 'Original WFP No.', 1, 100);
+                    case 'renewal-issue-date':
+                        return requireDate('renewal-issue-date', 'Issued on');
+                    case 'renewal-postal-address':
+                        return optionalText('renewal-postal-address', 'Postal Address');
+                    default:
+                        return true;
+                }
+            }
+            document.addEventListener('input', (e) => {
+                const el = e.target;
+                if (!(el instanceof HTMLElement)) return;
+                if (!/^(INPUT|SELECT|TEXTAREA)$/i.test(el.tagName)) return;
+                touched.add(el);
+                revalidateField(el);
+            }, true);
+            document.addEventListener('change', (e) => {
+                const el = e.target;
+                if (!(el instanceof HTMLElement)) return;
+                if (!/^(INPUT|SELECT|TEXTAREA)$/i.test(el.tagName)) return;
+                touched.add(el);
+                revalidateField(el);
+            }, true);
+
+            // ===== permit switch clears errors =====
+            document.querySelectorAll('.permit-type-btn').forEach(btn =>
+                btn.addEventListener('click', () => {
+                    submitted = false;
+                    clearAllErrors(document);
+                })
+            );
+
+            // ===== gate submit BEFORE your submit handlers run =====
+            const btnSubmit = $('submitApplication');
+            if (btnSubmit) {
+                btnSubmit.addEventListener('click', (ev) => {
+                    submitted = true; // allow painting everywhere
+                    clearAllErrors(document); // remove stale visuals
+                    if (!validateAll()) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        scrollFirstErrorIntoView();
+                    }
+                }, true); // capture: before other listeners
+            }
+
+            // One pass on load to ensure nothing is red initially
+            window.addEventListener('load', () => {
+                clearAllErrors(document);
+            });
+        })();
+    </script>
+
+
 
 
 </body>

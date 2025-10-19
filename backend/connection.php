@@ -80,3 +80,15 @@ if (!getenv('SUPABASE_SIGNATURES_BUCKET')) {
     putenv('SUPABASE_SIGNATURES_BUCKET=signatures'); // adjust to your actual signatures bucket
     $_ENV['SUPABASE_SIGNATURES_BUCKET'] = 'signatures';
 }
+// Also expose these names for compatibility with other scripts:
+if (!getenv('SUPABASE_SERVICE_ROLE')) {
+    putenv('SUPABASE_SERVICE_ROLE=' . SUPABASE_SERVICE_KEY);
+    $_ENV['SUPABASE_SERVICE_ROLE'] = SUPABASE_SERVICE_KEY;
+    $_SERVER['SUPABASE_SERVICE_ROLE'] = SUPABASE_SERVICE_KEY;
+}
+if (!getenv('SUPABASE_ANON_KEY')) {
+    // If you don't have a separate anon key handy, reuse the service key on server-side only.
+    putenv('SUPABASE_ANON_KEY=' . SUPABASE_SERVICE_KEY);
+    $_ENV['SUPABASE_ANON_KEY'] = SUPABASE_SERVICE_KEY;
+    $_SERVER['SUPABASE_ANON_KEY'] = SUPABASE_SERVICE_KEY;
+}

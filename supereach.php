@@ -32,46 +32,88 @@ try {
     exit();
 }
 
-// Request id (numeric id column)
-$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-if ($request_id <= 0) {
-    header('Location: supernotif.php');
-    exit();
+/** Helper: UUID v4-ish validation */
+function is_uuid(string $v): bool
+{
+    return (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v);
 }
 
-// Fetch the selected request
+// Inputs:
+// - id    : numeric profile_update_requests.id
+// - user  : uuid of the requester (from notifications."from")
+$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$user_uuid  = isset($_GET['user']) ? trim((string)$_GET['user']) : '';
+
 try {
-    $st = $pdo->prepare("
-        SELECT
-            id,
-            user_id,
-            image,
-            first_name,
-            last_name,
-            age,
-            email,
-            department,
-            phone,
-            password,
-            status,
-            reason_for_rejection,
-            is_read,
-            created_at,
-            reviewed_at,
-            reviewed_by
-        FROM public.profile_update_requests
-        WHERE id = :id
-        LIMIT 1
-    ");
-    $st->execute([':id' => $request_id]);
-    $request = $st->fetch(PDO::FETCH_ASSOC);
+    if ($request_id > 0) {
+        // Fetch by numeric ID (existing behavior)
+        $st = $pdo->prepare("
+            SELECT
+                id,
+                user_id,
+                image,
+                first_name,
+                last_name,
+                age,
+                email,
+                department,
+                phone,
+                password,
+                status,
+                reason_for_rejection,
+                is_read,
+                created_at,
+                reviewed_at,
+                reviewed_by
+            FROM public.profile_update_requests
+            WHERE id = :id
+            LIMIT 1
+        ");
+        $st->execute([':id' => $request_id]);
+        $request = $st->fetch(PDO::FETCH_ASSOC);
+    } elseif ($user_uuid !== '' && is_uuid($user_uuid)) {
+        // Fetch latest (prefer pending) request for this user UUID
+        $st = $pdo->prepare("
+            SELECT
+                id,
+                user_id,
+                image,
+                first_name,
+                last_name,
+                age,
+                email,
+                department,
+                phone,
+                password,
+                status,
+                reason_for_rejection,
+                is_read,
+                created_at,
+                reviewed_at,
+                reviewed_by
+            FROM public.profile_update_requests
+            WHERE user_id = :uid
+            ORDER BY
+                CASE WHEN lower(status) = 'pending' THEN 0 ELSE 1 END ASC,
+                created_at DESC
+            LIMIT 1
+        ");
+        $st->execute([':uid' => $user_uuid]);
+        $request = $st->fetch(PDO::FETCH_ASSOC);
+        // Carry the resolved numeric id for later mark-as-read
+        $request_id = $request ? (int)$request['id'] : 0;
+    } else {
+        // No usable parameter
+        $request = false;
+    }
+
     if (!$request) {
         header('Location: supernotif.php');
         exit();
     }
 
     // Mark as read if unread
-    if ((int)$request['is_read'] === 0) {
+    if ((int)$request['is_read'] === 0 && $request_id > 0) {
         $mk = $pdo->prepare("UPDATE public.profile_update_requests SET is_read = true WHERE id = :id");
         $mk->execute([':id' => $request_id]);
         $request['is_read'] = 1;

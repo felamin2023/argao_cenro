@@ -1,2 +1,35 @@
 [05-Sep-2025 15:38:52 Europe/Berlin] [PROFILE/REQUEST INSERT] Invalid image type.
 [05-Sep-2025 15:44:55 Europe/Berlin] [PROFILE/REQUEST INSERT] Upload failed (HTTP 0): Could not resolve host: YOUR-PROJECT.supabase.co
+[12-Oct-2025 07:32:10 Europe/Berlin] Database connection failed: SQLSTATE[08006] [7] could not translate host name "aws-1-ap-southeast-1.pooler.supabase.com" to address: Unknown host
+[12-Oct-2025 07:32:10 Europe/Berlin] PHP Fatal error:  Uncaught Exception: Database connection failed in D:\xamp\htdocs\denr\superadmin\backend\connection.php:35
+Stack trace:
+#0 D:\xamp\htdocs\denr\superadmin\backend\admins\profile\update_profile.php(31): require_once()
+#1 {main}
+  thrown in D:\xamp\htdocs\denr\superadmin\backend\connection.php on line 35
+[12-Oct-2025 07:32:24 Europe/Berlin] Database connection failed: SQLSTATE[08006] [7] could not translate host name "aws-1-ap-southeast-1.pooler.supabase.com" to address: Unknown host
+[12-Oct-2025 07:32:24 Europe/Berlin] PHP Fatal error:  Uncaught Exception: Database connection failed in D:\xamp\htdocs\denr\superadmin\backend\connection.php:35
+Stack trace:
+#0 D:\xamp\htdocs\denr\superadmin\backend\admins\profile\update_profile.php(31): require_once()
+#1 {main}
+  thrown in D:\xamp\htdocs\denr\superadmin\backend\connection.php on line 35
+[13-Oct-2025 12:00:33 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "2222222222222222222" is out of range for type integer
+LINE 6: ...iegggggggggg', 'Felamingggggggggggggggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 13:00:10 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "22222222222222" is out of range for type integer
+LINE 6: ... 'Jovanieggggggggggggggg', 'Felamingggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 13:00:30 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "22222222222222" is out of range for type integer
+LINE 6: ... 'Jovanieggggggggggggggg', 'Felamingggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 13:02:40 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "22222222222222" is out of range for type integer
+LINE 6: ... 'Jovanieggggggggggggggg', 'Felamingggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 13:07:52 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] PDOException @ D:\xamp\htdocs\denr\superadmin\backend\admins\profile\update_profile.php:295 — SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "22222222222" is out of range for type integer
+LINE 6: ...'Jovaniegggggggggggggggg', 'Felamingggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 13:08:00 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] PDOException @ D:\xamp\htdocs\denr\superadmin\backend\admins\profile\update_profile.php:295 — SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "22222222222" is out of range for type integer
+LINE 6: ...'Jovaniegggggggggggggggg', 'Felamingggggggggggg', '222222222...
+                                                             ^
+[13-Oct-2025 20:52:33 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[42703]: Undefined column: 7 ERROR:  column "request_id" does not exist
+LINE 8:       RETURNING request_id
+                        ^

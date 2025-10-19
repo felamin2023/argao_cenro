@@ -90,12 +90,12 @@ try {
     $last_name   = trim($_POST['last_name'] ?? '');
 
     // NEW common fields
-    $residence_address      = trim($_POST['residence_address'] ?? '');
-    $telephone_number       = trim($_POST['telephone_number'] ?? '');
-    $establishment_name     = trim($_POST['establishment_name'] ?? '');
-    $establishment_address  = trim($_POST['establishment_address'] ?? '');
+    $residence_address       = trim($_POST['residence_address'] ?? '');
+    $telephone_number        = trim($_POST['telephone_number'] ?? '');
+    $establishment_name      = trim($_POST['establishment_name'] ?? '');
+    $establishment_address   = trim($_POST['establishment_address'] ?? '');
     $establishment_telephone = trim($_POST['establishment_telephone'] ?? '');
-    $postal_address         = trim($_POST['postal_address'] ?? '');
+    $postal_address          = trim($_POST['postal_address'] ?? '');
 
     // checkboxes
     $zoo      = trim($_POST['zoo'] ?? '0') === '1';
@@ -107,8 +107,8 @@ try {
     $renewal_animals_json = trim($_POST['renewal_animals_json'] ?? '[]');   // for RENEWAL
 
     // RENEWAL only
-    $wfp_number = trim($_POST['wfp_number'] ?? '');
-    $issue_date = trim($_POST['issue_date'] ?? '');
+    $wfp_number    = trim($_POST['wfp_number'] ?? '');
+    $issue_date    = trim($_POST['issue_date'] ?? '');
     $renewal_postal = trim($_POST['renewal_postal_address'] ?? $postal_address);
 
     $complete_name = trim(preg_replace('/\s+/', ' ', "$first_name $middle_name $last_name"));
@@ -120,55 +120,81 @@ try {
 
     $pdo->beginTransaction();
 
-    // Client: reuse or create (minimal columns present in schema)
-    $stmt = $pdo->prepare("
-        SELECT client_id FROM public.client
-        WHERE lower(trim(coalesce(first_name,'')))=:f
-          AND lower(trim(coalesce(middle_name,'')))=:m
-          AND lower(trim(coalesce(last_name,'')))=:l
-        LIMIT 1
-    ");
-    $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
-    $client_id = $stmt->fetchColumn();
+    /* ========= Client: reuse existing if user picked a suggestion, else exact-name match, else create ========= */
 
+    // If user chose a suggested existing client (from the "Use existing" modal)
+    $client_id = null;
+    $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
+    if ($override_client_id !== '') {
+        // basic UUID guard (36 chars, hex + dashes). Adjust/remove if your PK is not UUID.
+        if (!preg_match('/^[0-9a-fA-F-]{36}$/', $override_client_id)) {
+            throw new Exception('Invalid client id format.');
+        }
+        $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
+        $chk->execute([':cid' => $override_client_id]);
+        $client_id = $chk->fetchColumn() ?: null;
+    }
+
+    // If no override, fall back to exact-name reuse or create
     if (!$client_id) {
         $stmt = $pdo->prepare("
-            INSERT INTO public.client (user_id, first_name, middle_name, last_name, contact_number)
-            VALUES (:uid, :first, :middle, :last, :contact)
-            RETURNING client_id
+            SELECT client_id FROM public.client
+            WHERE lower(trim(coalesce(first_name,'')))=:f
+              AND lower(trim(coalesce(middle_name,'')))=:m
+              AND lower(trim(coalesce(last_name,'')))=:l
+            LIMIT 1
         ");
-        $stmt->execute([
-            ':uid' => $user_uuid,
-            ':first' => $first_name,
-            ':middle' => $middle_name,
-            ':last' => $last_name,
-            ':contact' => $telephone_number
-        ]);
+        $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
         $client_id = $stmt->fetchColumn();
-        if (!$client_id) throw new Exception('Failed to create client record');
+
+        if (!$client_id) {
+            $stmt = $pdo->prepare("
+                INSERT INTO public.client (user_id, first_name, middle_name, last_name, contact_number)
+                VALUES (:uid, :first, :middle, :last, :contact)
+                RETURNING client_id
+            ");
+            $stmt->execute([
+                ':uid'    => $user_uuid,
+                ':first'  => $first_name,
+                ':middle' => $middle_name,
+                ':last'   => $last_name,
+                ':contact' => $telephone_number
+            ]);
+            $client_id = $stmt->fetchColumn();
+            if (!$client_id) throw new Exception('Failed to create client record');
+        }
     }
 
     // Status checks (hard blocks)
     $stmt = $pdo->prepare("
         SELECT
-            bool_or(approval_status ILIKE 'pending'  AND permit_type ILIKE 'new')     AS has_pending_new,
-            bool_or(approval_status ILIKE 'approved' AND permit_type ILIKE 'new')     AS has_approved_new,
-            bool_or(approval_status ILIKE 'pending'  AND permit_type ILIKE 'renewal') AS has_pending_renewal
+            bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'new')     AS has_pending_new,
+            bool_or(approval_status ILIKE 'released'  AND permit_type ILIKE 'new')     AS has_released_new,
+            bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'renewal') AS has_pending_renewal,
+            bool_or(approval_status ILIKE 'for payment')                               AS has_for_payment
         FROM public.approval
         WHERE client_id=:cid AND request_type ILIKE 'wildlife'
     ");
     $stmt->execute([':cid' => $client_id]);
     $flags = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $hasPendingNew     = (bool)($flags['has_pending_new'] ?? false);
-    $hasApprovedNew    = (bool)($flags['has_approved_new'] ?? false);
+    $hasReleasedNew    = (bool)($flags['has_released_new'] ?? false); // final released NEW exists
     $hasPendingRenewal = (bool)($flags['has_pending_renewal'] ?? false);
+    $hasForPayment     = (bool)($flags['has_for_payment'] ?? false);
+
+    // Block any submission if an unpaid wildlife permit exists
+    if ($hasForPayment) {
+        throw new Exception('You still have an unpaid wildlife permit (status: for payment). Please pay personally at the office before filing another request.');
+    }
 
     if ($permit_type === 'renewal') {
         if ($hasPendingRenewal) throw new Exception('You already have a pending RENEWAL wildlife application.');
-        if (!$hasApprovedNew)   throw new Exception('To file a renewal, you must have an APPROVED new wildlife registration on record.');
-    } else {
+        if (!$hasReleasedNew)   throw new Exception('To file a renewal, you must have a released NEW wildlife registration on record.');
+    } else { // permit_type === 'new'
         if ($hasPendingNew)     throw new Exception('You already have a pending NEW wildlife application.');
         if ($hasPendingRenewal) throw new Exception('You have a pending RENEWAL; please wait for the update first.');
+        // ✨ NEW: enforce the “only one NEW per client” rule once released exists
+        if ($hasReleasedNew)    throw new Exception('You already have a released NEW wildlife registration. Please file a renewal instead.');
     }
 
     // Create requirements row
@@ -263,19 +289,19 @@ try {
 
     // Build additional_information JSON snapshot
     $info = [
-        'submission_key'   => $run,  // <— lets you tie storage folder to DB record
-        'permit_type'      => $permit_type,
-        'categories'       => ['zoo' => $zoo, 'botanical_garden' => $bot_gdn, 'private_collection' => $priv_col],
-        'residence_address' => $residence_address,
-        'telephone_number'  => $telephone_number,
-        'establishment_name' => $establishment_name,
-        'establishment_address' => $establishment_address,
-        'establishment_telephone' => $establishment_telephone,
-        'postal_address'    => $permit_type === 'renewal' ? $renewal_postal : $postal_address,
-        'animals'           => json_decode($permit_type === 'renewal' ? $renewal_animals_json : $animals_json, true) ?: [],
-        'wfp_number'        => $wfp_number ?: null,
-        'issue_date'        => $issue_date ?: null,
-        'generated_application_doc' => $uploaded['application_form'] ?: null
+        'submission_key'             => $run,  // <— lets you tie storage folder to DB record
+        'permit_type'                => $permit_type,
+        'categories'                 => ['zoo' => $zoo, 'botanical_garden' => $bot_gdn, 'private_collection' => $priv_col],
+        'residence_address'          => $residence_address,
+        'telephone_number'           => $telephone_number,
+        'establishment_name'         => $establishment_name,
+        'establishment_address'      => $establishment_address,
+        'establishment_telephone'    => $establishment_telephone,
+        'postal_address'             => $permit_type === 'renewal' ? $renewal_postal : $postal_address,
+        'animals'                    => json_decode($permit_type === 'renewal' ? $renewal_animals_json : $animals_json, true) ?: [],
+        'wfp_number'                 => $wfp_number ?: null,
+        'issue_date'                 => $issue_date ?: null,
+        'generated_application_doc'  => $uploaded['application_form'] ?: null
     ];
     $additional_information = json_encode($info, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -310,15 +336,15 @@ try {
         RETURNING application_id
     ");
     $stmt->execute([
-        ':client_id'           => $client_id,
-        ':contact_number'      => $telephone_number,
-        ':type_of_permit'      => $permit_type,
-        ':complete_name'       => $complete_name,
-        ':present_address'     => $residence_address,
-        ':telephone_number'    => $telephone_number,
-        ':signature_url'       => $uploaded['signature'] ?? null,
-        ':renewal_of'          => ($permit_type === 'renewal') ? $establishment_name : null,
-        ':permit_number'       => ($permit_type === 'renewal') ? ($wfp_number ?: null) : null,
+        ':client_id'              => $client_id,
+        ':contact_number'         => $telephone_number,
+        ':type_of_permit'         => $permit_type,
+        ':complete_name'          => $complete_name,
+        ':present_address'        => $residence_address,
+        ':telephone_number'       => $telephone_number,
+        ':signature_url'          => $uploaded['signature'] ?? null,
+        ':renewal_of'             => ($permit_type === 'renewal') ? $establishment_name : null,
+        ':permit_number'          => ($permit_type === 'renewal') ? ($wfp_number ?: null) : null,
         ':additional_information' => $additional_information,
     ]);
     $application_id = $stmt->fetchColumn();

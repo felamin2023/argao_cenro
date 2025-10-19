@@ -25,6 +25,77 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 // DB check to ensure the session still matches a User, Verified account
 require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO -> Supabase PG)
 
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[NOTIFS AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* Load the latest notifications for the current user */
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[NOTIFS LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
+}
+
 try {
     $st = $pdo->prepare("
         select role, status
@@ -73,6 +144,11 @@ try {
             --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             --transition: all 0.2s ease;
             --accent-color: #3a86ff;
+            --as-primary: var(--primary-color, #2b6625);
+            --as-primary-dark: var(--primary-dark, #1e4a1a);
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
         }
 
         * {
@@ -1524,6 +1600,188 @@ try {
         .seedling-row {
             align-items: center;
         }
+
+        .as-item {
+            position: relative;
+        }
+
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        /* dropdown shell */
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* notifications panel */
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        /* 🔽 the scrolling list wrapper (this holds the records) */
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 
@@ -1568,29 +1826,67 @@ try {
                     <a href="useraddlumber.php" class="dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
                     <a href="useraddwood.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
                     <a href="useraddchainsaw.php" class="dropdown-item"><i class="fas fa-tools"></i><span>Chainsaw Permit</span></a>
+                    <a href="applicationstatus.php" class="dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
             </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+            <!-- Notifications -->
+            <div class="as-item">
+                <div class="as-icon">
+                    <i class="fas fa-bell"></i>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge"><?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?></span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="as-dropdown-menu as-notifications">
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-circle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Seedling Request Status</div>
-                                <div class="notification-message">Your seedling request has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
+
+                    <div class="notifcontainer">
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else: foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="user_notification.php" class="view-all">View All Notifications</a></div>
+
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
+                    </div>
                 </div>
             </div>
+
 
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
@@ -2136,6 +2432,331 @@ try {
                 requestDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
             }
         });
+    </script>
+    <script>
+        /*! seedling-validate.js — minimal red messages, no borders */
+        (() => {
+            "use strict";
+
+            const $ = (id) => document.getElementById(id);
+            const q = (sel, root = document) => root.querySelector(sel);
+            const qa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+            // Inject tiny CSS for short errors
+            (() => {
+                const s = document.createElement("style");
+                s.textContent = `.fv-error{color:#d93025;font-size:.9rem;line-height:1.3;margin-top:6px}`;
+                document.head.appendChild(s);
+            })();
+
+            // Error helpers
+            const clrErr = (el) => {
+                if (!el) return;
+                const sib = el.nextElementSibling;
+                if (sib && sib.classList.contains("fv-error")) sib.remove();
+            };
+            const setErr = (el, msg) => {
+                if (!el) return false;
+                clrErr(el);
+                const d = document.createElement("div");
+                d.className = "fv-error";
+                d.setAttribute("role", "alert");
+                d.textContent = msg;
+                el.insertAdjacentElement("afterend", d);
+                return false;
+            };
+            const firstErrFocus = () => {
+                const e = q(".fv-error");
+                if (!e) return;
+                const a = e.previousElementSibling || e;
+                try {
+                    a.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center"
+                    });
+                } catch {}
+                if (a && a.focus) a.focus({
+                    preventScroll: true
+                });
+            };
+
+            // Utils
+            const blank = (v) => !v || !String(v).trim();
+            const rep4 = (v) => /(.)\1{3,}/.test(String(v));
+            const letters = (v) => /^[A-Za-z][A-Za-z\s'’.()-]*[A-Za-z]$/.test(String(v).trim());
+            const isPHMobile = (s) => {
+                const v = String(s).replace(/[^\d+]/g, "");
+                return !v || /^(\+639|639|09)\d{9}$/.test(v);
+            };
+            const isCanvasBlank = (c) => {
+                try {
+                    const ctx = c.getContext("2d");
+                    const {
+                        width: w,
+                        height: h
+                    } = c;
+                    if (!w || !h) return true;
+                    const data = ctx.getImageData(0, 0, w, h).data;
+                    for (let i = 3; i < data.length; i += 4) {
+                        if (data[i] !== 0) return false;
+                    } // any non-transparent pixel
+                    return true;
+                } catch {
+                    return false;
+                }
+            };
+
+            // Fields
+            const el = {
+                first: $("firstName"),
+                middle: $("middleName"),
+                last: $("lastName"),
+                contact: $("contactNumber"),
+                purpose: $("purpose"),
+                barangay: $("barangay"),
+                municipality: $("municipality"),
+                city: $("city"),
+                reqDate: $("requestDate"),
+                sigCanvas: $("sigCanvas"),
+                seedList: $("seedlingList"),
+                addRowBtn: $("addSeedlingBtn"),
+                submitBtn: $("submitApplication"),
+                confirmBtn: $("confirmSubmitBtn"),
+            };
+
+            // Single-field validators (short msgs)
+            const vName = (input, required = true) => {
+                const v = (input?.value || "").trim();
+                clrErr(input);
+                if (required && blank(v)) return setErr(input, "Required.");
+                if (!required && blank(v)) return true;
+                if (v.length < 2) return setErr(input, "Too short.");
+                if (!letters(v)) return setErr(input, "Letters only.");
+                if (rep4(v)) return setErr(input, "Looks invalid.");
+                return true;
+            };
+
+            const vContact = (input) => {
+                const v = (input?.value || "").trim();
+                clrErr(input);
+                if (!v) return true; // optional
+                if (!isPHMobile(v)) return setErr(input, "Use 09/639 format.");
+                return true;
+            };
+
+            const vPurpose = (ta) => {
+                const v = (ta?.value || "").trim();
+                clrErr(ta);
+                if (blank(v)) return setErr(ta, "Required.");
+                if (v.length < 20) return setErr(ta, "Min 20 chars.");
+                return true;
+            };
+
+            const vDate = (d) => {
+                clrErr(d);
+                if (!d?.value) return setErr(d, "Required.");
+                return true;
+            };
+
+            // Address: choose City XOR Municipality (at least one)
+            const vAddress = () => {
+                let ok = true;
+                clrErr(el.city);
+                clrErr(el.municipality);
+                const city = (el.city?.value || "").trim();
+                const muni = (el.municipality?.value || "").trim();
+                if (!city && !muni) ok = setErr(el.city, "Pick City or Municipality.");
+                if (city && muni) ok = setErr(el.city, "Not both.");
+                return !!ok;
+            };
+
+            // Seedling rows
+            const rowParts = (row) => ({
+                sel: row.querySelector("select.seedling-name"),
+                qty: row.querySelector(".seedling-qty"),
+            });
+
+            const clrRowErrs = (row) => {
+                const {
+                    sel,
+                    qty
+                } = rowParts(row);
+                clrErr(sel);
+                clrErr(qty);
+            };
+
+            const setRowErr = (elRef, msg) => setErr(elRef, msg);
+
+            const seedlingsAnyValid = () => {
+                const rows = qa(".seedling-row", el.seedList);
+                return rows.some(r => {
+                    const {
+                        sel,
+                        qty
+                    } = rowParts(r);
+                    return sel?.value && Number(qty?.value || 0) > 0;
+                });
+            };
+
+            const vSeedlings = () => {
+                // Clear list-level error (under Add button)
+                const anchor = el.addRowBtn || el.seedList;
+                clrErr(anchor);
+
+                const rows = qa(".seedling-row", el.seedList);
+                let ok = true;
+
+                // per-row checks
+                rows.forEach(r => {
+                    clrRowErrs(r);
+                    const {
+                        sel,
+                        qty
+                    } = rowParts(r);
+                    if (!sel || !qty) return;
+
+                    const id = sel.value || "";
+                    const have = Number(qty.value || 0);
+                    const opt = sel.options[sel.selectedIndex];
+                    const stock = Number(opt?.dataset.stock || 0);
+
+                    if (!id && have > 0) ok &= setRowErr(sel, "Select seedling.");
+                    if (id && (!have || have < 1)) ok &= setRowErr(qty, "Enter qty.");
+                    if (id && have > 0 && stock && have > stock)
+                        ok &= setRowErr(qty, `Max ${stock}.`);
+                });
+
+                // duplicate selection check
+                const seen = new Map();
+                rows.forEach(r => {
+                    const {
+                        sel
+                    } = rowParts(r);
+                    const id = sel?.value || "";
+                    if (!id) return;
+                    if (seen.has(id)) {
+                        ok &= setRowErr(sel, "Duplicate.");
+                    } else {
+                        seen.set(id, r);
+                    }
+                });
+
+                // list-level check
+                if (!seedlingsAnyValid()) ok &= setErr(anchor, "Add at least one seedling.");
+                return !!ok;
+            };
+
+            // Signature
+            const vSignature = () => {
+                const c = el.sigCanvas;
+                if (!c) return true;
+                // error anchor is canvas
+                clrErr(c);
+                // treat empty canvas as no signature
+                if (isCanvasBlank(c)) return setErr(c, "Signature needed.");
+                return true;
+            };
+
+            // Validate-all
+            function validateAll() {
+                // wipe existing errors
+                qa(".fv-error").forEach(n => n.remove());
+
+                let ok = true;
+                ok &= vName(el.first, true);
+                ok &= vName(el.middle, false);
+                ok &= vName(el.last, true);
+                ok &= vContact(el.contact);
+                ok &= vPurpose(el.purpose);
+                ok &= vAddress();
+                ok &= vDate(el.reqDate);
+                ok &= vSeedlings();
+                ok &= vSignature();
+
+                return !!ok;
+            }
+
+            // Live bindings
+            function bindLive() {
+                // names
+                el.first?.addEventListener("input", () => vName(el.first, true));
+                el.middle?.addEventListener("input", () => vName(el.middle, false));
+                el.last?.addEventListener("input", () => vName(el.last, true));
+                // contact
+                el.contact?.addEventListener("input", () => vContact(el.contact));
+                // purpose
+                el.purpose?.addEventListener("input", () => vPurpose(el.purpose));
+                // address
+                el.barangay?.addEventListener("input", () => {
+                    /* optional; no error */
+                });
+                el.city?.addEventListener("change", vAddress);
+                el.municipality?.addEventListener("change", vAddress);
+                // date
+                el.reqDate?.addEventListener("change", () => vDate(el.reqDate));
+                // signature: re-check after pen up / touch end
+                if (el.sigCanvas) {
+                    ["mouseup", "touchend"].forEach(ev =>
+                        el.sigCanvas.addEventListener(ev, vSignature, {
+                            passive: true
+                        })
+                    );
+                }
+                // seedlings: delegate to list
+                if (el.seedList) {
+                    el.seedList.addEventListener("change", (e) => {
+                        const row = e.target.closest(".seedling-row");
+                        if (!row) return;
+                        const {
+                            sel,
+                            qty
+                        } = rowParts(row);
+                        if (e.target === sel) {
+                            clrErr(qty);
+                        }
+                        vSeedlings();
+                    });
+                    el.seedList.addEventListener("input", (e) => {
+                        if (!e.target.classList.contains("seedling-qty")) return;
+                        vSeedlings();
+                    });
+                    // also when clicking remove buttons, clear list-level error next tick
+                    el.seedList.addEventListener("click", (e) => {
+                        if (e.target.closest(".remove-row")) {
+                            setTimeout(() => vSeedlings(), 0);
+                        }
+                    });
+                }
+            }
+
+            // Guard both buttons (open-confirm + final submit)
+            function guardSubmits() {
+                el.submitBtn?.addEventListener("click", (e) => {
+                    if (!validateAll()) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        firstErrFocus();
+                    }
+                }, true); // capture to run before page handler
+
+                el.confirmBtn?.addEventListener("click", (e) => {
+                    if (!validateAll()) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        firstErrFocus();
+                    }
+                }, true);
+            }
+
+            // Boot
+            const ready = (fn) => (document.readyState === "loading" ?
+                document.addEventListener("DOMContentLoaded", fn) :
+                fn());
+            ready(() => {
+                bindLive();
+                guardSubmits();
+            });
+        })();
     </script>
 </body>
 
