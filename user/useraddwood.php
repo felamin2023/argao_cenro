@@ -1946,46 +1946,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- ================= NEW PERMIT REQUIREMENTS ================= -->
                 <div id="new-requirements" class="requirements-list" style="display:block;">
-                    <!-- a -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">a</span>
-                                Duly accomplished application form
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-a" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-a"></div>
-                        </div>
-                    </div>
-
-                    <!-- b -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">b</span>
-                                Application fee/permit fee (OR as proof of payment)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-b" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-b"></div>
-                        </div>
-                    </div>
-
                     <!-- c -->
                     <div class="requirement-item">
                         <div class="requirement-header">
@@ -3419,6 +3379,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         proceed: false
                     };
                 }
+
+                // NEW: Block if the client has a released wood permit that hasn't expired yet
+                if (j.block === 'unexpired_permit') {
+                    await openModal({
+                        title: 'Renewal Not Allowed',
+                        html: `<div style="padding:16px 20px;line-height:1.6">
+                 You still have an <b>unexpired</b> lumber permit.<br><br>
+                 Please wait until your current permit <b>expires</b> before requesting a renewal.
+               </div>`,
+                        buttons: [{
+                            text: 'Okay',
+                            variant: 'primary',
+                            value: 'ok'
+                        }],
+                    });
+                    return {
+                        proceed: false
+                    };
+                }
+
+
                 if (j.block === 'need_approved_new') {
                     const sw = await openModal({
                         title: 'Action Required',

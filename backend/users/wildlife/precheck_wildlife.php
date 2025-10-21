@@ -237,8 +237,29 @@ try {
                 exit;
             }
             if (!$hasReleasedNew) {
-                // Frontend accepts either token
                 echo json_encode(['ok' => true, 'block' => 'need_released_new']);
+                exit;
+            }
+
+            // NEW: block renewal if there is any released wildlife approval with a NOT-YET-EXPIRED permit
+            $q = $pdo->prepare("
+        SELECT 1
+        FROM public.approval a
+        JOIN public.approved_docs d ON d.approval_id = a.approval_id
+        WHERE a.client_id = :cid
+          AND a.request_type ILIKE 'wildlife'
+          AND a.approval_status ILIKE 'released'
+          AND d.expiry_date IS NOT NULL
+          AND d.expiry_date::date >= CURRENT_DATE
+        LIMIT 1
+    ");
+            $q->execute([':cid' => $client_id]);
+            if ($q->fetchColumn()) {
+                echo json_encode([
+                    'ok'    => true,
+                    'block' => 'unexpired_permit',
+                    'message' => '<div style="padding:16px 20px;line-height:1.6">You still have an <b>unexpired</b> wildlife permit.<br><br>Please wait until your current permit <b>expires</b> before requesting a renewal.</div>'
+                ]);
                 exit;
             }
         }

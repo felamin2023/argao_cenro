@@ -2212,7 +2212,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 pay: 'You still have an unpaid chainsaw permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
                 offerR: 'You can’t request a <b>new</b> Chainsaw permit because you already have a released one. You’re allowed to request a <b>renewal</b> instead.',
                 needNew: 'To request a renewal, you must have an released <b>NEW</b> Chainsaw permit on record.',
+
+                // NEW: shown only when trying to RENEW but an unexpired permit exists.
+                // (If you want the word "lumber" exactly, change 'chainsaw' below.)
+                unexpired: '<div style="padding:16px 20px;line-height:1.6"> You still have an <b>unexpired</b> chainsaw permit.<br><br> Please wait until your current permit <b>expires</b> before requesting a renewal. </div>',
             };
+
 
             /* small wrapper that reuses your PRECHECK_URL and existing v()/activePermitType() */
             async function precheckWith(type, pickedClientId = null) {
@@ -2805,6 +2810,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         toast("You already have a pending chainsaw renewal. Please wait for the update first.");
                         return;
                     }
+
+                    if (json.block === "unexpired_permit") {
+                        await openModal({
+                            title: 'Unexpired Permit',
+                            html: MSG.unexpired,
+                            buttons: [{
+                                text: 'Okay',
+                                variant: 'primary',
+                                value: 'ok'
+                            }]
+                        });
+                        return;
+                    }
+
                     if (json.block === "need_approved_new") {
                         if (needApprovedNewModal) needApprovedNewModal.style.display = "flex";
                         else {

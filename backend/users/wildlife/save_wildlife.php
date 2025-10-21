@@ -190,6 +190,21 @@ try {
     if ($permit_type === 'renewal') {
         if ($hasPendingRenewal) throw new Exception('You already have a pending RENEWAL wildlife application.');
         if (!$hasReleasedNew)   throw new Exception('To file a renewal, you must have a released NEW wildlife registration on record.');
+        $q = $pdo->prepare("
+        SELECT 1
+        FROM public.approval a
+        JOIN public.approved_docs d ON d.approval_id = a.approval_id
+        WHERE a.client_id = :cid
+          AND a.request_type ILIKE 'wildlife'
+          AND a.approval_status ILIKE 'released'
+          AND d.expiry_date IS NOT NULL
+          AND d.expiry_date::date >= CURRENT_DATE
+        LIMIT 1
+    ");
+        $q->execute([':cid' => $client_id]);
+        if ($q->fetchColumn()) {
+            throw new Exception('You still have an unexpired wildlife permit. Please wait until your current permit expires before requesting a renewal.');
+        }
     } else { // permit_type === 'new'
         if ($hasPendingNew)     throw new Exception('You already have a pending NEW wildlife application.');
         if ($hasPendingRenewal) throw new Exception('You have a pending RENEWAL; please wait for the update first.');

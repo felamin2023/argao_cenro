@@ -1845,6 +1845,13 @@
         </div>
     </div>
 
+    <div id="precheckModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
+        <div id="precheckModalBox" style="background:#fff; border-radius:10px; max-width:520px; width:92%; box-shadow:0 10px 30px rgba(0,0,0,.25); overflow:hidden;">
+            <!-- Server message goes here -->
+        </div>
+    </div>
+
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle

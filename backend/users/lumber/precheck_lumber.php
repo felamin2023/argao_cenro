@@ -246,6 +246,27 @@ try {
 
         exit;
       }
+
+      // NEW: block if any released (new/renewal) lumber permit is still unexpired in approved_docs
+      $uq = $pdo->prepare("
+    SELECT 1
+    FROM public.approval a
+    JOIN public.approved_docs d ON d.approval_id = a.approval_id
+    WHERE a.client_id = :cid
+      AND a.request_type ILIKE 'lumber'
+      AND a.approval_status ILIKE 'released'
+      AND a.permit_type ILIKE ANY (ARRAY['new','renewal'])
+      AND d.expiry_date IS NOT NULL
+      AND d.expiry_date::date >= CURRENT_DATE
+    LIMIT 1
+  ");
+      $uq->execute([':cid' => $client_id]);
+      $hasUnexpired = (bool)$uq->fetchColumn();
+
+      if ($hasUnexpired) {
+        echo json_encode(array_merge(['ok' => true, 'block' => 'unexpired_permit'], $extra));
+        exit;
+      }
     }
   }
 

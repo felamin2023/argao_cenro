@@ -1,19 +1,4 @@
 <?php
-// Flow:
-//  - Client sends { mode: "auto" } first.
-//  - Server checks if a client with same first/middle/last exists.
-//      -> If found: respond { success:true, needs_decision:true, existing_client:{...} }
-//      -> If not   : continue as "new" (create client) and finish.
-//  - If UI chooses "reuse": call again with { mode:"reuse", existing_client_id }
-//  - If UI chooses "new"  : call again with { mode:"new" }
-//
-// Side-effects:
-//  - "new": uploads signature PNG to `signatures` bucket and saves URL to client.signature
-//  - Always: embeds signature in the generated .doc (MHTML) saved under requirements bucket
-//  - Creates seedling_requests + approval rows (approval.seedl_req_id is TEXT + FK)
-//  - Inserts ONE notification (aggregated message) with:
-//         message: "{Client Name} requested {seedling name}, {seedling name}, ..."
-//         "from":  current user's user_id (uuid)   |  "to": 'Seedling' (Admin department)
 
 declare(strict_types=1);
 

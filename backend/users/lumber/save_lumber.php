@@ -303,6 +303,23 @@ try {
         if (!$hasReleasedNew) {
             throw new Exception('To file a renewal, you must have a RELEASED new lumber dealer permit on record.');
         }
+        // NEW: Do not allow renewal if any released (new/renewal) lumber permit is still unexpired (approved_docs.expiry_date)
+        $uq = $pdo->prepare("
+  SELECT 1
+  FROM public.approval a
+  JOIN public.approved_docs d ON d.approval_id = a.approval_id
+  WHERE a.client_id = :cid
+    AND a.request_type ILIKE 'lumber'
+    AND a.approval_status ILIKE 'released'
+    AND a.permit_type ILIKE ANY (ARRAY['new','renewal'])
+    AND d.expiry_date IS NOT NULL
+    AND d.expiry_date::date >= CURRENT_DATE
+  LIMIT 1
+");
+        $uq->execute([':cid' => $client_id]);
+        if ($uq->fetchColumn()) {
+            throw new Exception('You still have an unexpired lumber permit. Please wait until it expires before requesting a renewal.');
+        }
     } else { // NEW
         if ($hasPendingNew) {
             throw new Exception('You already have a pending NEW lumber application.');

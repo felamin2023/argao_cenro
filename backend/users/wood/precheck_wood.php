@@ -243,11 +243,30 @@ try {
         echo json_encode(array_merge(['ok' => true, 'block' => 'pending_renewal'], $extra));
         exit;
       }
+
+      // NEW: Block renewal if there's any released wood permit that hasn't expired yet
+      $uq = $pdo->prepare("
+    SELECT 1
+    FROM public.approval a
+    JOIN public.approved_docs ad ON ad.approval_id = a.approval_id
+    WHERE a.client_id::text = :cid
+      AND a.request_type ILIKE 'wood'
+      AND a.approval_status ILIKE 'released'
+      AND ad.expiry_date::date >= CURRENT_DATE
+    LIMIT 1
+  ");
+      $uq->execute([':cid' => $client_id]);
+      if ($uq->fetchColumn()) {
+        echo json_encode(array_merge(['ok' => true, 'block' => 'unexpired_permit'], $extra));
+        exit;
+      }
+
       if (!$hasReleasedNew) {
         echo json_encode(array_merge(['ok' => true, 'block' => 'need_approved_new'], $extra));
         exit;
       }
     }
+
 
     echo json_encode(array_merge(['ok' => true], $extra));
     exit;

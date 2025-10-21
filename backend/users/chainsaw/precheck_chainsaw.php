@@ -186,6 +186,18 @@ try {
       FROM public.approval
       WHERE client_id::text = :cid AND request_type ILIKE 'chainsaw'
     ");
+
+        $uStmt = $pdo->prepare("
+    SELECT 1
+    FROM public.approval a
+    JOIN public.approved_docs d ON d.approval_id = a.approval_id
+    WHERE a.client_id::text = :cid
+      AND lower(a.request_type)   = 'chainsaw'
+      AND lower(a.approval_status) = 'released'
+      AND lower(a.permit_type)     IN ('new','renewal')
+      AND d.expiry_date::date >= current_date
+    LIMIT 1
+");
         $stmt->execute([':cid' => $client_id]);
         $f = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -193,6 +205,9 @@ try {
         $hasReleasedNew    = !empty($f['has_released_new']);
         $hasPendingRenewal = !empty($f['has_pending_renewal']);
         $hasForPayment     = !empty($f['has_for_payment']);
+
+        $uStmt->execute([':cid' => $client_id]);
+        $hasUnexpiredReleased = (bool)$uStmt->fetchColumn();
 
         if ($hasForPayment) {
             echo json_encode(array_merge(['ok' => true, 'block' => 'for_payment'], $extra));
@@ -215,6 +230,12 @@ try {
         } else { // renewal
             if ($hasPendingRenewal) {
                 echo json_encode(array_merge(['ok' => true, 'block' => 'pending_renewal'], $extra));
+                exit;
+            }
+
+            // NEW: block if a released chainsaw permit (new/renewal) is still unexpired
+            if (!empty($hasUnexpiredReleased)) {
+                echo json_encode(array_merge(['ok' => true, 'block' => 'unexpired_permit'], $extra));
                 exit;
             }
             if (!$hasReleasedNew) {

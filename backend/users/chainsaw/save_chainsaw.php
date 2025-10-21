@@ -253,6 +253,20 @@ try {
     // Pending ANY (new or renewal) — used to block renewal if anything is pending
     $hasPendingAny = ($hasPendingNew || $hasPendingRenewal);
 
+    $expStmt = $pdo->prepare("
+    SELECT MIN(d.expiry_date)::date AS next_expiry
+    FROM public.approval a
+    JOIN public.approved_docs d ON d.approval_id = a.approval_id
+    WHERE a.client_id = :cid
+      AND lower(a.request_type)    = 'chainsaw'
+      AND lower(a.approval_status) = 'released'
+      AND lower(a.permit_type)     IN ('new','renewal')
+      AND d.expiry_date::date >= current_date
+");
+    $expStmt->execute([':cid' => $client_id]);
+    $nextExpiry = $expStmt->fetchColumn();
+    $hasUnexpiredReleased = !empty($nextExpiry);
+
     // ---- Enforce rules (HARD BLOCKS) ----
     if (!empty($hasForPayment)) {
         throw new Exception('You currently have a chainsaw approval marked FOR PAYMENT. Please settle payment before filing another request.');
@@ -261,6 +275,11 @@ try {
     if ($permit_type === 'renewal') {
         if (!empty($hasPendingAny)) {
             throw new Exception('You already have a pending chainsaw application. Please wait for the update first.');
+        }
+        if (!empty($hasUnexpiredReleased)) {
+            // You can include the date in the message if you want:
+            // $nextExpiry ? " (expires on {$nextExpiry})" : ""
+            throw new Exception('You still have an unexpired chainsaw permit. Please wait until it expires before requesting a renewal.');
         }
         if (empty($hasReleasedNew)) {
             throw new Exception('To file a renewal, you must have a RELEASED NEW chainsaw permit on record.');
@@ -273,6 +292,9 @@ try {
             throw new Exception('You have a pending RENEWAL; please wait for the update first.');
         }
     }
+
+
+
 
     // --- requirements row ---
     $ridStmt = $pdo->query("INSERT INTO public.requirements DEFAULT VALUES RETURNING requirement_id");

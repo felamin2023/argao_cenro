@@ -1996,13 +1996,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Requirements List -->
                 <div class="requirements-list">
-                    <!-- Requirement 1 (Common) -->
+                    <!-- 1 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">1</span>
                                 <span class="requirement-number renewal-number" style="display:none">1</span>
-                                Complete Staff Work (CSW) by the inspecting officer- 3 copies from inspecting officer for signature of RPS chief
+                                Complete Staff Work (CSW) by the inspecting officer - 3 copies from inspecting officer for signature of RPS chief
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2016,7 +2016,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 2 (Common) -->
+                    <!-- 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
@@ -2036,32 +2036,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 3 (Common) -->
+                    <!-- 3 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">3</span>
                                 <span class="requirement-number renewal-number" style="display:none">3</span>
-                                Application form duly accomplished (3 copies)
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-3" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Requirement 4 (Common) -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number new-number">4</span>
-                                <span class="requirement-number renewal-number" style="display:none">4</span>
                                 Log/Lumber Supply Contract (approved by RED) - 3 copies
                             </div>
                         </div>
@@ -2076,11 +2056,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 5 (New Only) -->
+                    <!-- 4 (NEW ONLY) -->
                     <div class="requirement-item" id="requirement-5">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number new-number">5</span>
+                                <span class="requirement-number new-number">4</span>
                                 Business Management Plan (3 copies)
                             </div>
                         </div>
@@ -2095,12 +2075,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 6 (Common) -->
-                    <div class="requirement-item">
+                    <!-- 4 (NEW ONLY: Mayor’s Permit) -->
+                    <div class="requirement-item" id="mayors-permit" style="display:none">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number new-number">6</span>
-                                <span class="requirement-number renewal-number" style="display:none">5</span>
+                                <span class="requirement-number new-number">5</span>
                                 Mayor's Permit - 3 copies
                             </div>
                         </div>
@@ -2109,18 +2088,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label for="file-6" class="file-input-label">
                                     <i class="fas fa-upload"></i> Upload File
                                 </label>
-                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                                <input type="file" id="file-6" name="lumber_mayors_permit"
+                                    class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
                             </div>
+
                         </div>
                     </div>
 
-                    <!-- Requirement 7 (Common) -->
+
+                    <!-- 5 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number new-number">7</span>
-                                <span class="requirement-number renewal-number" style="display:none">6</span>
+                                <span class="requirement-number new-number">6</span>
+                                <span class="requirement-number renewal-number" style="display:none">5</span>
                                 Certificate of Registration by DTI/SEC - 3 copies
                             </div>
                         </div>
@@ -2135,11 +2117,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 8 (New Only) -->
+                    <!-- 6 (NEW ONLY) -->
                     <div class="requirement-item" id="requirement-8">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number new-number">8</span>
+                                <span class="requirement-number new-number">7</span>
                                 Latest Annual Income Tax Return - 3 copies
                             </div>
                         </div>
@@ -2154,11 +2136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Requirement 9 (Renewal Only) -->
-                    <div class="requirement-item" id="requirement-9">
+                    <!-- 6 (RENEWAL ONLY) -->
+                    <div class="requirement-item" id="requirement-9" style="display:none">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number renewal-number">7</span>
+                                <span class="requirement-number renewal-number">6</span>
                                 Monthly and Quarterly Reports from the date issued to date (for renewal only) - 3 copies
                             </div>
                         </div>
@@ -2172,41 +2154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                     </div>
-
-                    <!-- Requirement 10 (Common) -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number new-number">9</span>
-                                <span class="requirement-number renewal-number">8</span>
-                                Regulatory Fees
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="sub-requirement">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of Official Receipt</p>
-                                <div class="file-input-container">
-                                    <label for="file-10a" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="file-10a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                            </div>
-                            <div class="sub-requirement" style="margin-top: 15px;">
-                                <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of Order of Payment</p>
-                                <div class="file-input-container">
-                                    <label for="file-10b" class="file-input-label">
-                                        <i class="fas fa-upload"></i> Upload File
-                                    </label>
-                                    <input type="file" id="file-10b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                    <span class="file-name">No file chosen</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 <!-- /Requirements List -->
+
             </div>
 
             <div class="form-footer">
@@ -2327,6 +2277,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+
+    <!-- Unexpired Permit (renewal not allowed) -->
+    <div id="unexpiredPermitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Not Allowed</div>
+            <div id="unexpiredPermitBody" style="padding:0">
+                <!-- exact message as requested -->
+                <div style="padding:16px 20px;line-height:1.6">
+                    You still have an <b>unexpired</b> lumber permit.<br><br>
+                    Please wait until your current permit <b>expires</b> before requesting a renewal.
+                </div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="unexpiredPermitOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+
 
 
     <script>
@@ -2688,11 +2656,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
 
             /* =========================
-               Permit Type toggle (NEW/RENEWAL)
-            ========================== */
-            const requirement5 = document.getElementById('requirement-5');
-            const requirement8 = document.getElementById('requirement-8');
-            const requirement9 = document.getElementById('requirement-9');
+   Permit Type toggle (NEW/RENEWAL)
+========================== */
+            const requirement5 = document.getElementById('requirement-5'); // NEW only: Business Plan
+            const requirement8 = document.getElementById('requirement-8'); // NEW only: ITR
+            const requirement9 = document.getElementById('requirement-9'); // RENEWAL only: Monthly/Quarterly
+            const mayorPermit = document.getElementById('mayors-permit'); // NEW only
+
 
             const newSection = document.getElementById('lumber-application-section');
             const renSection = document.getElementById('renewal-application-section');
@@ -2706,14 +2676,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const isNew = type === 'new';
                 show(newSection, isNew);
                 show(renSection, !isNew);
+
+                // NEW-only
                 show(requirement5, isNew);
                 show(requirement8, isNew);
+
+                // RENEWAL-only
                 show(requirement9, !isNew);
+                // NEW-only
+                show(mayorPermit, isNew);
+
+
+                // number spans
                 $all('.new-number').forEach(el => show(el, isNew));
                 $all('.renewal-number').forEach(el => show(el, !isNew));
+
                 setTimeout(() => {
-                    if (isNew) resizeSigCanvas();
-                    else resizeSigCanvasRen();
+                    isNew ? resizeSigCanvas() : resizeSigCanvasRen();
                 }, 0);
             }
 
@@ -2726,6 +2705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
             document.querySelector('.permit-type-btn[data-type="new"]')?.classList.add('active');
             setPermitType('new');
+
 
             /* =========================
                Suppliers tables
@@ -2778,7 +2758,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /* =========================
                File names on select
             ========================== */
-            const fileIds = ['file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-9', 'file-10a', 'file-10b'];
+            const fileIds = ['file-1', 'file-2', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-9'];
+
             fileIds.forEach(id => {
                 const input = document.getElementById(id);
                 if (!input) return;
@@ -3203,6 +3184,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const needApprovedNewOk = document.getElementById('needApprovedNewOk');
             const needApprovedNewSwitch = document.getElementById('needApprovedNewSwitch');
 
+            const unexpiredPermitModal = document.getElementById('unexpiredPermitModal');
+            const unexpiredPermitOk = document.getElementById('unexpiredPermitOk');
+            unexpiredPermitOk?.addEventListener('click', () => display(unexpiredPermitModal, 'none'));
+
+
             pendingNewOk?.addEventListener('click', () => {
                 display(pendingNewModal, 'none');
             });
@@ -3558,12 +3544,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         display(pendingNewModal, 'flex');
                         return;
                     }
+
+
+
+
                     if (json.block === 'pending_renewal') {
                         toast('You already have a pending lumber renewal. Please wait for the update first.');
                         return;
                     }
                     if (json.block === 'need_released_new' || json.block === 'need_approved_new') {
                         display(needApprovedNewModal, 'flex');
+                        return;
+                    }
+
+                    if (json.block === 'unexpired_permit') {
+                        display(unexpiredPermitModal, 'flex');
                         return;
                     }
 

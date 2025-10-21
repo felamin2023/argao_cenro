@@ -106,7 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->close();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -2494,29 +2493,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- (unchanged – file uploads don’t get error divs) -->
                 <div class="requirements-list" id="new-requirements" style="display: grid;">
                     <!-- 1 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">1</span>
-                                Application Form filed-up with 2 copies of photo of the applicant/s
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload Filled Form
-                                </label>
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="uploaded-files-1"></div>
-                        </div>
-                    </div>
+
                     <!-- 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">2</span>
+                                <span class="requirement-number">1</span>
                                 SEC/CDA Registration (Security and Exchange Commission/Cooperative Development Authority) DTI, if for commercial purposes
                             </div>
                         </div>
@@ -2535,7 +2517,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">3</span>
+                                <span class="requirement-number">2</span>
                                 Proof of Scientific Expertise (Veterinary Certificate)
                             </div>
                         </div>
@@ -2554,7 +2536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">4</span>
+                                <span class="requirement-number">3</span>
                                 Financial Plan for Breeding (Financial/Bank Statement)
                             </div>
                         </div>
@@ -2573,7 +2555,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">5</span>
+                                <span class="requirement-number">4</span>
                                 Proposed Facility Design (Photo of Facility)
                             </div>
                         </div>
@@ -2592,7 +2574,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">6</span>
+                                <span class="requirement-number">5</span>
                                 Prior Clearance of affected communities (Municipal or Barangay Clearance)
                             </div>
                         </div>
@@ -2611,7 +2593,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">7</span>
+                                <span class="requirement-number">6</span>
                                 Vicinity Map of the area/site (Ex. Google map Sketch map)
                             </div>
                         </div>
@@ -2630,7 +2612,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">8</span>
+                                <span class="requirement-number">7</span>
                                 Legal Acquisition of Wildlife:
                             </div>
                         </div>
@@ -2660,7 +2642,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">9</span>
+                                <span class="requirement-number">8</span>
                                 Inspection Report conducted by concerned CENRO
                             </div>
                         </div>
@@ -2687,30 +2669,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- ================= RENEWAL REQUIREMENTS ================= -->
                 <!-- (unchanged – file uploads don’t get error divs) -->
                 <div class="requirements-list" id="renewal-requirements" style="display: none;">
-                    <!-- 1 -->
-                    <div class="requirement-item">
-                        <div class="requirement-header">
-                            <div class="requirement-title">
-                                <span class="requirement-number">1</span>
-                                Duly accomplished application form with two recent 2'x2' photo of the applicant
-                            </div>
-                        </div>
-                        <div class="file-upload">
-                            <div class="file-input-container">
-                                <label for="renewal-file-1" class="file-input-label">
-                                    <i class="fas fa-upload"></i> Upload Filled Form
-                                </label>
-                                <input type="file" id="renewal-file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <span class="file-name">No file chosen</span>
-                            </div>
-                            <div class="uploaded-files" id="renewal-uploaded-files-1"></div>
-                        </div>
-                    </div>
+
                     <!-- 2 -->
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">2</span>
+                                <span class="requirement-number">1</span>
                                 Copy of previous WFP (Original copy)
                             </div>
                         </div>
@@ -2729,7 +2693,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">3</span>
+                                <span class="requirement-number">2</span>
                                 Quarterly Breeding Report & Monthly Production report
                             </div>
                         </div>
@@ -2748,7 +2712,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">4</span>
+                                <span class="requirement-number">3</span>
                                 For additional stocks (if any)
                             </div>
                         </div>
@@ -2803,7 +2767,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">5</span>
+                                <span class="requirement-number">4</span>
                                 For additional facility (if any)
                             </div>
                         </div>
@@ -2847,7 +2811,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">6</span>
+                                <span class="requirement-number">5</span>
                                 Inspection Report conducted by concerned CENRO/Regional Office
                             </div>
                         </div>
@@ -2973,10 +2937,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+
     <!-- Global Loading Overlay -->
     <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
         <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px">Working…</div>
     </div>
+
+    <!-- Unexpired (released) permit blocks renewal -->
+    <div id="unexpiredPermitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Not Allowed</div>
+            <div id="unexpiredPermitBody" style="padding:16px 20px;line-height:1.6">
+                <div style="padding:16px 20px;line-height:1.6">
+                    You still have an <b>unexpired</b> wildlife permit.<br><br>
+                    Please wait until your current permit <b>expires</b> before requesting a renewal.
+                </div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
+                <button id="unexpiredPermitOk" class="btn btn-primary" type="button">Okay</button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         (() => {
@@ -3295,6 +3277,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const forPaymentOk = byId('forPaymentOk');
             forPaymentOk?.addEventListener('click', () => forPaymentModal.style.display = 'none');
 
+            const unexpiredPermitModal = byId('unexpiredPermitModal');
+            const unexpiredPermitOk = byId('unexpiredPermitOk');
+            unexpiredPermitOk?.addEventListener('click', () => unexpiredPermitModal.style.display = 'none');
+
+
             const suggestClientModal = byId('suggestClientModal');
             const suggestClientName = byId('suggestClientName');
             const suggestClientUse = byId('suggestClientUse');
@@ -3335,6 +3322,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
                         needApprovedNewModal.style.display = 'flex';
+                        return;
+                    }
+
+                    if (json.block === 'unexpired_permit') {
+                        // (Optional) if the backend sends a custom message, show it:
+                        if (json.message) byId('unexpiredPermitBody').innerHTML = json.message;
+                        unexpiredPermitModal.style.display = 'flex';
                         return;
                     }
                     if (json.offer === 'renewal' && type === 'new') { // ⟵ show offer now
@@ -3479,6 +3473,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
                         needApprovedNewModal.style.display = 'flex';
+                        return;
+                    }
+
+
+                    if (json.block === 'unexpired_permit') {
+                        // (Optional) if the backend sends a custom message, show it:
+                        if (json.message) byId('unexpiredPermitBody').innerHTML = json.message;
+                        unexpiredPermitModal.style.display = 'flex';
                         return;
                     }
                     if (json.offer === 'renewal' && type === 'new') {
@@ -3790,14 +3792,14 @@ ${
                 // NEW files
                 if (!isRenewal) {
                     [
-                        'file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8a', 'file-8b', 'file-9'
+                        'file-2', 'file-3', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8a', 'file-8b', 'file-9'
                     ].forEach((id) => {
                         const f = byId(id)?.files?.[0];
                         if (f) fd.append(id.replace(/-/g, '_'), f); // e.g., file_1, file_8a
                     });
                 } else {
                     [
-                        'renewal-file-1', 'renewal-file-2', 'renewal-file-3',
+                        'renewal-file-2', 'renewal-file-3',
                         'renewal-file-4a', 'renewal-file-4b', 'renewal-file-4c', 'renewal-file-4d',
                         'renewal-file-5a', 'renewal-file-5b', 'renewal-file-5c',
                         'renewal-file-6'
