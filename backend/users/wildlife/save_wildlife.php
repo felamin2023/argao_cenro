@@ -34,7 +34,6 @@ function supa_upload(string $bucket, string $path, string $tmpPath, string $mime
         CURLOPT_HTTPHEADER => [
             'Authorization: Bearer ' . SUPABASE_SERVICE_KEY,
             'Content-Type: ' . $mime,
-            // keep every file: do NOT overwrite existing objects
             'x-upsert: false',
         ],
         CURLOPT_POSTFIELDS => file_get_contents($tmpPath),
@@ -81,7 +80,7 @@ try {
     if (!$urow) throw new Exception('User record not found');
     $user_uuid = $urow['user_id'];
 
-    // Inputs (keep names exactly as your page posts them)
+    // Inputs
     $permit_type = isset($_POST['permit_type']) && in_array(strtolower($_POST['permit_type']), ['new', 'renewal'], true)
         ? strtolower($_POST['permit_type']) : 'new';
 
@@ -102,13 +101,13 @@ try {
     $bot_gdn  = trim($_POST['botanical_garden'] ?? '0') === '1';
     $priv_col = trim($_POST['private_collection'] ?? '0') === '1';
 
-    // animals tables (JSON strings from frontend)
-    $animals_json         = trim($_POST['animals_json'] ?? '[]');           // for NEW
-    $renewal_animals_json = trim($_POST['renewal_animals_json'] ?? '[]');   // for RENEWAL
+    // animals tables
+    $animals_json         = trim($_POST['animals_json'] ?? '[]');         // NEW
+    $renewal_animals_json = trim($_POST['renewal_animals_json'] ?? '[]'); // RENEWAL
 
     // RENEWAL only
-    $wfp_number    = trim($_POST['wfp_number'] ?? '');
-    $issue_date    = trim($_POST['issue_date'] ?? '');
+    $wfp_number     = trim($_POST['wfp_number'] ?? '');
+    $issue_date     = trim($_POST['issue_date'] ?? '');
     $renewal_postal = trim($_POST['renewal_postal_address'] ?? $postal_address);
 
     $complete_name = trim(preg_replace('/\s+/', ' ', "$first_name $middle_name $last_name"));
@@ -118,54 +117,129 @@ try {
     $nm = norm($middle_name);
     $nl = norm($last_name);
 
-    $pdo->beginTransaction();
-
-    /* ========= Client: reuse existing if user picked a suggestion, else exact-name match, else create ========= */
-
-    // If user chose a suggested existing client (from the "Use existing" modal)
-    $client_id = null;
-    $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
-    if ($override_client_id !== '') {
-        // basic UUID guard (36 chars, hex + dashes). Adjust/remove if your PK is not UUID.
-        if (!preg_match('/^[0-9a-fA-F-]{36}$/', $override_client_id)) {
-            throw new Exception('Invalid client id format.');
-        }
-        $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
-        $chk->execute([':cid' => $override_client_id]);
-        $client_id = $chk->fetchColumn() ?: null;
+    // Force-create-new toggle
+    $force_new_client = false;
+    if (isset($_POST['force_new_client'])) {
+        $val = strtolower(trim((string)$_POST['force_new_client']));
+        $force_new_client = in_array($val, ['1', 'true', 'yes', 'on'], true);
     }
 
-    // If no override, fall back to exact-name reuse or create
-    if (!$client_id) {
-        $stmt = $pdo->prepare("
+    $pdo->beginTransaction();
+
+    // --- Extra safeguard: do not allow "Submit as new" to bypass existing blocks
+    if ($force_new_client) {
+        // exact-name existing client?
+        $dup = $pdo->prepare("
             SELECT client_id FROM public.client
             WHERE lower(trim(coalesce(first_name,'')))=:f
               AND lower(trim(coalesce(middle_name,'')))=:m
               AND lower(trim(coalesce(last_name,'')))=:l
             LIMIT 1
         ");
-        $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
-        $client_id = $stmt->fetchColumn();
+        $dup->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
+        $dupId = $dup->fetchColumn();
 
-        if (!$client_id) {
-            $stmt = $pdo->prepare("
-                INSERT INTO public.client (user_id, first_name, middle_name, last_name, contact_number)
-                VALUES (:uid, :first, :middle, :last, :contact)
-                RETURNING client_id
+        if ($dupId) {
+            $dFlags = $pdo->prepare("
+                SELECT
+                    bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'new')     AS has_pending_new,
+                    bool_or(approval_status ILIKE 'released'  AND permit_type ILIKE 'new')     AS has_released_new,
+                    bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'renewal') AS has_pending_renewal,
+                    bool_or(approval_status ILIKE 'for payment')                               AS has_for_payment
+                FROM public.approval
+                WHERE client_id=:cid AND request_type ILIKE 'wildlife'
             ");
-            $stmt->execute([
-                ':uid'    => $user_uuid,
-                ':first'  => $first_name,
-                ':middle' => $middle_name,
-                ':last'   => $last_name,
-                ':contact' => $telephone_number
-            ]);
-            $client_id = $stmt->fetchColumn();
-            if (!$client_id) throw new Exception('Failed to create client record');
+            $dFlags->execute([':cid' => $dupId]);
+            $df = $dFlags->fetch(PDO::FETCH_ASSOC) ?: [];
+            $dupHasPendingNew     = (bool)($df['has_pending_new'] ?? false);
+            $dupHasPendingRenewal = (bool)($df['has_pending_renewal'] ?? false);
+            $dupHasForPayment     = (bool)($df['has_for_payment'] ?? false);
+
+            $dUnexp = $pdo->prepare("
+                SELECT 1
+                FROM public.approval a
+                JOIN public.approved_docs d ON d.approval_id = a.approval_id
+                WHERE a.client_id = :cid
+                  AND a.request_type ILIKE 'wildlife'
+                  AND a.approval_status ILIKE 'released'
+                  AND d.expiry_date IS NOT NULL
+                  AND d.expiry_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+                LIMIT 1
+            ");
+            $dUnexp->execute([':cid' => $dupId]);
+            $dupHasUnexpired = (bool)$dUnexp->fetchColumn();
+
+            if ($dupHasForPayment) {
+                throw new Exception('An existing client with this name still has an unpaid wildlife permit (for payment). Please settle it first.');
+            }
+            if ($permit_type === 'renewal') {
+                if ($dupHasPendingRenewal || $dupHasPendingNew) {
+                    throw new Exception('An existing client with this name already has a pending wildlife application.');
+                }
+                if ($dupHasUnexpired) {
+                    throw new Exception('An existing client with this name still has an unexpired wildlife permit. Renewal is not allowed yet.');
+                }
+            } else { // new
+                if ($dupHasPendingNew || $dupHasPendingRenewal) {
+                    throw new Exception('An existing client with this name already has a pending wildlife application.');
+                }
+                if ($dupHasUnexpired) {
+                    throw new Exception('An existing client with this name still has an unexpired wildlife permit. A new application is not allowed.');
+                }
+            }
         }
     }
 
-    // Status checks (hard blocks)
+    /* ========= Client resolution ========= */
+    $client_id = null;
+    $client_resolution = null;
+
+    if (!$force_new_client) {
+        $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
+        if ($override_client_id !== '') {
+            if (!preg_match('/^[0-9a-fA-F-]{36}$/', $override_client_id)) {
+                throw new Exception('Invalid client id format.');
+            }
+            $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
+            $chk->execute([':cid' => $override_client_id]);
+            $client_id = $chk->fetchColumn() ?: null;
+            if (!$client_id) throw new Exception('Selected client not found.');
+            $client_resolution = 'existing_override';
+        }
+
+        if (!$client_id) {
+            $stmt = $pdo->prepare("
+                SELECT client_id FROM public.client
+                WHERE lower(trim(coalesce(first_name,'')))=:f
+                  AND lower(trim(coalesce(middle_name,'')))=:m
+                  AND lower(trim(coalesce(last_name,'')))=:l
+                LIMIT 1
+            ");
+            $stmt->execute([':f' => $nf, ':m' => $nm, ':l' => $nl]);
+            $client_id = $stmt->fetchColumn() ?: null;
+            if ($client_id) $client_resolution = 'exact_match_reuse';
+        }
+    }
+
+    if (!$client_id) {
+        $stmt = $pdo->prepare("
+            INSERT INTO public.client (user_id, first_name, middle_name, last_name, contact_number)
+            VALUES (:uid, :first, :middle, :last, :contact)
+            RETURNING client_id
+        ");
+        $stmt->execute([
+            ':uid'     => $user_uuid,
+            ':first'   => $first_name,
+            ':middle'  => $middle_name,
+            ':last'    => $last_name,
+            ':contact' => $telephone_number
+        ]);
+        $client_id = $stmt->fetchColumn();
+        if (!$client_id) throw new Exception('Failed to create client record');
+        $client_resolution = $force_new_client ? 'forced_new' : 'created_new';
+    }
+
+    // -------- Status flags for validations --------
     $stmt = $pdo->prepare("
         SELECT
             bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'new')     AS has_pending_new,
@@ -178,19 +252,11 @@ try {
     $stmt->execute([':cid' => $client_id]);
     $flags = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $hasPendingNew     = (bool)($flags['has_pending_new'] ?? false);
-    $hasReleasedNew    = (bool)($flags['has_released_new'] ?? false); // final released NEW exists
+    $hasReleasedNew    = (bool)($flags['has_released_new'] ?? false);
     $hasPendingRenewal = (bool)($flags['has_pending_renewal'] ?? false);
     $hasForPayment     = (bool)($flags['has_for_payment'] ?? false);
 
-    // Block any submission if an unpaid wildlife permit exists
-    if ($hasForPayment) {
-        throw new Exception('You still have an unpaid wildlife permit (status: for payment). Please pay personally at the office before filing another request.');
-    }
-
-    if ($permit_type === 'renewal') {
-        if ($hasPendingRenewal) throw new Exception('You already have a pending RENEWAL wildlife application.');
-        if (!$hasReleasedNew)   throw new Exception('To file a renewal, you must have a released NEW wildlife registration on record.');
-        $q = $pdo->prepare("
+    $q = $pdo->prepare("
         SELECT 1
         FROM public.approval a
         JOIN public.approved_docs d ON d.approval_id = a.approval_id
@@ -198,38 +264,51 @@ try {
           AND a.request_type ILIKE 'wildlife'
           AND a.approval_status ILIKE 'released'
           AND d.expiry_date IS NOT NULL
-          AND d.expiry_date::date >= CURRENT_DATE
+          AND d.expiry_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
         LIMIT 1
     ");
-        $q->execute([':cid' => $client_id]);
-        if ($q->fetchColumn()) {
-            throw new Exception('You still have an unexpired wildlife permit. Please wait until your current permit expires before requesting a renewal.');
-        }
-    } else { // permit_type === 'new'
-        if ($hasPendingNew)     throw new Exception('You already have a pending NEW wildlife application.');
-        if ($hasPendingRenewal) throw new Exception('You have a pending RENEWAL; please wait for the update first.');
-        // ✨ NEW: enforce the “only one NEW per client” rule once released exists
-        if ($hasReleasedNew)    throw new Exception('You already have a released NEW wildlife registration. Please file a renewal instead.');
+    $q->execute([':cid' => $client_id]);
+    $hasUnexpired = (bool)$q->fetchColumn();
+
+    // -------- Validations --------
+    if ($hasForPayment) {
+        throw new Exception('You still have an unpaid wildlife permit (status: for payment). Please pay personally at the office before filing another request.');
     }
 
-    // Create requirements row
+    if ($permit_type === 'renewal') {
+        if ($hasPendingRenewal) {
+            throw new Exception('You already have a pending RENEWAL wildlife application.');
+        }
+        if ($hasPendingNew) {
+            throw new Exception('You already have a pending NEW wildlife application.');
+        }
+        if ($hasUnexpired) {
+            throw new Exception('You still have an unexpired wildlife permit. Please wait until it expires before requesting a renewal.');
+        }
+    } else { // NEW
+        if ($hasPendingNew) {
+            throw new Exception('You already have a pending NEW wildlife application.');
+        }
+        if ($hasPendingRenewal) {
+            throw new Exception('You have a pending RENEWAL; please wait for the update first.');
+        }
+        if ($hasUnexpired) {
+            throw new Exception('You still have an unexpired wildlife permit. You cannot file a new application.');
+        }
+    }
+
+    // -------- Create requirements row --------
     $ridStmt = $pdo->query("INSERT INTO public.requirements DEFAULT VALUES RETURNING requirement_id");
     $requirement_id = $ridStmt->fetchColumn();
     if (!$requirement_id) throw new Exception('Failed to create requirements record');
 
-    // Storage folder
     $bucket = bucket_name();
 
-    // Unique submission key & per-request folder (keeps every submission)
     $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
     $folder = ($permit_type === 'renewal') ? 'renewal permit' : 'new permit';
     $prefix = "wildlife/{$folder}/{$client_id}/{$run}/";
 
-    // Generated application doc (optional) + signature
-    $uploaded = [
-        'application_form' => null, // maps to requirements.application_form
-        'signature'        => null, // stored URL in application_form.signature_of_applicant
-    ];
+    $uploaded = ['application_form' => null, 'signature' => null];
 
     if (!empty($_FILES['application_doc']) && is_uploaded_file($_FILES['application_doc']['tmp_name'])) {
         $f = $_FILES['application_doc'];
@@ -244,10 +323,8 @@ try {
         $uploaded['signature'] = supa_upload($bucket, $prefix . $safe, $f['tmp_name'], $f['type'] ?: 'image/png');
     }
 
-    // ========= Map page uploads to schema columns =========
-    // NEW (items 1..9)
+    // ========= Map page uploads =========
     $newMap = [
-        // 1: "Upload Filled Form" -> requirements.application_form  (handled via $uploaded)
         'file_2'  => 'wild_sec_cda_registration',
         'file_3'  => 'wild_scientific_expertise',
         'file_4'  => 'wild_financial_plan',
@@ -259,9 +336,7 @@ try {
         'file_9'  => 'wild_inspection_report',
     ];
 
-    // RENEWAL (items 1..6 + sub-items)
     $renMap = [
-        // 1: "Upload Filled Form" -> requirements.application_form (handled via $uploaded)
         'renewal_file_2'  => 'wild_previous_wfp_copy',
         'renewal_file_3'  => 'wild_breeding_report_quarterly',
         'renewal_file_4a' => 'wild_cites_import_permit',
@@ -278,7 +353,6 @@ try {
     $reqSet = [];
     $reqParams = [':rid' => $requirement_id];
 
-    // application_form (if generated/uploaded)
     if ($uploaded['application_form']) {
         $reqSet[] = "application_form = :application_form";
         $reqParams[':application_form'] = $uploaded['application_form'];
@@ -304,7 +378,7 @@ try {
 
     // Build additional_information JSON snapshot
     $info = [
-        'submission_key'             => $run,  // <— lets you tie storage folder to DB record
+        'submission_key'             => $run,
         'permit_type'                => $permit_type,
         'categories'                 => ['zoo' => $zoo, 'botanical_garden' => $bot_gdn, 'private_collection' => $priv_col],
         'residence_address'          => $residence_address,
@@ -316,38 +390,23 @@ try {
         'animals'                    => json_decode($permit_type === 'renewal' ? $renewal_animals_json : $animals_json, true) ?: [],
         'wfp_number'                 => $wfp_number ?: null,
         'issue_date'                 => $issue_date ?: null,
-        'generated_application_doc'  => $uploaded['application_form'] ?: null
+        'generated_application_doc'  => $uploaded['application_form'] ?: null,
+        'client_resolution'          => $client_resolution,
     ];
     $additional_information = json_encode($info, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     // Insert application_form
     $stmt = $pdo->prepare("
         INSERT INTO public.application_form
-            (client_id,
-             contact_number,
-             application_for,
-             type_of_permit,
-             complete_name,
-             present_address,
-             telephone_number,
-             signature_of_applicant,
-             renewal_of_my_certificate_of_wildlife_registration_of,
-             permit_number,
-             additional_information,
-             date_today)
+            (client_id, contact_number, application_for, type_of_permit, complete_name, present_address,
+             telephone_number, signature_of_applicant,
+             renewal_of_my_certificate_of_wildlife_registration_of, permit_number,
+             additional_information, date_today)
         VALUES
-            (:client_id,
-             :contact_number,
-             'wildlife',
-             :type_of_permit,
-             :complete_name,
-             :present_address,
-             :telephone_number,
-             :signature_url,
-             :renewal_of,
-             :permit_number,
-             :additional_information,
-             to_char(now(),'YYYY-MM-DD'))
+            (:client_id, :contact_number, 'wildlife', :type_of_permit, :complete_name, :present_address,
+             :telephone_number, :signature_url,
+             :renewal_of, :permit_number,
+             :additional_information, to_char(now(),'YYYY-MM-DD'))
         RETURNING application_id
     ");
     $stmt->execute([
@@ -382,7 +441,7 @@ try {
     $approval_id = $stmt->fetchColumn();
     if (!$approval_id) throw new Exception('Failed to create approval record');
 
-    // Notification (admin-side feed) — include "from" and "to"
+    // Notification
     $msg = sprintf('%s requested a wildlife %s permit.', $first_name ?: $complete_name, $permit_type);
     $stmt = $pdo->prepare("
         INSERT INTO public.notifications (approval_id, incident_id, message, is_read, \"from\", \"to\")
@@ -392,8 +451,8 @@ try {
     $stmt->execute([
         ':approval_id' => $approval_id,
         ':message'     => $msg,
-        ':from_user'   => $user_uuid,   // current logged-in user's UUID
-        ':to_dept'     => 'Wildlife',   // target admin department
+        ':from_user'   => $user_uuid,
+        ':to_dept'     => 'Wildlife',
     ]);
     $notif_id = $stmt->fetchColumn();
 

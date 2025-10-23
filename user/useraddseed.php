@@ -2566,7 +2566,7 @@ try {
                 const city = (el.city?.value || "").trim();
                 const muni = (el.municipality?.value || "").trim();
                 if (!city && !muni) ok = setErr(el.city, "Pick City or Municipality.");
-                if (city && muni) ok = setErr(el.city, "Not both.");
+                // if (city && muni) ok = setErr(el.city, "Not both.");
                 return !!ok;
             };
 

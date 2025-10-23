@@ -130,11 +130,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         --accent-color: #3a86ff;
         --as-primary: #2b6625;
         --as-primary-dark: #1e4a1a;
+        --loader-size: 20px;
         --as-white: #fff;
         --as-light-gray: #f5f5f5;
         --as-radius: 8px;
         --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
         --as-trans: all .2s ease;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     .as-item {
@@ -1939,9 +1946,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Download buttons REMOVED (generation moved to submit flow) -->
 
-                <!-- Loading overlay (reused for submit progress) -->
+                <!-- Global Loading Overlay (unified) -->
                 <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
-                    <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px">Working…</div>
+                    <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;display:flex;gap:10px;align-items:center;">
+                        <span class="loader" style="width:var(--loader-size);height:var(--loader-size);border:2px solid #ddd;border-top-color:#2b6625;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite;"></span>
+                        <span id="loadingMessage">Working...</span>
+                    </div>
                 </div>
 
                 <!-- ================= NEW PERMIT REQUIREMENTS ================= -->
@@ -2371,76 +2381,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+    <!-- Toast -->
+    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
-    <!-- Confirmation Modal (Submit Application) -->
-    <!-- <div id="confirmModal" class="modal" style="display:none;">
-        <div class="modal-content" style="max-width:400px;text-align:center;">
-            <span id="closeConfirmModal" class="close-modal">&times;</span>
-            <h3>Confirm Submission</h3>
-            <p>Are you sure you want to submit this wood processing plant permit request?</p>
-            <button id="confirmSubmitBtn" class="btn btn-primary" style="margin:10px 10px 0 0;">Yes, Submit</button>
-            <button id="cancelSubmitBtn" class="btn btn-outline">Cancel</button>
-        </div>
-    </div> -->
-
-    <!-- Modal: Pending NEW request (WPP) -->
-    <!-- <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                You already have a pending <b>new</b> Wood Processing Plant permit request. Please wait for updates before submitting another one.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
-            </div>
-        </div>
-    </div> -->
-
-    <!-- Modal: Offer Renewal (user tried NEW but eligible for renewal) -->
-    <!-- <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+    <!-- Single  Modal -->
+    <div id="clientDecisionModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                You can’t request a <b>new</b> WPP permit because you already have an approved one. You’re allowed to request a <b>renewal</b> instead.
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600" id="clientDecisionTitle">Client</div>
+            <div style="padding:16px 20px;line-height:1.6" id="clientDecisionBody">
+                <!-- dynamic -->
             </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
-                <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee" id="clientDecisionActions">
+                <!-- dynamic buttons -->
             </div>
-        </div>
-    </div> -->
-
-    <!-- Modal: Need Approved NEW (user tried RENEWAL without prior approved NEW) -->
-    <!-- <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.<br><br>
-                You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="needApprovedNewOk" class="btn btn-outline" type="button">Okay</button>
-                <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
-            </div>
-        </div>
-    </div> -->
-    <!-- Universal App Modal -->
-    <!-- Put this once, near the end of <body> -->
-    <div id="appModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;gap:12px">
-                <div id="amTitle" style="font-weight:600">Title</div>
-                <button id="amClose" class="close-modal" type="button" aria-label="Close" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer">&times;</button>
-            </div>
-            <div id="amBody" style="padding:16px 20px;line-height:1.6">Body</div>
-            <div id="amFooter" style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee"></div>
         </div>
     </div>
 
-
-
-    <!-- Notification toast -->
-    <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
+    <!-- Single Modal -->
+    <div id="validationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600" id="validationTitle">Check Required</div>
+            <div style="padding:16px 20px;line-height:1.6" id="validationBody">
+                <!-- dynamic -->
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee" id="validationActions">
+                <!-- dynamic buttons -->
+            </div>
+        </div>
+    </div>
     <script>
         (function() {
             /* ===================== CONFIG ===================== */
@@ -2449,27 +2417,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             const SAVE_URL = new URL('../backend/users/wood/save_wood.php', window.location.href).toString();
             const PRECHECK_URL = new URL('../backend/users/wood/precheck_wood.php', window.location.href).toString();
-
-            async function precheckWith(type, pickedClientId = null) {
-                const fd = new FormData();
-                const first = (type === 'renewal') ? v('r-first-name') : v('new-first-name');
-                const middle = (type === 'renewal') ? v('r-middle-name') : v('new-middle-name');
-                const last = (type === 'renewal') ? v('r-last-name') : v('new-last-name');
-                fd.append('first_name', first);
-                fd.append('middle_name', middle);
-                fd.append('last_name', last);
-                fd.append('desired_permit_type', type);
-                if (pickedClientId) fd.append('use_client_id', pickedClientId);
-
-                const res = await fetch(PRECHECK_URL, {
-                    method: 'POST',
-                    body: fd,
-                    credentials: 'include'
-                });
-                const json = await res.json();
-                if (!res.ok) throw new Error(json.message || 'Precheck failed');
-                return json;
-            }
 
             /* ===================== Helpers ===================== */
             const $ = (sel) => document.querySelector(sel);
@@ -3036,141 +2983,208 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </html>`.trim();
             }
 
-            /* ===================== Loading overlay ===================== */
-            const loading = document.getElementById('loadingIndicator');
+            /* =========================
+               Loading + notification helpers
+            ========================== */
+            const loadingOverlay = document.getElementById('loadingIndicator');
+            const loadingMessageEl = document.getElementById('loadingMessage');
 
-            /* ===================== Modals ===================== */
-            const confirmModal = document.getElementById('confirmModal');
-            const confirmSubmitBtn = document.getElementById('confirmSubmitBtn');
-            const cancelSubmitBtn = document.getElementById('cancelSubmitBtn');
-            const closeConfirmModal = document.getElementById('closeConfirmModal');
-
-            const pendingNewModal = document.getElementById('pendingNewModal');
-            const pendingNewOk = document.getElementById('pendingNewOk');
-            const offerRenewalModal = document.getElementById('offerRenewalModal');
-            const offerRenewalOk = document.getElementById('offerRenewalOk');
-            const offerRenewalSwitch = document.getElementById('offerRenewalSwitch');
-            const needApprovedNewModal = document.getElementById('needApprovedNewModal');
-            const needApprovedNewOk = document.getElementById('needApprovedNewOk');
-            const needApprovedNewSwitch = document.getElementById('needApprovedNewSwitch');
-
-            // pendingNewOk?.addEventListener('click', () => (pendingNewModal.style.display = 'none'));
-            // offerRenewalOk?.addEventListener('click', () => (offerRenewalModal.style.display = 'none'));
-            // needApprovedNewOk?.addEventListener('click', () => (needApprovedNewModal.style.display = 'none'));
-            // closeConfirmModal?.addEventListener('click', () => (confirmModal.style.display = 'none'));
-            // cancelSubmitBtn?.addEventListener('click', () => (confirmModal.style.display = 'none'));
-
-            /* ===================== Universal Modal (Promise-based) ===================== */
-            const AppModal = (() => {
-                const root = document.getElementById('appModal');
-                const titleEl = document.getElementById('amTitle');
-                const bodyEl = document.getElementById('amBody');
-                const footerEl = document.getElementById('amFooter');
-                const closeBtn = document.getElementById('amClose');
-
-                let resolver = null;
-
-                function close(value = null) {
-                    root.style.display = 'none';
-                    // cleanup footer buttons
-                    footerEl.innerHTML = '';
-                    // release resolver safely
-                    if (resolver) {
-                        const r = resolver;
-                        resolver = null;
-                        r(value);
-                    }
-                    // allow background scroll again if you locked it
-                    document.body.style.overflow = '';
-                }
-
-                function btnEl({
-                    text,
-                    value,
-                    variant
-                }) {
-                    const b = document.createElement('button');
-                    b.type = 'button';
-                    b.textContent = text;
-                    b.className = variant === 'primary' ? 'btn btn-primary' : 'btn btn-outline';
-                    b.addEventListener('click', () => close(value ?? text));
-                    return b;
-                }
-
-                function open({
-                    title = 'Notice',
-                    html = '',
-                    buttons = [{
-                        text: 'OK',
-                        variant: 'primary',
-                        value: 'ok'
-                    }]
-                }) {
-                    return new Promise(resolve => {
-                        resolver = resolve;
-                        titleEl.textContent = title;
-                        bodyEl.innerHTML = html;
-                        footerEl.innerHTML = '';
-                        buttons.forEach(def => footerEl.appendChild(btnEl(def)));
-                        root.style.display = 'flex';
-                        document.body.style.overflow = 'hidden';
-                    });
-                }
-
-                // backdrop click closes as "cancel"
-                root.addEventListener('click', (e) => {
-                    if (e.target === root) close('cancel');
-                });
-                closeBtn?.addEventListener('click', () => close('cancel'));
-                window.addEventListener('keydown', (e) => {
-                    if (root.style.display !== 'none' && e.key === 'Escape') close('cancel');
-                });
-
-                return {
-                    open,
-                    close
-                };
-            })();
-
-            // tiny helper
-            const openModal = (opts) => AppModal.open(opts);
-
-            // ===== Candidate picker (add) =====
-            let chosenClientId = null;
-            let chosenClientName = null; // { first, middle, last }
-            let confirmNewClient = false;
-
-            // Apply a chosen client's name into the proper inputs.
-            // - Includes middle ('' if empty), per your instruction.
-            // - Also fills the declaration name with "First [Middle] Last"
-            function applyChosenClientNameToInputs(type, nameObj) {
-                const isRenewal = (type === 'renewal');
-                const idFirst = isRenewal ? 'r-first-name' : 'new-first-name';
-                const idMiddle = isRenewal ? 'r-middle-name' : 'new-middle-name';
-                const idLast = isRenewal ? 'r-last-name' : 'new-last-name';
-                const idDecl = isRenewal ? 'declaration-name-renewal' : 'declaration-name-new';
-
-                const f = (nameObj?.first ?? '');
-                const m = (nameObj?.middle ?? ''); // leave empty if table middle is empty
-                const l = (nameObj?.last ?? '');
-
-                const ef = document.getElementById(idFirst);
-                const em = document.getElementById(idMiddle);
-                const el = document.getElementById(idLast);
-                const ed = document.getElementById(idDecl);
-
-                if (ef) ef.value = f;
-                if (em) em.value = m;
-                if (el) el.value = l;
-                if (ed) ed.value = [f, m, l].filter(Boolean).join(' ');
+            function showLoading(message = 'Working...') {
+                if (loadingMessageEl) loadingMessageEl.textContent = message;
+                if (loadingOverlay) loadingOverlay.style.display = 'flex';
             }
 
-            // Names the submit should actually use (falls back to current inputs)
+            function hideLoading() {
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
+            }
+
+            /* =========================
+               Unified modal helpers
+            ========================== */
+            const clientDecisionModal = document.getElementById('clientDecisionModal');
+            const cdTitle = document.getElementById('clientDecisionTitle');
+            const cdBody = document.getElementById('clientDecisionBody');
+            const cdActions = document.getElementById('clientDecisionActions');
+
+            const validationModal = document.getElementById('validationModal');
+            const valTitle = document.getElementById('validationTitle');
+            const valBody = document.getElementById('validationBody');
+            const valActions = document.getElementById('validationActions');
+
+            function openClientDecision({
+                title,
+                html,
+                buttons
+            }) {
+                closeValidation();
+                cdTitle.textContent = title || 'Client';
+                cdBody.innerHTML = html || '';
+                cdActions.innerHTML = '';
+                (buttons || []).forEach(btn => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = btn.class || 'btn btn-primary';
+                    b.textContent = btn.text;
+                    b.addEventListener('click', btn.onClick);
+                    cdActions.appendChild(b);
+                });
+                clientDecisionModal.style.display = 'flex';
+            }
+
+            function closeClientDecision() {
+                clientDecisionModal.style.display = 'none';
+            }
+
+            function openValidation({
+                title,
+                html,
+                buttons
+            }) {
+                closeClientDecision();
+                valTitle.textContent = title || 'Validation';
+                valBody.innerHTML = html || '';
+                valActions.innerHTML = '';
+                (buttons || [{
+                    text: 'Close',
+                    class: 'btn btn-primary',
+                    onClick: () => closeValidation()
+                }]).forEach(btn => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = btn.class || 'btn btn-primary';
+                    b.textContent = btn.text;
+                    b.addEventListener('click', btn.onClick);
+                    valActions.appendChild(b);
+                });
+                validationModal.style.display = 'flex';
+            }
+
+            function closeValidation() {
+                validationModal.style.display = 'none';
+            }
+
+            window.addEventListener('click', (e) => {
+                if (e.target === clientDecisionModal) closeClientDecision();
+                if (e.target === validationModal) closeValidation();
+            });
+
+            function showBlock(code, message) {
+                const titles = {
+                    for_payment: 'Payment Required',
+                    pending_new: 'Pending Application',
+                    pending_renewal: 'Pending Application',
+                    unexpired_permit: 'Unexpired Permit Found'
+                };
+                openValidation({
+                    title: titles[code] || 'Notice',
+                    html: message || 'Please resolve this before continuing.',
+                    buttons: [{
+                        text: 'Close',
+                        class: 'btn btn-primary',
+                        onClick: () => closeValidation()
+                    }]
+                });
+            }
+
+            function showSuggestRenewal() {
+                openValidation({
+                    title: 'Consider Renewal',
+                    html: 'We detected a released NEW Wood Processing Plant permit for this client. You may file a renewal instead.',
+                    buttons: [{
+                        text: 'Request renewal',
+                        class: 'btn btn-primary',
+                        onClick: () => {
+                            closeValidation();
+                            requestRenewalFromNew();
+                        }
+                    }, {
+                        text: 'Close',
+                        class: 'btn btn-outline',
+                        onClick: () => closeValidation()
+                    }]
+                });
+            }
+
+            function requestRenewalFromNew() {
+                setType('renewal');
+                autofillRenewalFromNew();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            }
+
+            function requestNewFromRenewal() {
+                setType('new');
+                autofillNewFromRenewal();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            }
+
+            let chosenClientId = null;
+            let chosenClientName = null;
+            let confirmNewClient = false;
+            let precheckCache = null;
+            let suggestedClient = null;
+            let existingClientNames = null;
+
+            window.__FORCE_NEW_CLIENT__ = false;
+            window.__USE_EXISTING_CLIENT_ID__ = null;
+
+            function applyClientNames(names) {
+                if (!names) return;
+                const first = names.first || names.first_name || '';
+                const middle = names.middle || names.middle_name || '';
+                const last = names.last || names.last_name || '';
+                const decl = [first, last].filter(Boolean).join(' ');
+
+                const setVal = (id, value) => {
+                    const el = document.getElementById(id);
+                    if (el != null) el.value = value;
+                };
+
+                setVal('new-first-name', first);
+                setVal('new-middle-name', middle);
+                setVal('new-last-name', last);
+                setVal('declaration-name-new', decl);
+
+                setVal('r-first-name', first);
+                setVal('r-middle-name', middle);
+                setVal('r-last-name', last);
+                setVal('declaration-name-renewal', decl);
+
+                existingClientNames = {
+                    first,
+                    middle,
+                    last
+                };
+                chosenClientName = {
+                    first,
+                    middle,
+                    last
+                };
+            }
+
+            function clearPrecheckState() {
+                chosenClientId = null;
+                chosenClientName = null;
+                confirmNewClient = false;
+                precheckCache = null;
+                suggestedClient = null;
+                existingClientNames = null;
+                window.__FORCE_NEW_CLIENT__ = false;
+                window.__USE_EXISTING_CLIENT_ID__ = null;
+            }
+
+            clearPrecheckState();
+
             function getEffectiveNames() {
                 if (chosenClientName) return {
                     ...chosenClientName
                 };
-                const isRenewal = (activePermitType() === 'renewal');
+                const isRenewal = activePermitType() === 'renewal';
                 return {
                     first: v(isRenewal ? 'r-first-name' : 'new-first-name'),
                     middle: v(isRenewal ? 'r-middle-name' : 'new-middle-name'),
@@ -3178,323 +3192,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 };
             }
 
-
-            function escapeHtml(s = '') {
-                return String(s).replace(/[&<>"']/g, c => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                } [c]));
-            }
-
-            function renderCandidateList(cands) {
-                if (!Array.isArray(cands) || !cands.length) return '';
-                const rows = cands.map((c, i) => {
-                    const name = [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ');
-                    const pct = (c.score != null) ? ` <small style="opacity:.65">~${Math.round((c.score||0)*100)}% match</small>` : '';
-                    return `<label style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #eee;">
-      <input type="radio" name="cand_pick" value="${String(c.client_id)}" ${i===0?'checked':''}>
-      <span>${escapeHtml(name)}${pct}</span>
-    </label>`;
-                }).join('');
-                return `<div style="max-height:220px;overflow:auto;padding-top:6px;">${rows}</div>`;
-            }
-
-            function readSelectedCandidateId() {
-                const r = document.querySelector('input[name="cand_pick"]:checked');
-                return r ? r.value : null;
-            }
-
-
-
-            // Autofill helper when switching between types via modals
-            function autofillRenewalFromNew() {
-                const map = [
-                    ['new-first-name', 'r-first-name'],
-                    ['new-middle-name', 'r-middle-name'],
-                    ['new-last-name', 'r-last-name'],
-                    ['new-plant-location', 'r-plant-location'],
-                    ['new-contact-number', 'r-contact-number'],
-                    ['new-email-address', 'r-email-address'],
-                ];
-                map.forEach(([src, dst]) => {
-                    const s = document.getElementById(src);
-                    const d = document.getElementById(dst);
-                    if (s && d && typeof s.value === 'string') d.value = s.value;
-                });
-                if (!v('declaration-name-renewal')) {
-                    const nm = [v('new-first-name'), v('new-middle-name'), v('new-last-name')].filter(Boolean).join(' ');
-                    const dn = document.getElementById('declaration-name-renewal');
-                    if (dn) dn.value = nm;
-                }
-                const addr = v('new-business-address');
-                const rn = document.getElementById('r-address');
-                if (rn && !rn.value) rn.value = addr;
-            }
-
-            function autofillNewFromRenewal() {
-                const map = [
-                    ['r-first-name', 'new-first-name'],
-                    ['r-middle-name', 'new-middle-name'],
-                    ['r-last-name', 'new-last-name'],
-                    ['r-plant-location', 'new-plant-location'],
-                    ['r-contact-number', 'new-contact-number'],
-                    ['r-email-address', 'new-email-address'],
-                ];
-                map.forEach(([src, dst]) => {
-                    const s = document.getElementById(src);
-                    const d = document.getElementById(dst);
-                    if (s && d && typeof s.value === 'string') d.value = s.value;
-                });
-                if (!v('declaration-name-new')) {
-                    const nm = [v('r-first-name'), v('r-middle-name'), v('r-last-name')].filter(Boolean).join(' ');
-                    const dn = document.getElementById('declaration-name-new');
-                    if (dn) dn.value = nm;
-                }
-                if (!v('new-business-address')) {
-                    const a = v('r-address');
-                    const nb = document.getElementById('new-business-address');
-                    if (nb) nb.value = a;
-                }
-            }
-
-            // offerRenewalSwitch?.addEventListener('click', () => {
-            //     offerRenewalModal.style.display = 'none';
-            //     setType('renewal');
-            //     autofillRenewalFromNew();
-            //     window.scrollTo({
-            //         top: 0,
-            //         behavior: 'smooth'
-            //     });
-            // });
-
-            // needApprovedNewSwitch?.addEventListener('click', () => {
-            //     needApprovedNewModal.style.display = 'none';
-            //     setType('new');
-            //     autofillNewFromRenewal();
-            //     window.scrollTo({
-            //         top: 0,
-            //         behavior: 'smooth'
-            //     });
-            // });
-            // Always-confirm modal for RENEWAL before anything else
-            async function confirmExistingClientForRenewal(precheckJson, type) {
-                // build a single candidate from payload (candidates[0] OR existing_client_* echo)
-                const candidate =
-                    (Array.isArray(precheckJson.candidates) && precheckJson.candidates[0]) ||
-                    (precheckJson.existing_client_id ? {
-                            client_id: String(precheckJson.existing_client_id),
-                            first_name: precheckJson.existing_client_first || '',
-                            middle_name: precheckJson.existing_client_middle || '',
-                            last_name: precheckJson.existing_client_last || '',
-                            score: precheckJson.suggestion_score ?? null,
-                        } :
-                        null);
-
-                // show the modal first, always
-                const act = await openModal({
-                    title: 'Use existing client',
-                    html: candidate ?
-                        `Is this the correct client?${renderCandidateList([candidate])}` : `We couldn’t detect an existing client for the name you entered.<br><br><b>Renewals must be tied to an existing client record.</b>`,
-                    buttons: candidate ? [{
-                            text: 'Cancel',
-                            variant: 'outline',
-                            value: 'cancel'
-                        },
-                        {
-                            text: 'Confirm',
-                            variant: 'primary',
-                            value: 'confirm'
-                        },
-                    ] : [{
-                            text: 'Cancel',
-                            variant: 'outline',
-                            value: 'cancel'
-                        },
-                        {
-                            text: 'Switch to New',
-                            variant: 'primary',
-                            value: 'switch'
-                        },
-                    ],
-                });
-
-                if (act === 'cancel') return {
-                    proceed: false
-                };
-                if (!candidate && act === 'switch') {
-                    setType('new');
-                    autofillNewFromRenewal();
-                    window.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                    });
-                    return {
-                        proceed: false
-                    };
-                }
-                if (!candidate) return {
-                    proceed: false
-                };
-
-                // lock selection into the form
-                chosenClientId = candidate.client_id;
-                chosenClientName = {
-                    first: candidate.first_name || '',
-                    middle: candidate.middle_name || '',
-                    last: candidate.last_name || '',
-                };
-                applyChosenClientNameToInputs(type, chosenClientName);
-
-                // re-run precheck now that client is locked to surface blockers tied to THIS client
-                const j = await precheckWith(type, chosenClientId);
-
-                if (j.block === 'for_payment') {
-                    await openModal({
-                        title: 'Payment Due',
-                        html: 'You still have an unpaid wood permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
-                        buttons: [{
-                            text: 'Okay',
-                            variant: 'primary',
-                            value: 'ok'
-                        }],
-                    });
-                    return {
-                        proceed: false
-                    };
-                }
-                if (j.block === 'pending_renewal') {
-                    await openModal({
-                        title: 'Pending Renewal',
-                        html: 'This client already has a pending <b>renewal</b>.',
-                        buttons: [{
-                            text: 'Okay',
-                            variant: 'primary',
-                            value: 'ok'
-                        }],
-                    });
-                    return {
-                        proceed: false
-                    };
-                }
-
-                // NEW: Block if the client has a released wood permit that hasn't expired yet
-                if (j.block === 'unexpired_permit') {
-                    await openModal({
-                        title: 'Renewal Not Allowed',
-                        html: `<div style="padding:16px 20px;line-height:1.6">
-                 You still have an <b>unexpired</b> lumber permit.<br><br>
-                 Please wait until your current permit <b>expires</b> before requesting a renewal.
-               </div>`,
-                        buttons: [{
-                            text: 'Okay',
-                            variant: 'primary',
-                            value: 'ok'
-                        }],
-                    });
-                    return {
-                        proceed: false
-                    };
-                }
-
-
-                if (j.block === 'need_approved_new') {
-                    const sw = await openModal({
-                        title: 'Action Required',
-                        html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.',
-                        buttons: [{
-                                text: 'Okay',
-                                variant: 'outline',
-                                value: 'ok'
-                            },
-                            {
-                                text: 'Switch to New',
-                                variant: 'primary',
-                                value: 'switch'
-                            },
-                        ],
-                    });
-                    if (sw === 'switch') {
-                        setType('new');
-                        autofillNewFromRenewal();
-                        window.scrollTo({
-                            top: 0,
-                            behavior: 'smooth'
-                        });
-                    }
-                    return {
-                        proceed: false
-                    };
-                }
-
-                // final confirm -> submit
-                const conf = await openModal({
-                    title: 'Confirm Submission',
-                    html: 'Are you sure you want to submit this wood processing plant permit renewal?',
-                    buttons: [{
-                            text: 'Cancel',
-                            variant: 'outline',
-                            value: 'cancel'
-                        },
-                        {
-                            text: 'Yes, Submit',
-                            variant: 'primary',
-                            value: 'submit'
-                        },
-                    ],
-                });
-                if (conf === 'submit') {
-                    if (window.validateWPPForm && !window.validateWPPForm()) {
-                        await openModal({
-                            title: 'Fix required fields',
-                            html: 'Please correct the highlighted fields, then submit again.',
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }],
-                        });
-                    } else {
-                        await doFinalSubmit();
-                    }
-                }
-                return {
-                    proceed: true
-                };
-
-            }
-
-            /* ===================== PRECHECK before confirm ===================== */
             const submitApplicationBtn = document.getElementById('submitApplication');
+            const btnSubmit = submitApplicationBtn;
 
-            function validateTopInputs() {
-                if (activePermitType() === 'new') {
-                    if (!v('new-first-name') || !v('new-last-name')) {
-                        toast('First and Last name are required for New applications.');
-                        return false;
-                    }
-                } else {
-                    if (!v('r-first-name') || !v('r-last-name')) {
-                        toast('First and Last name are required for Renewal.');
-                        return false;
-                    }
+            btnSubmit?.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                ev.stopImmediatePropagation();
+
+                clearPrecheckState();
+
+                const type = activePermitType();
+                const first = type === 'renewal' ? v('r-first-name') : v('new-first-name');
+                const middle = type === 'renewal' ? v('r-middle-name') : v('new-middle-name');
+                const last = type === 'renewal' ? v('r-last-name') : v('new-last-name');
+
+                if (!first || !last) {
+                    toast('First and last name are required.');
+                    return;
                 }
-                return true;
-            }
 
-            /* ===================== PRECHECK before confirm (using modal) ===================== */
-            submitApplicationBtn?.addEventListener('click', async () => {
-                if (!validateTopInputs()) return;
-                confirmNewClient = false;
-
+                showLoading('Checking records...');
                 try {
-                    const type = activePermitType();
-                    const first = type === 'renewal' ? v('r-first-name') : v('new-first-name');
-                    const middle = type === 'renewal' ? v('r-middle-name') : v('new-middle-name');
-                    const last = type === 'renewal' ? v('r-last-name') : v('new-last-name');
-
                     const fd = new FormData();
                     fd.append('first_name', first);
                     fd.append('middle_name', middle);
@@ -3507,390 +3226,192 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         credentials: 'include'
                     });
                     const json = await res.json();
-                    if (type === 'renewal') {
-                        const {
-                            proceed
-                        } = await confirmExistingClientForRenewal(json, type);
-                        // The helper handles blockers, switches, and final submit if confirmed.
-                        // We stop the click flow here either way to avoid double-modals.
-                        return;
-                    }
-                    // If backend already knows the exact/best client, keep it for renewals
-                    // If backend already knows the exact/best client, keep it for renewals
-                    const precheckId = (json.existing_client_id || json.exact_match_client_id || json.status_client_id) ?
-                        String(json.existing_client_id || json.exact_match_client_id || json.status_client_id) :
-                        null;
-                    if (activePermitType() === 'renewal' && precheckId) {
-                        chosenClientId = precheckId; // will be sent as use_existing_client_id on submit
-                    }
+                    if (!res.ok || !json.ok) throw new Error(json.message || 'Precheck failed');
 
-                    if (!res.ok) throw new Error(json.message || 'Precheck failed');
+                    precheckCache = json;
 
-                    // GLOBAL BLOCKER: for_payment
-                    if (json.block === 'for_payment') {
-                        await openModal({
-                            title: 'Payment Due',
-                            html: 'You currently have a Wood approval marked <b>for payment</b>. You can’t file a new or renewal until payment is settled.',
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }]
-                        });
-                        return;
-                    }
+                    if (json.decision === 'existing' && json.client && json.client.client_id) {
+                        hideLoading();
+                        const client = json.client;
+                        const flags = json.flags || {};
+                        const full = client.full_name || [client.first_name, client.middle_name, client.last_name].filter(Boolean).join(' ') || 'Existing client';
 
-
-                    // Blocks (same as before)
-                    if (json.block === 'pending_new') {
-                        await openModal({
-                            title: 'Pending Request',
-                            html: 'You already have a pending <b>new</b> Wood Processing Plant permit request. Please wait for updates before submitting another one.',
+                        openClientDecision({
+                            title: 'Is this the correct client?',
+                            html: 'We detected an existing client:<div style="margin:8px 0;font-weight:600">' + full + '</div>',
                             buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }]
-                        });
-                        return;
-                    }
-                    if (json.block === 'pending_renewal') {
-                        await openModal({
-                            title: 'Pending Renewal',
-                            html: 'You already have a pending <b>renewal</b> for a Wood Processing Plant permit. Please wait for the update first.',
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }]
-                        });
-                        return;
-                    }
-                    if (json.block === 'need_approved_new') {
-                        const act = await openModal({
-                            title: 'Action Required',
-                            html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.<br><br>You can switch to a NEW permit request. We’ll copy over what you’ve already entered.',
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'outline',
-                                value: 'ok'
+                                text: 'No, cancel',
+                                class: 'btn btn-outline',
+                                onClick: () => {
+                                    clearPrecheckState();
+                                    closeClientDecision();
+                                }
                             }, {
-                                text: 'Request new',
-                                variant: 'primary',
-                                value: 'switch'
-                            }]
-                        });
-                        if (act === 'switch') {
-                            setType('new');
-                            autofillNewFromRenewal();
-                            window.scrollTo({
-                                top: 0,
-                                behavior: 'smooth'
-                            });
-                        }
-                        return;
-                    }
-
-                    // Offer (same as before)
-                    if (json.offer === 'renewal' && type === 'new') {
-                        const act = await openModal({
-                            title: 'Renewal Available',
-                            html: 'You can’t request a <b>new</b> WPP permit because you already have an released one. You’re allowed to request a <b>renewal</b> instead.',
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'outline',
-                                value: 'ok'
+                                text: 'Submit as new',
+                                class: 'btn btn-outline',
+                                onClick: async () => {
+                                    closeClientDecision();
+                                    chosenClientId = null;
+                                    chosenClientName = null;
+                                    existingClientNames = null;
+                                    confirmNewClient = true;
+                                    window.__FORCE_NEW_CLIENT__ = true;
+                                    window.__USE_EXISTING_CLIENT_ID__ = null;
+                                    await finalSubmit();
+                                }
                             }, {
-                                text: 'Request renewal',
-                                variant: 'primary',
-                                value: 'switch'
-                            }]
-                        });
-                        if (act === 'switch') {
-                            setType('renewal');
-                            autofillRenewalFromNew();
-                            window.scrollTo({
-                                top: 0,
-                                behavior: 'smooth'
-                            });
-                        }
-                        return;
-                    }
+                                text: 'Yes, continue',
+                                class: 'btn btn-primary',
+                                onClick: async () => {
+                                    window.__FORCE_NEW_CLIENT__ = false;
+                                    confirmNewClient = false;
+                                    chosenClientId = String(client.client_id);
+                                    window.__USE_EXISTING_CLIENT_ID__ = chosenClientId;
+                                    applyClientNames(client);
+                                    closeClientDecision();
 
-                    // ===== New bits: show candidates if backend found similar names
-                    chosenClientId = null;
-                    const cands = Array.isArray(json.candidates) ? json.candidates :
-                        (json.existing_client_id ? [{
-                            client_id: json.existing_client_id,
-                            first_name: json.existing_client_first || '',
-                            middle_name: json.existing_client_middle || '',
-                            last_name: json.existing_client_last || '',
-                            score: json.suggestion_score || 0.7
-                        }] : []);
-
-                    if (cands.length) {
-                        if (type === 'new') {
-                            const act = await openModal({
-                                title: 'Use existing client?',
-                                html: `We found existing client records that look like a match. Do you want to use one of them?${renderCandidateList(cands)}`,
-                                buttons: [{
-                                        text: 'Cancel',
-                                        variant: 'outline',
-                                        value: 'cancel'
-                                    },
-                                    {
-                                        text: 'Create as new',
-                                        variant: 'outline',
-                                        value: 'new'
-                                    },
-                                    {
-                                        text: 'Use existing',
-                                        variant: 'primary',
-                                        value: 'use'
-                                    }
-                                ]
-                            });
-                            if (act === 'cancel') return;
-
-                            if (act === 'new') {
-                                confirmNewClient = true;
-                                chosenClientId = null;
-                                chosenClientName = null;
-
-                                // RE-CHECK RULES without binding to a client
-                                const j = await precheckWith(type, null);
-                                if (j.block === 'for_payment') {
-                                    await openModal({
-                                        title: 'Payment Due',
-                                        html: 'You have a WOOD approval <b>for payment</b>.',
-                                        buttons: [{
-                                            text: 'Okay',
-                                            variant: 'primary',
-                                            value: 'ok'
-                                        }]
-                                    });
-                                    return;
-                                }
-                                if (j.block === 'pending_new') {
-                                    await openModal({
-                                        title: 'Pending Request',
-                                        html: 'You already have a pending <b>new</b> request.',
-                                        buttons: [{
-                                            text: 'Okay',
-                                            variant: 'primary',
-                                            value: 'ok'
-                                        }]
-                                    });
-                                    return;
-                                }
-                                if (j.block === 'pending_renewal') {
-                                    await openModal({
-                                        title: 'Pending Renewal',
-                                        html: 'You already have a pending <b>renewal</b>.',
-                                        buttons: [{
-                                            text: 'Okay',
-                                            variant: 'primary',
-                                            value: 'ok'
-                                        }]
-                                    });
-                                    return;
-                                }
-                                if (j.offer === 'renewal') {
-                                    const sw = await openModal({
-                                        title: 'Renewal Available',
-                                        html: 'You can’t request a <b>new</b> WPP permit because you already have an released one. You’re allowed to request a <b>renewal</b> instead.',
-                                        buttons: [{
-                                            text: 'Okay',
-                                            variant: 'outline',
-                                            value: 'ok'
-                                        }, {
-                                            text: 'Request renewal',
-                                            variant: 'primary',
-                                            value: 'switch'
-                                        }]
-                                    });
-                                    if (sw === 'switch') {
-                                        setType('renewal');
-                                        autofillRenewalFromNew();
-                                        window.scrollTo({
-                                            top: 0,
-                                            behavior: 'smooth'
-                                        });
+                                    if (flags.has_for_payment) {
+                                        showBlock('for_payment', 'You still have an unpaid Wood Processing Plant permit. Please settle it before submitting another request.');
                                         return;
                                     }
-                                }
-                            } else if (act === 'use') {
-                                confirmNewClient = false;
-                                const picked = readSelectedCandidateId();
-                                if (picked) {
-                                    chosenClientId = picked;
-                                    const match = cands.find(c => String(c.client_id) === String(picked));
-                                    chosenClientName = match ? {
-                                        first: match.first_name || '',
-                                        middle: match.middle_name || '',
-                                        last: match.last_name || ''
-                                    } : null;
-                                    if (chosenClientName) applyChosenClientNameToInputs(type, chosenClientName);
 
-                                    // RE-CHECK RULES bound to this client
-                                    const j = await precheckWith(type, picked);
-                                    if (j.block === 'for_payment') {
-                                        await openModal({
-                                            title: 'Payment Due',
-                                            html: 'You still have an unpaid lumber permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
-                                            buttons: [{
-                                                text: 'Okay',
-                                                variant: 'primary',
-                                                value: 'ok'
-                                            }]
-                                        });
-                                        return;
-                                    }
-                                    if (j.block === 'pending_new') {
-                                        await openModal({
-                                            title: 'Pending Request',
-                                            html: 'This client already has a pending <b>new</b> request.',
-                                            buttons: [{
-                                                text: 'Okay',
-                                                variant: 'primary',
-                                                value: 'ok'
-                                            }]
-                                        });
-                                        return;
-                                    }
-                                    if (j.block === 'pending_renewal') {
-                                        await openModal({
-                                            title: 'Pending Renewal',
-                                            html: 'This client already has a pending <b>renewal</b>.',
-                                            buttons: [{
-                                                text: 'Okay',
-                                                variant: 'primary',
-                                                value: 'ok'
-                                            }]
-                                        });
-                                        return;
-                                    }
-                                    if (j.block === 'need_approved_new' && type === 'renewal') {
-                                        const sw = await openModal({
-                                            title: 'Action Required',
-                                            html: 'To request a renewal, you must have an approved <b>NEW</b> WPP permit on record.',
-                                            buttons: [{
-                                                text: 'Okay',
-                                                variant: 'outline',
-                                                value: 'ok'
-                                            }, {
-                                                text: 'Request new',
-                                                variant: 'primary',
-                                                value: 'switch'
-                                            }]
-                                        });
-                                        if (sw === 'switch') {
-                                            setType('new');
-                                            autofillNewFromRenewal();
-                                            window.scrollTo({
-                                                top: 0,
-                                                behavior: 'smooth'
-                                            });
+                                    if (type === 'new') {
+                                        if (flags.has_unexpired) {
+                                            showBlock('unexpired_permit', 'We found a released Wood Processing Plant permit that is still valid. You cannot file a new application.');
+                                            return;
+                                        }
+                                        if (json.suggest === 'renewal') {
+                                            showSuggestRenewal();
+                                            return;
+                                        }
+                                        if (flags.has_pending_new) {
+                                            showBlock('pending_new', 'You already have a pending NEW Wood Processing Plant application.');
+                                            return;
+                                        }
+                                        if (flags.has_pending_renewal) {
+                                            showBlock('pending_renewal', 'You already have a pending Wood Processing Plant renewal application.');
+                                            return;
+                                        }
+                                    } else {
+                                        if (flags.has_pending_new || flags.has_pending_renewal) {
+                                            showBlock('pending_renewal', 'You already have a pending Wood Processing Plant application. Please wait for the update first.');
+                                            return;
+                                        }
+                                        if (flags.has_unexpired) {
+                                            showBlock('unexpired_permit', 'You still have an unexpired Wood Processing Plant permit. Please wait until it expires to renew.');
                                             return;
                                         }
                                     }
-                                    if (j.offer === 'renewal' && type === 'new') {
-                                        const sw = await openModal({
-                                            title: 'Renewal Available',
-                                            html: 'You can’t request a <b>new</b> WPP permit because you already have an approved one.',
-                                            buttons: [{
-                                                text: 'Okay',
-                                                variant: 'outline',
-                                                value: 'ok'
-                                            }, {
-                                                text: 'Request renewal',
-                                                variant: 'primary',
-                                                value: 'switch'
-                                            }]
-                                        });
-                                        if (sw === 'switch') {
-                                            setType('renewal');
-                                            autofillRenewalFromNew();
-                                            window.scrollTo({
-                                                top: 0,
-                                                behavior: 'smooth'
-                                            });
-                                            return;
-                                        }
-                                    }
+
+                                    await finalSubmit();
                                 }
-                            }
-
-
-                        } else {
-
-
-                        }
+                            }]
+                        });
+                        return;
                     }
 
-
-                    // Final confirmation
-                    const conf = await openModal({
-                        title: 'Confirm Submission',
-                        html: 'Are you sure you want to submit this wood processing plant permit request?',
-                        buttons: [{
-                                text: 'Cancel',
-                                variant: 'outline',
-                                value: 'cancel'
-                            },
-                            {
-                                text: 'Yes, Submit',
-                                variant: 'primary',
-                                value: 'submit'
-                            }
-                        ]
-                    });
-                    if (conf === 'submit') {
-                        if (window.validateWPPForm && !window.validateWPPForm()) {
-                            await openModal({
-                                title: 'Fix required fields',
-                                html: 'Please correct the highlighted fields, then submit again.',
+                    if (json.decision === 'none') {
+                        hideLoading();
+                        if (type === 'renewal') {
+                            openClientDecision({
+                                title: 'No Client Detected',
+                                html: 'No client matched these details. Do you want to request a new permit instead, or continue submitting this renewal as a new client?',
                                 buttons: [{
-                                    text: 'Okay',
-                                    variant: 'primary',
-                                    value: 'ok'
-                                }],
+                                    text: 'Cancel',
+                                    class: 'btn btn-outline',
+                                    onClick: () => {
+                                        clearPrecheckState();
+                                        closeClientDecision();
+                                    }
+                                }, {
+                                    text: 'Request new',
+                                    class: 'btn btn-outline',
+                                    onClick: () => {
+                                        closeClientDecision();
+                                        requestNewFromRenewal();
+                                    }
+                                }, {
+                                    text: 'Continue renewal',
+                                    class: 'btn btn-primary',
+                                    onClick: async () => {
+                                        closeClientDecision();
+                                        confirmNewClient = true;
+                                        window.__FORCE_NEW_CLIENT__ = true;
+                                        window.__USE_EXISTING_CLIENT_ID__ = null;
+                                        await finalSubmit();
+                                    }
+                                }]
                             });
                         } else {
-                            await doFinalSubmit();
+                            openClientDecision({
+                                title: 'Submit as New Client?',
+                                html: 'No existing client was detected for these details. Submit as a new client?',
+                                buttons: [{
+                                    text: 'Cancel',
+                                    class: 'btn btn-outline',
+                                    onClick: () => closeClientDecision()
+                                }, {
+                                    text: 'Submit',
+                                    class: 'btn btn-primary',
+                                    onClick: async () => {
+                                        closeClientDecision();
+                                        confirmNewClient = true;
+                                        window.__FORCE_NEW_CLIENT__ = true;
+                                        window.__USE_EXISTING_CLIENT_ID__ = null;
+                                        await finalSubmit();
+                                    }
+                                }]
+                            });
                         }
+                        return;
                     }
 
+                    if (json.block) {
+                        hideLoading();
+                        showBlock(json.block, json.message);
+                        return;
+                    }
 
-                } catch (e) {
-                    console.error(e);
-                    const conf = await openModal({
-                        title: 'Confirm Submission',
-                        html: 'Precheck failed unexpectedly. Do you still want to submit?',
-                        buttons: [{
-                            text: 'Cancel',
-                            variant: 'outline',
-                            value: 'cancel'
-                        }, {
-                            text: 'Yes, Submit',
-                            variant: 'primary',
-                            value: 'submit'
-                        }]
-                    });
-                    if (conf === 'submit') await doFinalSubmit();
+                    if (json.suggest === 'renewal' && type === 'new') {
+                        hideLoading();
+                        showSuggestRenewal();
+                        return;
+                    }
+
+                    hideLoading();
+                    await finalSubmit();
+                } catch (err) {
+                    console.error(err);
+                    hideLoading();
+                    toast(err?.message || 'Precheck failed. Please try again.');
                 }
             });
 
-            /* ===== send table HTML too (for application_form columns) ===== */
+            async function finalSubmit() {
+                if (typeof window.validateWPPForm === 'function') {
+                    const ok = window.validateWPPForm();
+                    if (!ok) {
+                        if (typeof window.__scrollFirstErrorIntoView === 'function') {
+                            window.__scrollFirstErrorIntoView();
+                        }
+                        toast('Please fix the highlighted fields.');
+                        return;
+                    }
+                }
 
+                if (precheckCache && precheckCache.block) {
+                    showBlock(precheckCache.block, precheckCache.message || 'Please resolve outstanding applications before continuing.');
+                    return;
+                }
 
+                await doFinalSubmit();
+            }
 
-
-
+            /* ===================== Final Submit (same logic, callable) ===================== */
             /* ===================== Final Submit (same logic, callable) ===================== */
             async function doFinalSubmit() {
                 // block UI
-                loading.style.display = 'flex';
+                showLoading('Submitting application...');
                 submitApplicationBtn.disabled = true;
 
                 try {
@@ -3924,11 +3445,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const type = activePermitType();
                     fd.append('permit_type', type);
 
-                    if (chosenClientId) {
-                        fd.append('use_existing_client_id', String(chosenClientId)); // bind to an existing client
+                    const useExistingId = window.__USE_EXISTING_CLIENT_ID__ || (chosenClientId ? String(chosenClientId) : '');
+                    if (useExistingId) {
+                        fd.append('use_existing_client_id', useExistingId);
                     }
-                    if (confirmNewClient) {
-                        fd.append('confirm_new_client', '1'); // explicitly create a NEW client despite fuzzy matches
+                    if (window.__FORCE_NEW_CLIENT__ || confirmNewClient) {
+                        fd.append('force_new_client', '1');
+                        fd.append('confirm_new_client', '1');
                     }
 
 
@@ -4004,12 +3527,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
 
                     toast("Application submitted. We'll notify you once reviewed.");
+                    clearPrecheckState();
                     resetAllFields();
                 } catch (e) {
                     console.error(e);
                     toast(e?.message || 'Submission failed. Please try again.');
                 } finally {
-                    loading.style.display = 'none';
+                    hideLoading();
                     submitApplicationBtn.disabled = false;
                 }
             }
@@ -4224,54 +3748,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return next;
             }
             // let chosenClientId = null;
-
-            function escapeHtml(s = '') {
-                return s.replace(/[&<>"']/g, c => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                } [c]));
-            }
-
-            function renderCandidateList(cands) {
-                if (!Array.isArray(cands) || !cands.length) return '';
-                const rows = cands.map((c, i) => {
-                    const name = [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ');
-                    const pct = c.score != null ? ` <small style="opacity:.7">match ~${Math.round((c.score||0)*100)}%</small>` : '';
-                    return `<label style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #eee;">
-      <input type="radio" name="cand_pick" value="${String(c.client_id)}" ${i===0?'checked':''}>
-      <span>${escapeHtml(name)}${pct}</span>
-    </label>`;
-                }).join('');
-                return `<div style="max-height:220px;overflow:auto;padding-top:6px;">${rows}</div>`;
-            }
-
-            function readSelectedCandidateId() {
-                const r = document.querySelector('input[name="cand_pick"]:checked');
-                return r ? r.value : null;
-            }
-            // RUN PRECHECK AGAIN (optionally bound to a picked client)
-            // async function precheckWith(type, pickedClientId = null) {
-            //     const fd = new FormData();
-            //     const first = type === 'renewal' ? v('r-first-name') : v('new-first-name');
-            //     const middle = type === 'renewal' ? v('r-middle-name') : v('new-middle-name');
-            //     const last = type === 'renewal' ? v('r-last-name') : v('new-last-name');
-            //     fd.append('first_name', first);
-            //     fd.append('middle_name', middle);
-            //     fd.append('last_name', last);
-            //     fd.append('desired_permit_type', type);
-            //     if (pickedClientId) fd.append('use_client_id', pickedClientId);
-            //     const res = await fetch(PRECHECK_URL, {
-            //         method: 'POST',
-            //         body: fd,
-            //         credentials: 'include'
-            //     });
-            //     const json = await res.json();
-            //     if (!res.ok) throw new Error(json.message || 'Precheck failed');
-            //     return json;
-            // }
 
 
             function setError(afterEl, msg) {
@@ -4568,8 +4044,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (sel === '#r-previous-permit' || sel === '#r-expiry-date') {
                     const prev = $('#r-previous-permit')?.value?.trim();
                     const exp = $('#r-expiry-date')?.value?.trim();
-                    if ((prev && !exp) || (!prev && exp)) msg = 'Provide BOTH previous permit no. and expiry date, or leave both empty.';
-                    else if (sel === '#r-previous-permit' && prev && !SIMPLE_ID_RX.test(prev)) msg = 'Use letters/numbers, slashes or dashes.';
+                    // if ((prev && !exp) || (!prev && exp)) msg = 'Provide BOTH previous permit no. and expiry date, or leave both empty.';
+                    if (sel === '#r-previous-permit' && prev && !SIMPLE_ID_RX.test(prev)) msg = 'Use letters/numbers, slashes or dashes.';
                     else msg = '';
                 }
 
@@ -4734,10 +4210,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const guard = (e) => {
                     const ok = validateSection(activeType());
                     if (!ok) {
-                        // block all later handlers (including precheck)
-                        e.preventDefault?.();
-                        e.stopImmediatePropagation?.();
-
                         // focus/scroll to first visible error
                         const firstErr = document.querySelector('.field-error:not([style*="display: none"])');
                         const target = firstErr?.previousElementSibling;
@@ -4748,9 +4220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 block: 'center'
                             });
                         }
-                        return false;
                     }
-                    return true; // let precheck run
                 };
 
                 // IMPORTANT: capture=true so this runs BEFORE your main click handler

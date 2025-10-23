@@ -39,14 +39,14 @@ try {
         ? strtolower($_POST['desired_permit_type'])
         : 'new';
 
-    // NEW: prefer explicit client id chosen from "Use existing"
+    // Optional: explicit client id (if ever posted by frontend)
     $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
 
-    // -------- resolve client --------
+    // -------- resolve client (override -> exact) --------
     $client_id = null;
 
     if ($override_client_id !== '') {
-        // If client_id is UUID, keep this guard; otherwise remove/adjust
+        // If client_id is UUID, keep this guard; otherwise remove/adjust to your PK format
         if (!preg_match('/^[0-9a-fA-F-]{36}$/', $override_client_id)) {
             echo json_encode(['ok' => false, 'message' => 'Invalid client id.']);
             exit;
@@ -73,9 +73,101 @@ try {
         $client_id = $stmt->fetchColumn();
     }
 
-    // --- Fuzzy unordered suggestion (handles typos + scrambled order)
+    // ---------- unified emit for existing client (NO hard block here) ----------
+    $emit_existing = function (string $cid, string $desired) use ($pdo) {
+        // fetch name
+        $nq = $pdo->prepare("SELECT first_name, middle_name, last_name FROM public.client WHERE client_id = :cid LIMIT 1");
+        $nq->execute([':cid' => $cid]);
+        $nrow = $nq->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        // approval flags
+        $fStmt = $pdo->prepare("
+            SELECT
+                COUNT(*) > 0                                                                 AS has_records,
+                bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'new')       AS has_pending_new,
+                bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'renewal')   AS has_pending_renewal,
+                bool_or(approval_status ILIKE 'for payment')                                 AS has_for_payment,
+                bool_or(approval_status ILIKE 'released'  AND permit_type ILIKE 'new')       AS has_released_new
+            FROM public.approval
+            WHERE client_id = :cid AND request_type ILIKE 'wildlife'
+        ");
+        $fStmt->execute([':cid' => $cid]);
+        $f = $fStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        // unexpired check (any released wildlife with expiry >= today)
+        $uq = $pdo->prepare("
+            SELECT 1
+            FROM public.approval a
+            JOIN public.approved_docs d ON d.approval_id = a.approval_id
+            WHERE a.client_id = :cid
+              AND a.request_type ILIKE 'wildlife'
+              AND a.approval_status ILIKE 'released'
+              AND d.expiry_date IS NOT NULL
+              AND d.expiry_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+            LIMIT 1
+        ");
+        $uq->execute([':cid' => $cid]);
+        $has_unexpired = (bool)$uq->fetchColumn();
+
+        $has_records         = !empty($f['has_records']);
+        $has_pending_new     = !empty($f['has_pending_new']);
+        $has_pending_renewal = !empty($f['has_pending_renewal']);
+        $has_for_payment     = !empty($f['has_for_payment']);
+        $has_released_new    = !empty($f['has_released_new']);
+
+        $block = null;
+        $message = null;
+        $suggest = null;
+        if ($desired === 'new') {
+            if ($has_released_new && !$has_unexpired) {
+                // released NEW exists but is expired -> suggest renewal (non-blocking)
+                $suggest = 'renewal';
+            }
+            if ($has_pending_new) {
+                $block = 'pending_new';
+                $message = 'You already have a pending NEW wildlife application.';
+            } elseif ($has_pending_renewal) {
+                $block = 'pending_renewal';
+                $message = 'You already have a pending wildlife application. Please wait for the update first.';
+            }
+        } else { // desired renewal
+            if ($has_pending_new || $has_pending_renewal) {
+                $block = 'pending_renewal';
+                $message = 'You already have a pending wildlife application. Please wait for the update first.';
+            }
+        }
+
+        echo json_encode([
+            'ok'       => true,
+            'decision' => 'existing',
+            'client'   => [
+                'client_id' => (string)$cid,
+                'full_name' => trim(($nrow['first_name'] ?? '') . ' ' . ($nrow['middle_name'] ?? '') . ' ' . ($nrow['last_name'] ?? ''))
+            ],
+            'flags'    => [
+                'has_records'         => (bool)$has_records,
+                'has_pending_new'     => (bool)$has_pending_new,
+                'has_pending_renewal' => (bool)$has_pending_renewal,
+                'has_for_payment'     => (bool)$has_for_payment,
+                'has_released_new'    => (bool)$has_released_new,
+                'has_unexpired'       => (bool)$has_unexpired
+            ],
+            // block/message populated when an existing pending record should stop submission.
+            'block'    => $block,
+            'message'  => $message,
+            'suggest'  => $suggest
+        ]);
+        exit;
+    };
+
+    // If we have a resolved client (override/exact), emit with flags (no hard blocks)
+    if ($client_id) {
+        $emit_existing($client_id, $desired);
+    }
+
+    // --- Fuzzy unordered detection (handles typos + scrambled order)
     // Only run this when there is NO override id AND we still have no exact match.
-    if (!$client_id && $override_client_id === '') {
+    if ($override_client_id === '') {
         $THRESHOLD = 0.68;       // similarity threshold
         $CANDIDATE_LIMIT = 1000; // max candidates to inspect
 
@@ -139,7 +231,7 @@ try {
         $best = null;
         $bestScore = 0.0;
 
-        $inp = [$nf, $nm, $nl];
+        $inp = [norm($first), norm($middle), norm($last)];
         foreach ($rows as $r) {
             $cand = [
                 $normName($r['first_name']  ?? ''),
@@ -176,97 +268,21 @@ try {
         }
 
         if ($best && $bestScore >= $THRESHOLD) {
-            echo json_encode([
-                'ok' => true,
-                'suggest_existing_client' => [
-                    'client_id' => (string)$best['client_id'],
-                    'full_name' => trim(($best['first_name'] ?? '') . ' ' . ($best['middle_name'] ?? '') . ' ' . ($best['last_name'] ?? '')),
-                    'score'     => round($bestScore, 2),
-                ]
-            ]);
-            exit;
-        }
-
-        // no suggestion — allow flow to continue as brand new
-        echo json_encode(['ok' => true]);
-        exit;
-    }
-
-    // If we get here with a client_id, evaluate approval flags for wildlife.
-    if ($client_id) {
-        $stmt = $pdo->prepare("
-            SELECT
-                bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'new')     AS has_pending_new,
-                bool_or(approval_status ILIKE 'released'  AND permit_type ILIKE 'new')     AS has_released_new,
-                bool_or(approval_status ILIKE 'pending'   AND permit_type ILIKE 'renewal') AS has_pending_renewal,
-                bool_or(approval_status ILIKE 'for payment')                               AS has_for_payment
-            FROM public.approval
-            WHERE client_id = :cid AND request_type ILIKE 'wildlife'
-        ");
-        $stmt->execute([':cid' => $client_id]);
-        $f = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-
-        $hasPendingNew     = !empty($f['has_pending_new']);
-        $hasReleasedNew    = !empty($f['has_released_new']);
-        $hasPendingRenewal = !empty($f['has_pending_renewal']);
-        $hasForPayment     = !empty($f['has_for_payment']);
-
-        // Unpaid wildlife blocks everything
-        if ($hasForPayment) {
-            echo json_encode([
-                'ok'      => true,
-                'block'   => 'for_payment',
-                'message' => 'You still have an unpaid wildlife permit (status: for payment). Please pay personally before filing another request.'
-            ]);
-            exit;
-        }
-
-        if ($desired === 'new') {
-            if ($hasPendingNew) {
-                echo json_encode(['ok' => true, 'block' => 'pending_new']);
-                exit;
-            }
-            // Offer to switch to renewal if they already have a released NEW
-            if ($hasReleasedNew) {
-                echo json_encode(['ok' => true, 'offer' => 'renewal']);
-                exit;
-            }
-        } else { // renewal
-            if ($hasPendingRenewal) {
-                echo json_encode(['ok' => true, 'block' => 'pending_renewal']);
-                exit;
-            }
-            if (!$hasReleasedNew) {
-                echo json_encode(['ok' => true, 'block' => 'need_released_new']);
-                exit;
-            }
-
-            // NEW: block renewal if there is any released wildlife approval with a NOT-YET-EXPIRED permit
-            $q = $pdo->prepare("
-        SELECT 1
-        FROM public.approval a
-        JOIN public.approved_docs d ON d.approval_id = a.approval_id
-        WHERE a.client_id = :cid
-          AND a.request_type ILIKE 'wildlife'
-          AND a.approval_status ILIKE 'released'
-          AND d.expiry_date IS NOT NULL
-          AND d.expiry_date::date >= CURRENT_DATE
-        LIMIT 1
-    ");
-            $q->execute([':cid' => $client_id]);
-            if ($q->fetchColumn()) {
-                echo json_encode([
-                    'ok'    => true,
-                    'block' => 'unexpired_permit',
-                    'message' => '<div style="padding:16px 20px;line-height:1.6">You still have an <b>unexpired</b> wildlife permit.<br><br>Please wait until your current permit <b>expires</b> before requesting a renewal.</div>'
-                ]);
-                exit;
-            }
+            // Treat as existing (with flags/suggest) — DO NOT hard-block here.
+            $emit_existing((string)$best['client_id'], $desired);
         }
     }
 
-    // default OK
-    echo json_encode(['ok' => true]);
+    // No client matched at all — let frontend show the correct "non-existing" modal
+    echo json_encode([
+        'ok'       => true,
+        'decision' => 'none',
+        'desired'  => $desired,
+        // ensure no accidental blocks fire on the frontend for a non-match
+        'block'    => null,
+        'message'  => null
+    ]);
+    exit;
 } catch (Throwable $e) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'message' => $e->getMessage()]);

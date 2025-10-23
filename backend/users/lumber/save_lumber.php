@@ -97,7 +97,7 @@ try {
         ? strtolower($_POST['permit_type']) : 'new';
 
     // Client choice flags from the UI modal
-    $override_client_id = trim((string)($_POST['use_client_id'] ?? '')); // if user picked “Use existing”
+    $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? '')); // if user picked "Use existing"
     $force_new_client   = !empty($_POST['force_new_client']);            // if user picked “Create new”
 
     // Names (accept both new/renewal field names)
@@ -300,9 +300,6 @@ try {
         if ($hasPendingRenewal) {
             throw new Exception('You already have a pending RENEWAL lumber application.');
         }
-        if (!$hasReleasedNew) {
-            throw new Exception('To file a renewal, you must have a RELEASED new lumber dealer permit on record.');
-        }
         // NEW: Do not allow renewal if any released (new/renewal) lumber permit is still unexpired (approved_docs.expiry_date)
         $uq = $pdo->prepare("
   SELECT 1
@@ -313,7 +310,7 @@ try {
     AND a.approval_status ILIKE 'released'
     AND a.permit_type ILIKE ANY (ARRAY['new','renewal'])
     AND d.expiry_date IS NOT NULL
-    AND d.expiry_date::date >= CURRENT_DATE
+    AND d.expiry_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
   LIMIT 1
 ");
         $uq->execute([':cid' => $client_id]);

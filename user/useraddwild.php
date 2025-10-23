@@ -2023,6 +2023,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 4px;
             display: none
         }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
 
@@ -2469,7 +2479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
                                     <div class="signature-actions">
                                         <button type="button" class="signature-btn clear-signature" id="renewal-clear-signature">Clear</button>
-                                        <button type="button" class="signature-btn save-signature" id="renewal-save-signature">Save Signature</button>
+                                        <!-- <button type="button" class="signature-btn save-signature" id="renewal-save-signature">Save Signature</button> -->
                                     </div>
                                     <div class="signature-preview">
                                         <img id="renewal-signature-image" class="hidden" alt="Signature">
@@ -2852,109 +2862,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Confirm Modal (Chainsaw-style) -->
-    <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Submit Application</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                Please confirm you want to submit this Wildlife application. Files will be uploaded and your request will enter review.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="btnCancelConfirm" class="btn btn-outline" type="button">Cancel</button>
-                <button id="btnOkConfirm" class="btn btn-primary" type="button">Yes, submit</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Pending NEW request modal -->
-    <div id="pendingNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:520px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Pending Request</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                You already have a pending wildlife <b>new</b> permit request. Please wait for updates before submitting another one.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="pendingNewOk" class="btn btn-primary" type="button">Okay</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Offer renewal modal -->
-    <div id="offerRenewalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Available</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                You can’t request a <b>new</b> wildlife permit because you already have a <b>released</b> one. You’re allowed to request a <b>renewal</b> instead.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="offerRenewalOk" class="btn btn-outline" type="button">Okay</button>
-                <button id="offerRenewalSwitch" class="btn btn-primary" type="button">Request renewal</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Unpaid permit (“for payment”) modal -->
-    <div id="forPaymentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Payment Required</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                You still have an unpaid wildlife permit on record (<b>for payment</b>).<br>
-                Please settle this <b>personally at the office</b> before filing another request.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="forPaymentOk" class="btn btn-primary" type="button">Okay</button>
-            </div>
-        </div>
-    </div>
-    <div id="suggestClientModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Use Existing Client?</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                We found a similar existing client:
-                <div id="suggestClientName" style="margin:8px 0;font-weight:600"></div>
-                Do you want to use this client for this request, or submit as a <b>new client</b>?
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="suggestClientNew" class="btn btn-outline" type="button">Submit as new</button>
-                <button id="suggestClientUse" class="btn btn-primary" type="button">Use existing</button>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- Need Approved NEW modal (when attempting renewal with no approved new) -->
-    <div id="needApprovedNewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
-        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Action Required</div>
-            <div style="padding:16px 20px;line-height:1.6">
-                To request a renewal, you must have a <b>released</b> NEW wildlife permit on record.<br><br>
-                You can switch to a NEW permit request. We’ll copy over what you’ve already entered.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="needApprovedNewOk" class="btn btn-outline" type="button">Okay</button>
-                <button id="needApprovedNewSwitch" class="btn btn-primary" type="button">Request new</button>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- Global Loading Overlay -->
+    <!-- Global Loading Overlay (unified) -->
     <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
-        <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px">Working…</div>
+        <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;display:flex;gap:10px;align-items:center;">
+            <span class="loader" style="width:16px;height:16px;border:2px solid #ddd;border-top-color:#2b6625;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite;"></span>
+            <span id="loadingMessage">Working…</span>
+        </div>
     </div>
 
-    <!-- Unexpired (released) permit blocks renewal -->
-    <div id="unexpiredPermitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+
+
+
+    <!-- Single “Client Decision” Modal -->
+    <div id="clientDecisionModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
         <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
-            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600">Renewal Not Allowed</div>
-            <div id="unexpiredPermitBody" style="padding:16px 20px;line-height:1.6">
-                <div style="padding:16px 20px;line-height:1.6">
-                    You still have an <b>unexpired</b> wildlife permit.<br><br>
-                    Please wait until your current permit <b>expires</b> before requesting a renewal.
-                </div>
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600" id="clientDecisionTitle">Client</div>
+            <div style="padding:16px 20px;line-height:1.6" id="clientDecisionBody">
+                <!-- dynamic -->
             </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee">
-                <button id="unexpiredPermitOk" class="btn btn-primary" type="button">Okay</button>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee" id="clientDecisionActions">
+                <!-- dynamic buttons -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Single “Validation” Modal -->
+    <div id="validationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#fff;max-width:560px;width:92%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden">
+            <div style="padding:18px 20px;border-bottom:1px solid #eee;font-weight:600" id="validationTitle">Check Required</div>
+            <div style="padding:16px 20px;line-height:1.6" id="validationBody">
+                <!-- dynamic -->
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;background:#fafafa;border-top:1px solid #eee" id="validationActions">
+                <!-- dynamic buttons -->
             </div>
         </div>
     </div>
@@ -2965,6 +2905,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // ====== CONFIG ======
             const SAVE_URL = new URL('../backend/users/wildlife/save_wildlife.php', window.location.href).toString();
             const PRECHECK_URL = new URL('../backend/users/wildlife/precheck_wildlife.php', window.location.href).toString();
+            // --- Global loading helpers (use everywhere) ---
+            function showLoading(msg = 'Working…') {
+                const overlay = document.getElementById('loadingIndicator');
+                const label = document.getElementById('loadingMessage');
+                if (label) label.textContent = msg;
+                if (overlay) overlay.style.display = 'flex';
+            }
+
+            function hideLoading() {
+                const overlay = document.getElementById('loadingIndicator');
+                if (overlay) overlay.style.display = 'none';
+            }
 
             // ====== UTIL ======
             const byId = (id) => document.getElementById(id);
@@ -3052,7 +3004,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clearSigPad(true);
                 setPermit('new');
                 chosenClientId = null;
+                precheckCache = null;
+                suggestedClient = null;
                 pendingSuggestedClient = null;
+                window.__FORCE_NEW_CLIENT__ = false;
                 window.scrollTo({
                     top: 0,
                     behavior: 'smooth'
@@ -3258,193 +3213,295 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             initCanvasPad('signature-pad', 'clear-signature', 'save-signature', 'signature-image', sigNew);
             initCanvasPad('renewal-signature-pad', 'renewal-clear-signature', 'renewal-save-signature', 'renewal-signature-image', sigRen);
 
-            // ====== MODALS / LOADING ======
-            const confirmModal = byId('confirmModal');
-            const btnOkConfirm = byId('btnOkConfirm');
-            const btnCancelConfirm = byId('btnCancelConfirm');
 
-            const pendingNewModal = byId('pendingNewModal');
-            const pendingNewOk = byId('pendingNewOk');
-
-            const offerRenewalModal = byId('offerRenewalModal');
-            const offerRenewalOk = byId('offerRenewalOk');
-            const offerRenewalSwitch = byId('offerRenewalSwitch');
-
-            const needApprovedNewModal = byId('needApprovedNewModal');
-            const needApprovedNewOk = byId('needApprovedNewOk');
-            const needApprovedNewSwitch = byId('needApprovedNewSwitch');
-            const forPaymentModal = byId('forPaymentModal');
-            const forPaymentOk = byId('forPaymentOk');
-            forPaymentOk?.addEventListener('click', () => forPaymentModal.style.display = 'none');
-
-            const unexpiredPermitModal = byId('unexpiredPermitModal');
-            const unexpiredPermitOk = byId('unexpiredPermitOk');
-            unexpiredPermitOk?.addEventListener('click', () => unexpiredPermitModal.style.display = 'none');
-
-
-            const suggestClientModal = byId('suggestClientModal');
-            const suggestClientName = byId('suggestClientName');
-            const suggestClientUse = byId('suggestClientUse');
-            const suggestClientNew = byId('suggestClientNew');
-            let chosenClientId = null; // what we’ll send to the backend if user picks “Use existing”
-            let pendingSuggestedClient = null; // holds server suggestion until user decides
-            suggestClientUse?.addEventListener('click', async () => {
-                if (pendingSuggestedClient?.client_id) chosenClientId = String(pendingSuggestedClient.client_id);
-                suggestClientModal.style.display = 'none';
-
-                try {
-                    const type = activePermitType(); // 'new' or 'renewal'
-                    const fd = new FormData();
-                    fd.append('first_name', type === 'renewal' ? v('renewal-first-name') : v('first-name'));
-                    fd.append('middle_name', type === 'renewal' ? v('renewal-middle-name') : v('middle-name'));
-                    fd.append('last_name', type === 'renewal' ? v('renewal-last-name') : v('last-name'));
-                    fd.append('desired_permit_type', type);
-                    fd.append('use_existing_client_id', chosenClientId); // ⟵ important
-
-                    const res = await fetch(PRECHECK_URL, {
-                        method: 'POST',
-                        body: fd,
-                        credentials: 'include'
-                    });
-                    const json = await res.json();
-
-                    if (json.block === 'pending_new') {
-                        pendingNewModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.block === 'pending_renewal') {
-                        toast('You already have a pending wildlife renewal.');
-                        return;
-                    }
-                    if (json.block === 'for_payment') {
-                        forPaymentModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
-                        needApprovedNewModal.style.display = 'flex';
-                        return;
-                    }
-
-                    if (json.block === 'unexpired_permit') {
-                        // (Optional) if the backend sends a custom message, show it:
-                        if (json.message) byId('unexpiredPermitBody').innerHTML = json.message;
-                        unexpiredPermitModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.offer === 'renewal' && type === 'new') { // ⟵ show offer now
-                        offerRenewalModal.style.display = 'flex';
-                        return;
-                    }
-
-                    confirmModal.style.display = 'flex'; // otherwise proceed
-                } catch {
-                    // fall back to confirm (same as your current UX on precheck errors)
-                    confirmModal.style.display = 'flex';
-                }
-            });
-
-            suggestClientNew?.addEventListener('click', () => {
-                chosenClientId = null;
-                suggestClientModal.style.display = 'none';
-                confirmModal.style.display = 'flex';
-            });
-
+            // ====== NEW unified modals & flow ======
             const loading = byId('loadingIndicator');
 
+            // unified modals
+            const clientDecisionModal = byId('clientDecisionModal');
+            const cdTitle = byId('clientDecisionTitle');
+            const cdBody = byId('clientDecisionBody');
+            const cdActions = byId('clientDecisionActions');
 
+            const validationModal = byId('validationModal');
+            const valTitle = byId('validationTitle');
+            const valBody = byId('validationBody');
+            const valActions = byId('validationActions');
 
+            let chosenClientId = null; // when user says "Yes, submit" using existing
+            let precheckCache = null; // last precheck payload (contains flags)
+            let suggestedClient = null; // suggested match (fuzzy)
+            window.__FORCE_NEW_CLIENT__ = false;
 
-            pendingNewOk?.addEventListener('click', () => pendingNewModal.style.display = 'none');
-            offerRenewalOk?.addEventListener('click', () => offerRenewalModal.style.display = 'none');
-            needApprovedNewOk?.addEventListener('click', () => needApprovedNewModal.style.display = 'none');
-            btnCancelConfirm?.addEventListener('click', () => confirmModal.style.display = 'none');
+            function openClientDecision({
+                title,
+                html,
+                buttons
+            }) {
+                closeValidation();
+                cdTitle.textContent = title || 'Client';
+                cdBody.innerHTML = html || '';
+                cdActions.innerHTML = '';
+                buttons.forEach(btn => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = btn.class || 'btn btn-primary';
+                    b.textContent = btn.text;
+                    b.addEventListener('click', btn.onClick);
+                    cdActions.appendChild(b);
+                });
+                clientDecisionModal.style.display = 'flex';
+            }
 
-            // Switchers (copy values like Chainsaw page)
+            function closeClientDecision() {
+                clientDecisionModal.style.display = 'none';
+            }
+
+            function openValidation({
+                title,
+                html,
+                buttons
+            }) {
+                closeClientDecision();
+                valTitle.textContent = title || 'Validation';
+                valBody.innerHTML = html || '';
+                valActions.innerHTML = '';
+                (buttons || [{
+                    text: 'Close',
+                    class: 'btn btn-primary',
+                    onClick: () => closeValidation()
+                }]).forEach(btn => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = btn.class || 'btn btn-primary';
+                    b.textContent = btn.text;
+                    b.addEventListener('click', btn.onClick);
+                    valActions.appendChild(b);
+                });
+                validationModal.style.display = 'flex';
+            }
+
+            function closeValidation() {
+                validationModal.style.display = 'none';
+            }
+
+            window.addEventListener('click', (e) => {
+                if (e.target === clientDecisionModal) closeClientDecision();
+                if (e.target === validationModal) closeValidation();
+            });
+
+            // Helper: show blocks as validation modal
+            function showBlock(code, message) {
+                const readable = {
+                    for_payment: 'Payment Required',
+                    pending_new: 'Pending Application',
+                    pending_renewal: 'Pending Application',
+                    unexpired_permit: 'Unexpired Permit Found',
+                };
+                openValidation({
+                    title: readable[code] || 'Validation',
+                    html: message || 'Please resolve this before continuing.',
+                    buttons: [{
+                        text: 'Close',
+                        class: 'btn btn-primary',
+                        onClick: closeValidation
+                    }]
+                });
+            }
+
+            // Helper: suggestion for renewal when NEW is requested but a released NEW already exists (expired)
+            function showSuggestRenewal() {
+                openValidation({
+                    title: 'Suggested: Renewal',
+                    html: `We detected an existing (expired) NEW permit record for this client.<br>
+           You may file a <b>renewal</b> instead.`,
+                    buttons: [{
+                            text: 'Request renewal',
+                            class: 'btn btn-primary',
+                            onClick: () => {
+                                closeValidation();
+                                setPermit('renewal');
+                                if (activePermitType() === 'renewal' && typeof autofillRenewalFromNew === 'function') {
+                                    autofillRenewalFromNew();
+                                }
+                            }
+                        },
+                        {
+                            text: 'Close', // ← changed label
+                            class: 'btn btn-outline',
+                            onClick: closeValidation
+                        }
+                    ]
+
+                });
+            }
+
+            // ====== PRECHECK & SUBMIT ======
+
+            // --- NEW ➜ RENEWAL autofill ---
             function autofillRenewalFromNew() {
-                const map = [
-                    ['first-name', 'renewal-first-name'],
-                    ['middle-name', 'renewal-middle-name'],
-                    ['last-name', 'renewal-last-name'],
-                    ['residence-address', 'renewal-residence-address'],
-                    ['telephone-number', 'renewal-telephone-number'],
-                    ['establishment-name', 'renewal-establishment-name'],
-                    ['establishment-address', 'renewal-establishment-address'],
-                    ['establishment-telephone', 'renewal-establishment-telephone'],
-                    ['postal-address', 'renewal-postal-address'],
-                ];
-                map.forEach(([src, dst]) => {
+                // 1) Categories
+                const copyCheck = (src, dst) => {
                     const s = byId(src),
                         d = byId(dst);
-                    if (s && d && typeof s.value === 'string') d.value = s.value;
-                });
-                byId('renewal-zoo') && (byId('renewal-zoo').checked = !!byId('zoo')?.checked);
-                byId('renewal-botanical-garden') && (byId('renewal-botanical-garden').checked = !!byId('botanical-garden')?.checked);
-                byId('renewal-private-collection') && (byId('renewal-private-collection').checked = !!byId('private-collection')?.checked);
-                // copy one row of animals if empty
-                const srcRows = document.querySelectorAll('#animals-table tbody tr');
-                const dstBody = document.querySelector('#renewal-animals-table tbody');
-                if (dstBody && dstBody.children.length === 1) {
-                    const inputs = srcRows[0]?.querySelectorAll('input') || [];
-                    const dInputs = dstBody.querySelectorAll('input, select');
-                    if (inputs.length >= 3 && dInputs.length >= 4) {
-                        dInputs[0].value = inputs[0].value; // common
-                        dInputs[1].value = inputs[1].value; // scientific
-                        dInputs[2].value = inputs[2].value; // qty
-                    }
+                    if (s && d) d.checked = !!s.checked;
+                };
+                copyCheck('zoo', 'renewal-zoo');
+                copyCheck('botanical-garden', 'renewal-botanical-garden');
+                copyCheck('private-collection', 'renewal-private-collection');
+
+                // 2) Applicant & contact fields
+                const copyVal = (src, dst) => {
+                    const s = byId(src),
+                        d = byId(dst);
+                    if (s && d) d.value = s.value;
+                };
+                copyVal('first-name', 'renewal-first-name');
+                copyVal('middle-name', 'renewal-middle-name');
+                copyVal('last-name', 'renewal-last-name');
+                copyVal('residence-address', 'renewal-residence-address');
+                copyVal('telephone-number', 'renewal-telephone-number');
+                copyVal('establishment-name', 'renewal-establishment-name');
+                copyVal('establishment-address', 'renewal-establishment-address');
+                copyVal('establishment-telephone', 'renewal-establishment-telephone');
+                copyVal('postal-address', 'renewal-postal-address');
+
+                // 3) Animals table (remarks default to "Alive")
+                const srcTbody = document.querySelector('#animals-table tbody');
+                const dstTbody = document.querySelector('#renewal-animals-table tbody');
+                if (srcTbody && dstTbody) {
+                    const rows = Array.from(srcTbody.querySelectorAll('tr')).map(tr => {
+                        const inputs = tr.querySelectorAll('input');
+                        return {
+                            common: (inputs[0]?.value || '').trim(),
+                            sci: (inputs[1]?.value || '').trim(),
+                            qty: (inputs[2]?.value || '').trim()
+                        };
+                    }).filter(r => r.common || r.sci || r.qty);
+
+                    // Clear existing rows
+                    dstTbody.innerHTML = '';
+
+                    const makeErrDiv = () => {
+                        const d = document.createElement('div');
+                        d.className = 'field-error';
+                        d.style.display = 'none';
+                        return d;
+                    };
+
+                    const addRow = (r = {
+                        common: '',
+                        sci: '',
+                        qty: ''
+                    }) => {
+                        const tr = document.createElement('tr');
+
+                        const td1 = document.createElement('td');
+                        const i1 = document.createElement('input');
+                        i1.type = 'text';
+                        i1.className = 'table-input';
+                        i1.value = r.common || '';
+                        td1.appendChild(i1);
+                        td1.appendChild(makeErrDiv());
+
+                        const td2 = document.createElement('td');
+                        const i2 = document.createElement('input');
+                        i2.type = 'text';
+                        i2.className = 'table-input';
+                        i2.value = r.sci || '';
+                        td2.appendChild(i2);
+                        td2.appendChild(makeErrDiv());
+
+                        const td3 = document.createElement('td');
+                        const i3 = document.createElement('input');
+                        i3.type = 'number';
+                        i3.className = 'table-input';
+                        i3.min = '1';
+                        i3.value = r.qty || '';
+                        td3.appendChild(i3);
+                        td3.appendChild(makeErrDiv());
+
+                        const td4 = document.createElement('td');
+                        const sel = document.createElement('select');
+                        sel.className = 'table-input';
+                        sel.innerHTML = '<option value="Alive" selected>Alive</option><option value="Deceased">Deceased</option>';
+                        td4.appendChild(sel);
+
+                        const td5 = document.createElement('td');
+                        const rm = document.createElement('button');
+                        rm.type = 'button';
+                        rm.className = 'remove-row-btn';
+                        rm.textContent = 'Remove';
+                        rm.addEventListener('click', () => {
+                            if (dstTbody.children.length > 1) dstTbody.removeChild(tr);
+                            else alert('You must have at least one animal entry.');
+                        });
+                        td5.appendChild(rm);
+
+                        tr.append(td1, td2, td3, td4, td5);
+                        dstTbody.appendChild(tr);
+                    };
+
+                    if (rows.length) rows.forEach(addRow);
+                    else addRow(); // keep one empty row if nothing to copy
                 }
+
+                // 4) Keep renewal signature blank when copying details
+                try {
+                    if (typeof clearSigPad === 'function') {
+                        clearSigPad(true);
+                    } else {
+                        const img = byId('renewal-signature-image');
+                        if (img) {
+                            img.src = '';
+                            img.classList.add('hidden');
+                        }
+                        if (typeof sigRen === 'object') {
+                            sigRen.has = false;
+                            sigRen.dataURL = '';
+                        }
+                    }
+                } catch {}
+
+                // 5) Clear old validation in Renewal
+                document.querySelectorAll('#renewal-upper-block .field-error').forEach(el => el.style.display = 'none');
+                document.querySelectorAll('#renewal-upper-block .invalid').forEach(i => {
+                    i.classList.remove('invalid');
+                    i.removeAttribute('aria-invalid');
+                });
+                byId('renewal-first-name')?.focus();
             }
 
-            function autofillNewFromRenewal() {
-                const map = [
-                    ['renewal-first-name', 'first-name'],
-                    ['renewal-middle-name', 'middle-name'],
-                    ['renewal-last-name', 'last-name'],
-                    ['renewal-residence-address', 'residence-address'],
-                    ['renewal-telephone-number', 'telephone-number'],
-                    ['renewal-establishment-name', 'establishment-name'],
-                    ['renewal-establishment-address', 'establishment-address'],
-                    ['renewal-establishment-telephone', 'establishment-telephone'],
-                    ['renewal-postal-address', 'postal-address'],
-                ];
-                map.forEach(([src, dst]) => {
-                    const s = byId(src),
-                        d = byId(dst);
-                    if (s && d && typeof s.value === 'string') d.value = s.value;
-                });
-                byId('zoo') && (byId('zoo').checked = !!byId('renewal-zoo')?.checked);
-                byId('botanical-garden') && (byId('botanical-garden').checked = !!byId('renewal-botanical-garden')?.checked);
-                byId('private-collection') && (byId('private-collection').checked = !!byId('renewal-private-collection')?.checked);
-            }
+            // make available to click handlers
+            window.autofillRenewalFromNew = autofillRenewalFromNew;
 
-            offerRenewalSwitch?.addEventListener('click', () => {
-                offerRenewalModal.style.display = 'none';
-                setPermit('renewal');
-                autofillRenewalFromNew();
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            });
-            needApprovedNewSwitch?.addEventListener('click', () => {
-                needApprovedNewModal.style.display = 'none';
-                setPermit('new');
-                autofillNewFromRenewal();
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            });
-
-            // ====== PRECHECK & SUBMIT BUTTON ======
             const btnSubmit = byId('submitApplication');
-            btnSubmit?.addEventListener('click', async () => {
-                // Build minimal identity info for precheck
-                const type = activePermitType();
+            btnSubmit?.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                ev.stopImmediatePropagation();
+
+                const type = activePermitType(); // 'new' | 'renewal'
                 const first = type === 'renewal' ? v('renewal-first-name') : v('first-name');
                 const middle = type === 'renewal' ? v('renewal-middle-name') : v('middle-name');
                 const last = type === 'renewal' ? v('renewal-last-name') : v('last-name');
 
+                // 0) VALIDATE FIRST — if invalid, stop here (no precheck, no modal)
+                if (typeof window.__validateWildlifeForm === 'function') {
+                    const ok = window.__validateWildlifeForm();
+                    if (!ok) {
+                        if (typeof window.__scrollFirstErrorIntoView === 'function') {
+                            window.__scrollFirstErrorIntoView();
+                        }
+                        toast('Please complete the required fields first.');
+                        return;
+                    }
+                }
+
                 try {
+                    showLoading('Checking records…');
+
+                    // 1) PRECHECK (only after validation passes)
                     const fd = new FormData();
                     fd.append('first_name', first);
                     fd.append('middle_name', middle);
@@ -3457,55 +3514,217 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         credentials: 'include'
                     });
                     const json = await res.json();
-                    if (!res.ok) throw new Error(json.message || 'Precheck failed');
+                    if (!res.ok || !json.ok) throw new Error(json.message || 'Precheck failed');
+                    precheckCache = json;
 
-                    if (json.block === 'pending_new') {
-                        pendingNewModal.style.display = 'flex';
-                        return;
+                    // 2) HANDLE PRECHECK RESULT
+                    if (json.decision === 'existing' && json.client && json.client.client_id) {
+                        suggestedClient = json.client;
+                        const full = json.client.full_name || 'Existing client';
+                        const f = json.flags || {};
+
+                        if (json.block) {
+                            showBlock(json.block, json.message || 'You already have a pending wildlife application. Please wait for the update first.');
+                            return;
+                        }
+
+                        // Non-blocking suggestion: user filed NEW but an expired released NEW exists => suggest renewal
+                        // if (json.suggest === 'renewal' && type === 'new') {
+                        //     showSuggestRenewal();
+                        // }
+
+                        // Ask for confirmation to use the detected client
+                        openClientDecision({
+                            title: 'Is this the correct client?',
+                            html: `We detected an existing client:<div style="margin:8px 0;font-weight:600">${full}</div>`,
+                            buttons: [{
+                                    text: 'No, cancel',
+                                    class: 'btn btn-outline',
+                                    onClick: () => {
+                                        closeClientDecision();
+                                    }
+                                },
+                                {
+                                    text: 'Submit as new',
+                                    class: 'btn btn-outline',
+                                    onClick: async () => {
+                                        window.__FORCE_NEW_CLIENT__ = true;
+                                        chosenClientId = null;
+                                        closeClientDecision();
+                                        await finalSubmit();
+                                    }
+                                },
+                                {
+                                    text: 'Yes, submit',
+                                    class: 'btn btn-primary',
+                                    onClick: async () => {
+                                        // Use the existing client the user confirmed
+                                        window.__FORCE_NEW_CLIENT__ = false;
+                                        chosenClientId = String(json.client.client_id);
+
+                                        // Block: FOR PAYMENT (applies to both new and renewal)
+                                        if (f.has_for_payment) {
+                                            closeClientDecision();
+                                            showBlock('for_payment', 'You still have an unpaid wildlife permit on record. Please settle this personally at the office.');
+                                            return;
+                                        }
+
+                                        if (type === 'new') {
+                                            // Block: unexpired permit
+                                            if (f.has_unexpired) {
+                                                closeClientDecision();
+                                                showBlock('unexpired_permit', 'You still have an unexpired wildlife permit. You cannot file a new application.');
+                                                return;
+                                            }
+                                            // Suggest renewal if applicable (non-blocking), but stop auto-submitting
+                                            if (json.suggest === 'renewal') {
+                                                closeClientDecision();
+                                                showSuggestRenewal();
+                                                return;
+                                            }
+                                            // Block: any pending (new/renewal)
+                                            if (f.has_pending_new) {
+                                                closeClientDecision();
+                                                showBlock('pending_new', 'You already have a pending NEW wildlife application.');
+                                                return;
+                                            }
+                                            if (f.has_pending_renewal) {
+                                                closeClientDecision();
+                                                showBlock('pending_renewal', 'You have a pending RENEWAL; please wait for the update first.');
+                                                return;
+                                            }
+                                        } else {
+                                            // RENEWAL: block on ANY pending (new OR renewal)
+                                            if (f.has_pending_renewal || f.has_pending_new) {
+                                                closeClientDecision();
+                                                showBlock('pending_renewal', 'You already have a pending wildlife application. Please wait for the update first.');
+                                                return;
+                                            }
+                                            // Block: unexpired permit
+                                            if (f.has_unexpired) {
+                                                closeClientDecision();
+                                                showBlock('unexpired_permit', 'You still have an unexpired wildlife permit. Please wait until it expires to renew.');
+                                                return;
+                                            }
+                                        }
+
+                                        // Passed all checks — proceed
+                                        closeClientDecision();
+                                        await finalSubmit();
+                                    }
+                                }
+                            ]
+                        });
+                        return; // wait for user action in the modal
                     }
-                    if (json.block === 'pending_renewal') {
-                        toast('You already have a pending wildlife renewal. Please wait for the update first.');
-                        return;
-                    }
-                    if (json.block === 'for_payment') {
-                        forPaymentModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.block === 'need_approved_new' || json.block === 'need_released_new') {
-                        needApprovedNewModal.style.display = 'flex';
+
+                    // No existing client found
+                    if (json.decision === 'none') {
+                        if (type === 'renewal') {
+                            openClientDecision({
+                                title: 'No Client Detected',
+                                html: 'No client matched these details. Do you want to request a new permit instead, or continue submitting this renewal as a new client?',
+                                buttons: [{
+                                        text: 'Cancel',
+                                        class: 'btn btn-outline',
+                                        onClick: () => {
+                                            closeClientDecision();
+                                        }
+                                    },
+                                    {
+                                        text: 'Request new',
+                                        class: 'btn btn-outline',
+                                        onClick: () => {
+                                            closeClientDecision();
+                                            setPermit('new');
+                                            if (typeof autofillRenewalFromNew === 'function') {
+                                                autofillRenewalFromNew();
+                                            }
+                                            window.scrollTo({
+                                                top: 0,
+                                                behavior: 'smooth'
+                                            });
+                                        }
+                                    },
+                                    {
+                                        text: 'Continue renewal',
+                                        class: 'btn btn-primary',
+                                        onClick: async () => {
+                                            window.__FORCE_NEW_CLIENT__ = true; // create a brand-new client
+                                            chosenClientId = null;
+                                            closeClientDecision();
+                                            await finalSubmit();
+                                        }
+                                    }
+                                ]
+                            });
+                        } else {
+                            openClientDecision({
+                                title: 'Submit as New Client?',
+                                html: 'No existing client was detected for these details. Submit as a new client?',
+                                buttons: [{
+                                        text: 'Cancel',
+                                        class: 'btn btn-outline',
+                                        onClick: () => {
+                                            closeClientDecision();
+                                        }
+                                    },
+                                    {
+                                        text: 'Submit',
+                                        class: 'btn btn-primary',
+                                        onClick: async () => {
+                                            window.__FORCE_NEW_CLIENT__ = true;
+                                            chosenClientId = null;
+                                            closeClientDecision();
+                                            await finalSubmit();
+                                        }
+                                    }
+                                ]
+                            });
+                        }
                         return;
                     }
 
+                    // Rare fallback: server signaled a block outside "existing" path
+                    if (json.block) {
+                        showBlock(json.block, json.message);
+                        return;
+                    }
 
-                    if (json.block === 'unexpired_permit') {
-                        // (Optional) if the backend sends a custom message, show it:
-                        if (json.message) byId('unexpiredPermitBody').innerHTML = json.message;
-                        unexpiredPermitModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.offer === 'renewal' && type === 'new') {
-                        offerRenewalModal.style.display = 'flex';
-                        return;
-                    }
-                    if (json.suggest_existing_client?.client_id) {
-                        pendingSuggestedClient = json.suggest_existing_client;
-                        suggestClientName.textContent = String(pendingSuggestedClient.full_name || 'Existing client');
-                        suggestClientModal.style.display = 'flex';
-                        return;
-                    }
-                    confirmModal.style.display = 'flex';
+                    // Default: proceed
+                    await finalSubmit();
                 } catch (e) {
                     console.error(e);
-                    // Allow manual confirm even if precheck failed (same as chainsaw UX)
-                    confirmModal.style.display = 'flex';
+                    toast(e?.message || 'Something went wrong.');
+                } finally {
+                    hideLoading();
                 }
-            });
+            }, true);
 
-            // ====== FINAL SUBMIT HANDLER ======
-            btnOkConfirm?.addEventListener('click', async () => {
-                confirmModal.style.display = 'none';
-                loading.style.display = 'flex';
+
+
+            // final submit (no confirm modal; toasts only for success/fail)
+            async function finalSubmit() {
+                // Validate fields AFTER precheck but BEFORE sending
+                if (typeof window.__validateWildlifeForm === 'function') {
+                    const ok = window.__validateWildlifeForm();
+                    if (!ok) {
+                        if (typeof window.__scrollFirstErrorIntoView === 'function') {
+                            window.__scrollFirstErrorIntoView();
+                        }
+                        toast('Please fix the highlighted fields.');
+                        return; // don’t submit
+                    }
+                }
+
+                if (precheckCache && precheckCache.block) {
+                    showBlock(precheckCache.block, precheckCache.message || 'You already have a pending wildlife application. Please wait for the update first.');
+                    return;
+                }
+
+                showLoading('Submitting application...');
                 try {
+                    window.__USE_EXISTING_CLIENT_ID__ = chosenClientId ? String(chosenClientId) : null;
                     await doSubmit();
                     toast("Application submitted. We'll notify you once reviewed.");
                     resetForm();
@@ -3513,9 +3732,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     console.error(e);
                     toast(e?.message || 'Submission failed. Please try again.');
                 } finally {
-                    loading.style.display = 'none';
+                    hideLoading();
                 }
-            });
+            }
+
+
+
 
             // ====== APP DOC GENERATION + SAVE ======
             async function doSubmit() {
@@ -3752,7 +3974,13 @@ ${
                 // Build FormData for backend
                 const fd = new FormData();
                 fd.append('permit_type', isRenewal ? 'renewal' : 'new');
-                if (chosenClientId) fd.append('use_existing_client_id', chosenClientId);
+                const selectedId = window.__USE_EXISTING_CLIENT_ID__ || chosenClientId;
+                if (selectedId) {
+                    fd.append('use_existing_client_id', String(selectedId));
+                }
+                if (window.__FORCE_NEW_CLIENT__) {
+                    fd.append('force_new_client', '1');
+                }
 
                 // Identity / contact
                 fd.append('first_name', firstName);
@@ -4266,15 +4494,11 @@ ${
                     }
                 }, true);
             }
+            window.__validateWildlifeForm = validateAll;
+            window.__scrollFirstErrorIntoView = scrollFirstErrorIntoView;
         })();
     </script>
     <script>
-        /* Validation + “touched/submit gating”
-   - Nothing is red on load
-   - Errors show only after you interact with a field or click Submit
-   - Middle Name is optional (validated only if filled)
-   - Red border clears live as soon as value becomes valid
-*/
         (() => {
             const $ = (id) => document.getElementById(id);
             const activeType = () => (document.querySelector('.permit-type-btn.active')?.dataset.type || 'new');
@@ -4675,6 +4899,8 @@ ${
             window.addEventListener('load', () => {
                 clearAllErrors(document);
             });
+            window.__validateWildlifeForm = validateAll;
+            window.__scrollFirstErrorIntoView = scrollFirstErrorIntoView;
         })();
     </script>
 

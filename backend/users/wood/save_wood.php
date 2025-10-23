@@ -276,12 +276,9 @@ try {
         $nl = norm($last_name);
     } else {
         // 1) Try exact normalized match first (use norm_* if present)
-        $hasNormCols = false;
-        try {
-            $pdo->query("SELECT norm_first, norm_middle, norm_last FROM public.client LIMIT 0");
-            $hasNormCols = true;
-        } catch (\Throwable $ignored) {
-        }
+        $hasNormCols = column_exists($pdo, 'public', 'client', 'norm_first')
+            && column_exists($pdo, 'public', 'client', 'norm_middle')
+            && column_exists($pdo, 'public', 'client', 'norm_last');
 
         if ($hasNormCols) {
             $stmt = $pdo->prepare("
@@ -309,9 +306,10 @@ try {
             // Keep a conservative guard for callers who hit save directly: suggest candidates and STOP here.
             $candidates = [];
             $minSim = 0.60; // "very likely" same person
-            $supportsTrgm = true;
+            $supportsTrgm = false;
             try {
-                $pdo->query("SELECT similarity('a','a')");
+                $trgm = $pdo->query("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' LIMIT 1");
+                $supportsTrgm = (bool)$trgm->fetchColumn();
             } catch (\Throwable $e) {
                 $supportsTrgm = false;
             }
@@ -453,9 +451,6 @@ try {
     if ($permit_type === 'renewal') {
         if ($hasPendingRenewal) {
             throw new Exception('You already have a pending RENEWAL wood application.');
-        }
-        if (!$hasReleasedNew) {
-            throw new Exception('To file a renewal, you must have a RELEASED new wood processing plant permit on record.');
         }
     } else { // NEW
         if ($hasPendingNew) {
