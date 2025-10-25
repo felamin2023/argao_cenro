@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'User') {
     header("Location: user_login.php");
@@ -1923,7 +1923,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <div class="requirement-item" data-show-for="new">
+                    <div class="requirement-item" data-show-for="renewal">
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">6</span>
@@ -1939,6 +1939,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="uploaded-files" id="uploaded-old-reg"></div>
                         </div>
                     </div>
+
                 </div>
             </div>
 
@@ -2100,6 +2101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             })();
             const openModal = (opts) => AppModal.open(opts);
 
+            const RENEWAL_TYPED = "__typed__";
+
             /* ===== Fuzzy precheck helpers ===== */
             function renderCandidateList(cands) {
                 if (!Array.isArray(cands) || !cands.length) return '';
@@ -2141,17 +2144,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 value: 'cancel'
                             },
                             {
-                                text: 'Confirm',
+                                text: 'Use typed details',
+                                variant: 'outline',
+                                value: 'typed'
+                            },
+                            {
+                                text: 'Use detected client',
                                 variant: 'primary',
-                                value: 'confirm'
+                                value: 'use'
                             },
                         ]
                     });
-                    if (act === 'confirm') return String(baseJson.existing_client_id);
+                    if (act === 'use') return String(baseJson.existing_client_id);
+                    if (act === 'typed') return RENEWAL_TYPED;
                     return null;
                 }
 
-                // fuzzy candidates → require a pick
+                // fuzzy candidates �' require a pick
                 const cands = Array.isArray(baseJson?.candidates) ? baseJson.candidates : [];
                 if (cands.length) {
                     const act = await openModal({
@@ -2161,6 +2170,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 text: 'Cancel',
                                 variant: 'outline',
                                 value: 'cancel'
+                            },
+                            {
+                                text: 'Use typed details',
+                                variant: 'outline',
+                                value: 'typed'
                             },
                             {
                                 text: 'Use selected',
@@ -2173,21 +2187,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         const picked = readSelectedCandidateId();
                         return picked ? String(picked) : null;
                     }
+                    if (act === 'typed') return RENEWAL_TYPED;
                     return null;
                 }
 
                 // no match at all
                 const act = await openModal({
                     title: 'No matching client',
-                    html: `We couldn’t detect an existing client for renewal. You can edit the name fields or switch to a NEW request.`,
+                    html: `We couldn’t detect an existing client for renewal. You can edit the name fields, proceed with the details you entered, or switch to a NEW request.`,
                     buttons: [{
                             text: 'Cancel',
                             variant: 'outline',
                             value: 'cancel'
                         },
                         {
-                            text: 'Switch to NEW',
+                            text: 'submit as new',
                             variant: 'primary',
+                            value: 'typed'
+                        },
+                        {
+                            text: 'Switch to NEW',
+                            variant: 'outline',
                             value: 'to_new'
                         },
                     ]
@@ -2199,7 +2219,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         top: 0,
                         behavior: 'smooth'
                     });
+                    return null;
                 }
+                if (act === 'typed') return RENEWAL_TYPED;
                 return null;
             }
 
@@ -2210,11 +2232,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             const MSG = {
                 pay: 'You still have an unpaid chainsaw permit on record (<b>for payment</b>). <br>Please settle this <b>personally at the office</b> before filing another request.',
-                offerR: 'You can’t request a <b>new</b> Chainsaw permit because you already have a released one. You’re allowed to request a <b>renewal</b> instead.',
-                needNew: 'To request a renewal, you must have an released <b>NEW</b> Chainsaw permit on record.',
-
+                offerR: 'You can\'t request a <b>new</b> Chainsaw permit because you already have a released one. You\'re allowed to request a <b>renewal</b> instead.',
                 // NEW: shown only when trying to RENEW but an unexpired permit exists.
-                // (If you want the word "lumber" exactly, change 'chainsaw' below.)
+                // (If you want the word "lumber" exactly, change \'chainsaw\' below.)
                 unexpired: '<div style="padding:16px 20px;line-height:1.6"> You still have an <b>unexpired</b> chainsaw permit.<br><br> Please wait until your current permit <b>expires</b> before requesting a renewal. </div>',
             };
 
@@ -2230,7 +2250,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fd.append('middle_name', middle);
                 fd.append('last_name', last);
                 fd.append('desired_permit_type', type);
-                if (pickedClientId) fd.append('use_client_id', pickedClientId);
+                if (pickedClientId) fd.append('use_existing_client_id', pickedClientId);
+
 
                 const res = await fetch(PRECHECK_URL, {
                     method: 'POST',
@@ -2780,76 +2801,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         return;
                     }
 
-                    // 3) RENEWAL — confirm client FIRST
-                    const pickedId = await confirmDetectedClientForRenewal(base);
-                    if (!pickedId) return; // user cancelled / switched
-                    chosenClientId = pickedId;
-
-                    // Re-run precheck bound to the confirmed client
-                    const json = await precheckWith("renewal", pickedId);
-
-                    chosenClientName = {
-                        first: json.existing_client_first || '',
-                        middle: json.existing_client_middle || '',
-                        last: json.existing_client_last || ''
-                    };
-
-                    if (json.block === "for_payment") {
-                        await openModal({
-                            title: 'Payment Due',
-                            html: MSG.pay,
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }]
-                        });
-                        return;
-                    }
-                    if (json.block === "pending_renewal") {
-                        toast("You already have a pending chainsaw renewal. Please wait for the update first.");
-                        return;
-                    }
-
-                    if (json.block === "unexpired_permit") {
-                        await openModal({
-                            title: 'Unexpired Permit',
-                            html: MSG.unexpired,
-                            buttons: [{
-                                text: 'Okay',
-                                variant: 'primary',
-                                value: 'ok'
-                            }]
-                        });
-                        return;
-                    }
-
-                    if (json.block === "need_approved_new") {
-                        if (needApprovedNewModal) needApprovedNewModal.style.display = "flex";
-                        else {
-                            const act = await openModal({
-                                title: 'Action Required',
-                                html: MSG.needNew + '<br><br>You can switch to a NEW request. We’ll copy your values.',
+                    const handleRenewalBlock = async (json) => {
+                        if (!json || !json.block) return false;
+                        if (json.block === "for_payment") {
+                            await openModal({
+                                title: 'Payment Due',
+                                html: MSG.pay,
                                 buttons: [{
-                                    text: 'Cancel',
-                                    variant: 'outline',
-                                    value: 'cancel'
-                                }, {
-                                    text: 'Request new',
+                                    text: 'Okay',
                                     variant: 'primary',
-                                    value: 'switch'
+                                    value: 'ok'
                                 }]
                             });
-                            if (act === 'switch') {
-                                applyFilter('new');
-                                autofillNewFromRenewal();
-                                window.scrollTo({
-                                    top: 0,
-                                    behavior: 'smooth'
-                                });
-                            }
+                            return true;
                         }
-                        return;
+                        if (json.block === "pending_renewal") {
+                            toast("You already have a pending chainsaw renewal. Please wait for the update first.");
+                            return true;
+                        }
+                        if (json.block === "unexpired_permit") {
+                            await openModal({
+                                title: 'Unexpired Permit',
+                                html: MSG.unexpired,
+                                buttons: [{
+                                    text: 'Okay',
+                                    variant: 'primary',
+                                    value: 'ok'
+                                }]
+                            });
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    if (await handleRenewalBlock(base)) return;
+
+                    const picked = await confirmDetectedClientForRenewal(base);
+                    if (picked === null) return; // user cancelled or switched to NEW
+
+                    let json = base;
+                    chosenClientId = null;
+                    chosenClientName = null;
+
+                    if (picked !== RENEWAL_TYPED) {
+                        chosenClientId = picked;
+                        json = await precheckWith("renewal", picked);
+                        chosenClientName = {
+                            first: json.existing_client_first || '',
+                            middle: json.existing_client_middle || '',
+                            last: json.existing_client_last || ''
+                        };
+                        if (await handleRenewalBlock(json)) return;
                     }
 
                     // Confirm submit
@@ -3107,7 +3109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         geo_photos: pick("file-geo"),
                         chainsaw_permit_to_sell: pick("file-sell-permit"),
                         chainsaw_business_permit: pick("file-business-permit"),
-                        chainsaw_old_registration: pick("file-old-reg"),
+                        // REMOVED: chainsaw_old_registration (now renewal-only)
                     };
                     Object.entries(files).forEach(([name, file]) => {
                         if (file) fd.append(name, file);
@@ -3118,12 +3120,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         chainsaw_cert_sticker: pick("file-cert-sticker"), // 1.2
                         chainsaw_staff_work: pick("file-memo"), // 2
                         geo_photos: pick("file-geo"), // 3
-                        // (no application letter)
+                        chainsaw_old_registration: pick("file-old-reg"), // ADDED for renewal
                     };
                     Object.entries(filesRenewal).forEach(([name, file]) => {
                         if (file) fd.append(name, file);
                     });
                 }
+
 
                 // Carry user’s choice from the fuzzy step
                 if (chosenClientId) fd.append("use_existing_client_id", String(chosenClientId));
@@ -3483,9 +3486,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (type === TYPE.NEW) {
                     need($("#file-sell-permit"), "Upload file.", "pdf,doc,docx", 10);
                     need($("#file-business-permit"), "Upload file.", "pdf,doc,docx", 10);
+                } else if (type === TYPE.REN) {
                     need($("#file-old-reg"), "Upload file.", "pdf,doc,docx,jpg,jpeg,png", 10);
                 }
                 return ok;
+
             }
 
             // Signature (canvas not blank)

@@ -163,9 +163,7 @@ $status     = strtolower((string)($request['status'] ?? 'pending'));
                     </a>
                 </div>
             </div>
-            <div class="nav-item">
-                <div class="nav-icon"><a href="supermessage.php"><i class="fas fa-envelope" style="color:black;"></i></a></div>
-            </div>
+
             <div class="nav-item dropdown">
                 <div class="nav-icon active"><i class="fas fa-bell"></i></div>
                 <div class="dropdown-menu notifications-dropdown">

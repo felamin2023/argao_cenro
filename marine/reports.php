@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,12 +8,13 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <link rel="stylesheet" href="/denr/superadmin/css/reports.css">
-      <link rel="stylesheet" href="/denr/superadmin/js/reports.js">
+    <link rel="stylesheet" href="/denr/superadmin/js/reports.js">
 
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+
 </head>
+
 <body>
     <header>
         <div class="logo">
@@ -20,12 +22,12 @@
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -56,16 +58,9 @@
                     </a>
                 </div>
             </div>
-                
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="marinemessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
-            
+
+
+
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -77,7 +72,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="marineeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -90,13 +85,13 @@
                             </div>
                         </a>
                     </div>
-                    
+
                     <div class="notification-footer">
                         <a href="marinenotif.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -115,7 +110,7 @@
             </div>
         </div>
     </header>
-    
+
     <div class="main-content">
         <div class="page-header">
             <h1 class="page-title">
@@ -126,7 +121,7 @@
                 Track program performance, habitat assessments, MPA networking, and biodiversity-friendly enterprises.
             </p>
         </div>
-        
+
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Program Performance</h3>
@@ -162,7 +157,7 @@
                     <div class="chart-container">
                         <canvas id="habitatExtentChart"></canvas>
                     </div>
-                    
+
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -211,7 +206,7 @@
                             </tr>
                         </tbody>
                     </table>
-                    
+
                     <div class="progress-container">
                         <div class="progress-item">
                             <div class="progress-label">
@@ -238,7 +233,7 @@
                     <div class="chart-container">
                         <canvas id="mpaNetworkChart"></canvas>
                     </div>
-                    
+
                     <div class="progress-container">
                         <div class="progress-item">
                             <div class="progress-label">
@@ -294,7 +289,7 @@
                             <div class="stat-label">Training Sessions</div>
                         </div>
                     </div>
-                    
+
                     <div class="chart-container">
                         <canvas id="bdfeChart"></canvas>
                     </div>
@@ -313,7 +308,7 @@
                     <div class="chart-container">
                         <canvas id="awarenessChart"></canvas>
                     </div>
-                    
+
                     <div class="chart-container">
                         <canvas id="communicationChart"></canvas>
                     </div>
@@ -343,32 +338,31 @@
                             <div class="stat-label">Webinar Episodes</div>
                         </div>
                     </div>
-                    
+
                     <div class="chart-container">
                         <canvas id="webinarChart"></canvas>
                     </div>
-                    
-                    
+
+
                 </div>
             </div>
         </div>
     </div>
-    
-    <script>
 
+    <script>
         // Collapsible sections functionality
         const sectionHeaders = document.querySelectorAll('.section-header');
-            sectionHeaders.forEach(header => {
-                header.addEventListener('click', () => {
-                    const section = header.parentElement;
-                    section.classList.toggle('active');
-                });
+        sectionHeaders.forEach(header => {
+            header.addEventListener('click', () => {
+                const section = header.parentElement;
+                section.classList.toggle('active');
             });
-        
-      
-        
-      
-        
+        });
+
+
+
+
+
         // Habitat Extent Chart
         const habitatExtentCtx = document.getElementById('habitatExtentChart').getContext('2d');
         const habitatExtentChart = new Chart(habitatExtentCtx, {
@@ -412,7 +406,7 @@
                 }
             }
         });
-        
+
         // MPA Network Chart
         const mpaNetworkCtx = document.getElementById('mpaNetworkChart').getContext('2d');
         const mpaNetworkChart = new Chart(mpaNetworkCtx, {
@@ -444,7 +438,7 @@
                 }
             }
         });
-        
+
         // BDFE Chart
         const bdfeCtx = document.getElementById('bdfeChart').getContext('2d');
         const bdfeChart = new Chart(bdfeCtx, {
@@ -473,7 +467,7 @@
                 }
             }
         });
-        
+
         // Awareness Chart
         const awarenessCtx = document.getElementById('awarenessChart').getContext('2d');
         const awarenessChart = new Chart(awarenessCtx, {
@@ -509,7 +503,7 @@
                 }
             }
         });
-        
+
         // Communication Chart
         const communicationCtx = document.getElementById('communicationChart').getContext('2d');
         const communicationChart = new Chart(communicationCtx, {
@@ -543,7 +537,7 @@
                 }
             }
         });
-        
+
         // Webinar Chart
         const webinarCtx = document.getElementById('webinarChart').getContext('2d');
         const webinarChart = new Chart(webinarCtx, {
@@ -588,18 +582,18 @@
             }
         });
     </script>
-    
+
     <script>
         // Collapsible sections functionality
         document.addEventListener('DOMContentLoaded', function() {
             // Section toggle functionality
             const sectionTitles = document.querySelectorAll('.section-title');
-            
+
             sectionTitles.forEach(title => {
                 title.addEventListener('click', () => {
                     const content = title.nextElementSibling;
                     title.classList.toggle('collapsed');
-                    
+
                     if (title.classList.contains('collapsed')) {
                         content.classList.add('collapsed');
                     } else {
@@ -610,14 +604,14 @@
 
             // Card toggle functionality
             const cardHeaders = document.querySelectorAll('.card-header');
-            
+
             cardHeaders.forEach(header => {
                 header.addEventListener('click', () => {
                     const card = header.parentElement;
                     const content = Array.from(card.children).filter(child => child !== header);
-                    
+
                     card.classList.toggle('collapsed');
-                    
+
                     content.forEach(item => {
                         if (card.classList.contains('collapsed')) {
                             item.style.display = 'none';
@@ -631,49 +625,49 @@
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
+
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     navContainer.classList.toggle('active');
                 });
             }
-            
+
             // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
-            
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                
+
                 // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
                 });
-                
+
                 // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
                     // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
-                
+
                 // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
             });
@@ -684,9 +678,9 @@
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     });
                 }
             });
@@ -696,18 +690,18 @@
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
-                    
+
                     toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
+
                         // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
-                        
+
                         // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
@@ -732,4 +726,5 @@
         });
     </script>
 </body>
+
 </html>

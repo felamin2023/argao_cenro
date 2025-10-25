@@ -412,13 +412,7 @@ try {
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="supermessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
+
 
             <!-- Notifications -->
             <div class="as-item">

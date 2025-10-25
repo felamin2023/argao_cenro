@@ -1,6 +1,137 @@
 <?php
 // wildlife/reportaccident.php (Wildlife admin page)
 declare(strict_types=1);
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+date_default_timezone_set('Asia/Manila');
+
+/* Adjust path if your connection file is elsewhere */
+require_once __DIR__ . '/../backend/connection.php'; // provides $pdo
+
+/* ---- AJAX: mark single / mark all read (handled by this same page) ---- */
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId    = $_POST['notif_id']    ?? '';
+            $incidentId = $_POST['incident_id'] ?? '';
+            if (!$notifId && !$incidentId) {
+                echo json_encode(['ok' => false, 'error' => 'missing ids']);
+                exit;
+            }
+
+            if ($notifId) {
+                $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+                $st->execute([':id' => $notifId]);
+            }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
+                $st->execute([':id' => $incidentId]);
+            }
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("
+                UPDATE public.notifications
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
+            ");
+            $pdo->exec("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+            ");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[WILD NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit;
+}
+
+/* ---- helpers used by the UI snippet ---- */
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
+/* ---- data needed by your pasted UI (badge + lists) ---- */
+$wildNotifs = [];
+$incRows = [];
+$unreadWildlife = 0;
+
+try {
+    $wildNotifs = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id   = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications
+        WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadWildlife = $unreadPermits + $unreadIncidents;
+} catch (Throwable $e) {
+    error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
+    $wildNotifs = [];
+    $incRows = [];
+    $unreadWildlife = 0;
+}
 
 session_start();
 
@@ -97,33 +228,74 @@ try {
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="wildmessage.php"><i class="fas fa-envelope" style="color:black;"></i></a>
-                </div>
-            </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-bell"></i><span class="badge">1</span>
+
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadWildlife ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="wildeach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Wildlife Incident Reported</div>
-                                <div class="notification-message">A large monitor lizard approximately 1.2 meters in length was spotted near a residential backyard early in the morning.</div>
-                                <div class="notification-time">15 minutes ago</div>
+                    <div class="notification-list" id="wildNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits
+                        foreach ($wildNotifs as $nf) {
+                            $combined[] = [
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                            ];
+                        }
+
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No wildlife notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer">
-                        <a href="wildnotification.php" class="view-all">View All Notifications</a>
-                    </div>
+
+                    <div class="notification-footer"><a href="wildnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -211,14 +383,14 @@ try {
                 <table class="accident-table">
                     <thead>
                         <tr>
-                            <th style="width:5%;">ID</th>
-                            <th style="width:10%;">WHO</th>
-                            <th style="width:10%;">WHAT</th>
-                            <th style="width:10%;">WHERE</th>
-                            <th style="width:10%;">WHEN</th>
-                            <th style="width:10%;">WHY</th>
-                            <th style="width:10%;">STATUS</th>
-                            <th style="width:15%;">ACTIONS</th>
+                            <th class="text-center" style="width:5%;">ID</th>
+                            <th class="text-center" style="width:10%;">WHO</th>
+                            <th class="text-center" style="width:10%;">WHAT</th>
+                            <th class="text-center" style="width:10%;">WHERE</th>
+                            <th class="text-center" style="width:10%;">WHEN</th>
+                            <th class="text-center" style="width:10%;">WHY</th>
+                            <th class="text-center" style="width:10%;">STATUS</th>
+                            <th class="text-center" style="width:15%;">ACTIONS</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -235,7 +407,26 @@ try {
                                     <td><?= htmlspecialchars((string)$row['where']) ?></td>
                                     <td><?= htmlspecialchars($row['when'] ? (new DateTime($row['when']))->format('Y-m-d H:i') : '') ?></td>
                                     <td><?= htmlspecialchars((string)$row['why']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['status']) ?></td>
+                                    <?php
+                                    $statusRaw = (string)($row['status'] ?? '');
+                                    $statusKey = strtolower(trim($statusRaw));
+                                    if ($statusKey === '') {
+                                        $statusClass = 'pending';
+                                        $statusLabel = 'Pending';
+                                    } else {
+                                        $statusClassSanitized = preg_replace('/[^a-z0-9]+/', '-', $statusKey);
+                                        $statusClassSanitized = $statusClassSanitized !== '' ? $statusClassSanitized : 'unknown';
+                                        $knownStatuses = ['pending', 'approved', 'resolved', 'rejected'];
+                                        $statusClass = in_array($statusClassSanitized, $knownStatuses, true) ? $statusClassSanitized : 'unknown';
+                                        $labelSource = str_replace(['-', '_'], ' ', $statusKey);
+                                        $statusLabel = ucwords($labelSource);
+                                    }
+                                    ?>
+                                    <td>
+                                        <span class="status-pill status-pill--<?= htmlspecialchars($statusClass, ENT_QUOTES) ?>">
+                                            <?= htmlspecialchars($statusLabel) ?>
+                                        </span>
+                                    </td>
                                     <td>
                                         <button class="view-btn" data-id="<?= htmlspecialchars((string)$row['id']) ?>">View</button>
 
@@ -275,8 +466,9 @@ try {
                     </div>
                     <div><strong>Created At:</strong> <span id="modal-created-at"></span></div>
                 </div>
-                <div style="margin-top:20px;display:flex;gap:10px;">
+                <div class="modal-actions" style="margin-top:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <button id="update-status-btn" style="padding:8px 16px;background:#005117;color:white;border:none;border-radius:4px;cursor:pointer;">Update</button>
+                    <span id="resolved-lock-note" class="resolved-lock-note" style="display:none;">This incident is already resolved and can no longer be updated.</span>
                 </div>
             </div>
 
@@ -320,6 +512,105 @@ try {
 
     <!-- Notification -->
     <div id="profile-notification" style="display:none;position:fixed;top:5px;left:50%;transform:translateX(-50%);background:#323232;color:#fff;padding:16px 32px;border-radius:8px;font-size:1.1rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-align:center;min-width:220px;max-width:90vw;"></div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const NOTIF_ENDPOINT = '<?php echo basename(__FILE__); ?>'; // calls THIS page for AJAX
+
+            // Minimal dropdown open/close just for the bell
+            const dd = document.getElementById('notifDropdown');
+            if (dd) {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger?.setAttribute('aria-expanded', 'true');
+                    if (menu) {
+                        menu.style.opacity = '1';
+                        menu.style.visibility = 'visible';
+                    }
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger?.setAttribute('aria-expanded', 'false');
+                    if (menu) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                    }
+                };
+                trigger?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dd.classList.toggle('open');
+                    if (dd.classList.contains('open')) open();
+                    else close();
+                });
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('#notifDropdown')) close();
+                });
+            }
+
+            // Mark ALL as read
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                // optimistic UI
+                document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch(`${NOTIF_ENDPOINT}?ajax=mark_all_read`, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch {
+                    location.reload();
+                }
+            });
+
+            // Mark ONE as read + follow link
+            document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                e.preventDefault();
+
+                const item = link.closest('.notification-item');
+                const notifId = item?.getAttribute('data-notif-id') || '';
+                const incidentId = item?.getAttribute('data-incident-id') || '';
+                const href = link.getAttribute('href') || '#';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+                    await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch {}
+
+                item?.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
+        });
+    </script>
 
     <script>
         document.addEventListener("DOMContentLoaded", () => {
@@ -341,15 +632,30 @@ try {
             const confirmRejectBtn = document.getElementById("confirmRejectBtn");
             const cancelRejectBtn = document.getElementById("cancelRejectBtn");
             const statusSelect = document.getElementById("modal-status");
+            const resolvedLockNote = document.getElementById("resolved-lock-note");
             const rejectionReasonInput = document.getElementById("rejection-reason");
 
             const notificationEl = document.getElementById("profile-notification");
             let currentReportId = null;
+            let currentReportLocked = false;
 
             function showNotification(message) {
                 notificationEl.textContent = message;
                 notificationEl.style.display = "block";
                 setTimeout(() => (notificationEl.style.display = "none"), 3000);
+            }
+
+            function resetStatusLock() {
+                currentReportLocked = false;
+                statusSelect.disabled = false;
+                updateStatusBtn.disabled = false;
+                updateStatusBtn.title = "";
+                // Ensure update button is visible when modal resets
+                updateStatusBtn.style.display = "inline-block";
+                statusSelect.classList.remove("status-readonly");
+                if (resolvedLockNote) {
+                    resolvedLockNote.style.display = "none";
+                }
             }
 
             // ===== View button → open details modal =====
@@ -358,6 +664,7 @@ try {
 
                 const reportId = e.target.getAttribute("data-id");
                 currentReportId = reportId;
+                resetStatusLock();
 
                 try {
                     const res = await fetch(`../backend/admins/incidentReport/get_incident_report.php?id=${encodeURIComponent(reportId)}`);
@@ -393,6 +700,17 @@ try {
 
                     // Status dropdown
                     statusSelect.value = (report.status || "pending").toLowerCase();
+                    const isResolved = (report.status || "").toLowerCase() === "resolved";
+                    currentReportLocked = isResolved;
+                    statusSelect.disabled = isResolved;
+                    updateStatusBtn.disabled = isResolved;
+                    updateStatusBtn.title = isResolved ? "Resolved incidents can no longer be updated" : "";
+                    // Hide the update button entirely for resolved reports
+                    updateStatusBtn.style.display = isResolved ? "none" : "inline-block";
+                    statusSelect.classList.toggle("status-readonly", isResolved);
+                    if (resolvedLockNote) {
+                        resolvedLockNote.style.display = isResolved ? "block" : "none";
+                    }
 
                     // Photos (Supabase public/signed URLs)
                     const photosContainer = document.getElementById("modal-photos");
@@ -434,6 +752,10 @@ try {
 
             // ===== Update Status flow =====
             updateStatusBtn.addEventListener("click", () => {
+                if (currentReportLocked) {
+                    showNotification("Resolved incidents can no longer be updated");
+                    return;
+                }
                 const newStatus = statusSelect.value;
                 if (newStatus === "rejected") {
                     rejectReasonModal.style.display = "block";
@@ -446,6 +768,11 @@ try {
             confirmStatusBtn.addEventListener("click", async () => {
                 const reportId = document.getElementById("modal-id").textContent;
                 const newStatus = statusSelect.value;
+                if (currentReportLocked) {
+                    showNotification("Resolved incidents can no longer be updated");
+                    confirmStatusModal.style.display = "none";
+                    return;
+                }
 
                 try {
                     const res = await fetch("../backend/admins/incidentReport/update_incident_status.php", {
@@ -472,8 +799,7 @@ try {
                     showNotification("Error updating status");
                 } finally {
                     confirmStatusModal.style.display = "none";
-                    viewModal.style.display = "none";
-                    document.body.style.overflow = "auto";
+                    closeModal(viewModal);
                 }
             });
 
@@ -482,6 +808,11 @@ try {
                 const rejectionReason = rejectionReasonInput.value.trim();
                 if (!rejectionReason) {
                     showNotification("Please enter a rejection reason");
+                    return;
+                }
+                if (currentReportLocked) {
+                    showNotification("Resolved incidents can no longer be updated");
+                    rejectReasonModal.style.display = "none";
                     return;
                 }
 
@@ -511,8 +842,7 @@ try {
                     showNotification("Error rejecting report");
                 } finally {
                     rejectReasonModal.style.display = "none";
-                    viewModal.style.display = "none";
-                    document.body.style.overflow = "auto";
+                    closeModal(viewModal);
                 }
             });
 
@@ -552,6 +882,9 @@ try {
             const closeModal = (el) => {
                 el.style.display = "none";
                 document.body.style.overflow = "auto";
+                if (el === viewModal) {
+                    resetStatusLock();
+                }
             };
             closeViewModal.addEventListener("click", () => closeModal(viewModal));
             closeConfirmStatusModal.addEventListener("click", () => (confirmStatusModal.style.display = "none"));
@@ -570,6 +903,8 @@ try {
             const tableRows = document.querySelectorAll(".accident-table tbody tr");
             statusButtons.forEach((button) => {
                 button.addEventListener("click", () => {
+                    statusButtons.forEach((btn) => btn.classList.remove("active"));
+                    button.classList.add("active");
                     const status = button.dataset.status || "all";
                     tableRows.forEach((row) => {
                         if (status === "all") {
@@ -581,6 +916,10 @@ try {
                     });
                 });
             });
+            const defaultStatusBtn = document.querySelector(".status-btn.all-btn");
+            if (defaultStatusBtn) {
+                defaultStatusBtn.classList.add("active");
+            }
 
             // ===== Search (icon click or Enter) =====
             const searchInput = document.getElementById("search-input");

@@ -103,14 +103,6 @@ try {
             </div>
 
 
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="marinemessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">

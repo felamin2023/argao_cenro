@@ -650,6 +650,42 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                     throw new RuntimeException("Failed to regenerate document: " . $e->getMessage());
                 }
 
+                // 2.a) Deduct seedlings stock for this approval (if linked to a seedl_req_id)
+                $stSeedReq = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
+                $stSeedReq->execute([':aid' => $approvalId]);
+                $seedlReqId = (string)($stSeedReq->fetchColumn() ?: '');
+
+                if ($seedlReqId !== '') {
+                    // fetch requested items
+                    $stReqItems = $pdo->prepare("SELECT seedlings_id, COALESCE(quantity,0) AS qty FROM public.seedling_requests WHERE seedl_req_id = :sid");
+                    $stReqItems->execute([':sid' => $seedlReqId]);
+                    $items = $stReqItems->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+                    foreach ($items as $it) {
+                        $seedId = (string)($it['seedlings_id'] ?? '');
+                        $qty    = (int)($it['qty'] ?? 0);
+                        if ($seedId === '' || $qty <= 0) continue;
+
+                        // Lock the seedlings row to avoid race conditions and check stock
+                        $stLock = $pdo->prepare("SELECT stock, seedling_name FROM public.seedlings WHERE seedlings_id = :sid FOR UPDATE");
+                        $stLock->execute([':sid' => $seedId]);
+                        $rowS = $stLock->fetch(PDO::FETCH_ASSOC);
+                        if (!$rowS) {
+                            throw new RuntimeException('Seedling record not found for id: ' . $seedId);
+                        }
+                        $stock = (int)($rowS['stock'] ?? 0);
+                        $sname = (string)($rowS['seedling_name'] ?? $seedId);
+
+                        if ($stock < $qty) {
+                            throw new RuntimeException(sprintf('Insufficient stock for "%s" (have %d, need %d)', $sname, $stock, $qty));
+                        }
+
+                        // Deduct stock
+                        $u = $pdo->prepare("UPDATE public.seedlings SET stock = stock - :qty WHERE seedlings_id = :sid");
+                        $u->execute([':qty' => $qty, ':sid' => $seedId]);
+                    }
+                }
+
                 // 3) Notify user (their notification; remains unread for them)
                 $pdo->prepare("
                     INSERT INTO public.notifications (approval_id, message, is_read, created_at, \"from\", \"to\")

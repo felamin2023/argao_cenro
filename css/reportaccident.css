@@ -447,7 +447,7 @@ a {
 }
 
 .CHAINSAW-RECORDS {
-  margin-top: -5% !important;
+  margin-top: -3%;
   background-color: #f9f9f9;
   display: flex;
   justify-content: center;
@@ -590,55 +590,51 @@ a {
 .status-buttons {
   display: flex;
   justify-content: center;
-  gap: 15px;
+  gap: 12px;
   margin-top: 3px;
   background-color: transparent;
+  flex-wrap: wrap;
 }
 
-.status-buttons button.status-btn {
-  padding: 10px 20px;
+.status-buttons .status-btn {
+  padding: 10px 18px;
   font-size: 12px;
   font-family: tahoma;
-  font-weight: bold;
-  color: black !important;
-  background-color: rgb(255, 255, 255) !important;
-  border: none;
-  border-radius: 5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.3s ease;
-  min-width: 100px;
-  margin-top: -1%;
+  transition: transform 0.2s ease, box-shadow 0.2s ease,
+    background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  letter-spacing: 0.04em;
 }
 
-.status-buttons button.status-btn:hover {
-  background-color: #1e4a1a !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  transform: scale(1.05);
+.status-buttons .status-btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
 }
 
-.accident-table th:nth-child(13),
-.accident-table td:nth-child(13) {
-  width: 10%;
+.status-buttons .status-btn:hover,
+.status-buttons .status-btn.active {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Specific button types */
-.status-buttons button.all-btn,
-.status-buttons button.pending-btn,
-.status-buttons button.resolved-btn,
-.status-buttons button.rejected-btn,
-.status-buttons button.approved-btn {
-  background-color: rgb(255, 255, 255) !important;
-  color: black;
-  border: 2px darkgreen solid;
+/* Make top status filter buttons neutral — only the status pill shows color */
+.status-buttons .status-btn {
+  background-color: #ffffff;
+  color: #0f172a; /* dark neutral text */
+  border: 1px solid #d1d5db; /* subtle border */
 }
-
-.status-buttons button.all-btn:hover,
-.status-buttons button.pending-btn:hover,
-.status-buttons button.resolved-btn:hover,
-.status-buttons button.rejected-btn:hover,
-.status-buttons button.approved-btn:hover {
-  background-color: var(--primary-dark) !important;
-  color: white !important;
+.status-buttons .status-btn:hover {
+  background-color: #f8fafc;
+  transform: translateY(-1px);
+}
+.status-buttons .status-btn.active {
+  background-color: #f1f5f9;
+  border-color: #9ca3af;
+  box-shadow: 0 4px 10px rgba(2, 6, 23, 0.06);
 }
 
 .table-container {
@@ -691,6 +687,79 @@ a {
 .accident-table tbody tr:hover {
   background-color: #e0f2e9;
   transition: all 0.2s ease;
+}
+
+.text-center {
+  text-align: center !important;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  min-width: 72px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.status-pill--pending {
+  background-color: #fef9c3;
+  color: #854d0e;
+  border-color: #facc15;
+}
+
+.status-pill--approved {
+  background-color: #dcfce7;
+  color: #166534;
+  border-color: #22c55e;
+}
+
+.status-pill--resolved {
+  background-color: #e0f2fe;
+  color: #1d4ed8;
+  border-color: #38bdf8;
+}
+
+.status-pill--rejected {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-color: #f87171;
+}
+
+.status-pill--unknown {
+  background-color: #e5e7eb;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+select.status-readonly {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+  cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.resolved-lock-note {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b91c1c;
+  margin-left: 8px;
+}
+
+#update-status-btn:disabled {
+  background-color: #94a3b8 !important;
+  color: #f8fafc !important;
+  cursor: not-allowed;
+  opacity: 0.85;
+  box-shadow: none;
 }
 
 /* Make buttons smaller */
@@ -844,8 +913,11 @@ a {
   width: 100%;
   border-collapse: collapse;
 }
-
-.accident-table th,
+.accident-table th {
+  padding: 12px;
+  text-align: center; /* center header labels: ID, WHO, WHAT, WHERE, WHEN, WHY, STATUS, ACTIONS */
+  border-bottom: 1px solid #ddd;
+}
 .accident-table td {
   padding: 12px;
   text-align: left;

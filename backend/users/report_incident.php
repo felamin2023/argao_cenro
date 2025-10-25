@@ -234,14 +234,33 @@ try {
 
     // Insert notification (approval_id NULL; message with display name)
     $notifMsg = sprintf('%s reported an incident', $displayName);
-    $insN = $pdo->prepare("
-        INSERT INTO public.notifications (approval_id, incident_id, message, is_read)
-        VALUES (NULL, :incident_id, :message, FALSE)
+    $insN = $pdo->prepare('
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read, created_at, "from", "to")
+        VALUES (NULL, :incident_id, :message, FALSE, now(), :from, :to)
         RETURNING notif_id
-    ");
+    ');
+
+    // determine "from" and "to" values for the notification
+    $notif_from = $user_id;
+    $catLower = strtolower(trim((string)$category));
+    if (strpos($catLower, 'tree') !== false) {
+        $notif_to = 'Tree Cutting';
+    } elseif (strpos($catLower, 'marine') !== false) {
+        $notif_to = 'Marine';
+    } elseif (strpos($catLower, 'seedl') !== false || strpos($catLower, 'seedling') !== false) {
+        $notif_to = 'Seedling';
+    } elseif (strpos($catLower, 'wild') !== false) {
+        $notif_to = 'Wildlife';
+    } else {
+        // fallback: use the raw category string if present, otherwise 'cenro'
+        $notif_to = $category !== '' ? $category : 'cenro';
+    }
+
     $insN->execute([
         ':incident_id' => $incident_id,
         ':message'     => $notifMsg,
+        ':from'        => $notif_from,
+        ':to'          => $notif_to,
     ]);
     $notif = $insN->fetch(PDO::FETCH_ASSOC);
 

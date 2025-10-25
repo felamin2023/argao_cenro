@@ -93,21 +93,7 @@ $quantities = [
                         <span class="quantity-badge"><?php echo $quantities['total_received']; ?></span>
                     </a>
 
-                    <a href="releasedrecords.php" class="dropdown-item">
-                        <i class="fas fa-truck"></i>
-                        <span class="item-text">Seedlings Released</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_released']; ?></span>
-                    </a>
-                    <a href="discardedrecords.php" class="dropdown-item">
-                        <i class="fas fa-trash-alt"></i>
-                        <span class="item-text">Seedlings Discarded</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_discarded']; ?></span>
-                    </a>
-                    <a href="balancerecords.php" class="dropdown-item">
-                        <i class="fas fa-calculator"></i>
-                        <span class="item-text">Seedlings Left</span>
-                        <span class="quantity-badge"><?php echo $quantities['total_balance']; ?></span>
-                    </a>
+
 
 
 

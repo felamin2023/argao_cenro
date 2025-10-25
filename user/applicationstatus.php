@@ -117,10 +117,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                 $norm  = strtolower($label);
                 if ($norm === 'additional information' || $norm === 'additional info') continue;
                 if (strpos($norm, 'signature') !== false) {
-                    $signatureField = ['label' => $label, 'value' => (string)$v];
+                    $signatureField = [
+                        'label' => $label,
+                        'value' => (string)$v,
+                        'field' => $k,
+                        'is_signature' => true,
+                        'origin' => 'application_form',
+                    ];
                     continue;
                 }
-                $appFields[] = ['label' => $label, 'value' => (string)$v];
+                $appFields[] = [
+                    'label' => $label,
+                    'value' => (string)$v,
+                    'field' => $k,
+                    'origin' => 'application_form',
+                ];
             }
         }
         if ($signatureField) array_unshift($appFields, $signatureField);
@@ -138,15 +149,32 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                 $label = ucwords(str_replace('_', ' ', $k));
                 $path  = parse_url($url, PHP_URL_PATH) ?? '';
                 $ext   = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-                $files[] = ['name' => $label, 'url' => $url, 'ext' => $ext];
+                $files[] = [
+                    'name'  => $label,
+                    'url'   => $url,
+                    'ext'   => $ext,
+                    'field' => $k,
+                    'origin' => 'requirements',
+                ];
             }
         }
 
-        // 4) Download link when status is RELEASED
-        $status      = strtolower((string)($row['approval_status'] ?? ''));
-        $downloadUrl = ($status === 'released')
-            ? normalize_url((string)($row['approved_document'] ?? ''), $FILE_BASE)
-            : '';
+        // 4) Download link rule:
+        // - For seedling request_type the download is available when status is 'approved'
+        // - For other request types the download is available when status is 'released'
+        // Approved document is taken from approved_docs.approved_document
+        $status       = strtolower((string)($row['approval_status'] ?? ''));
+        $request_type = strtolower((string)($row['request_type'] ?? ''));
+        $downloadUrl  = '';
+        $shouldHaveDownload = false;
+        if ($request_type === 'seedling') {
+            $shouldHaveDownload = ($status === 'approved');
+        } else {
+            $shouldHaveDownload = ($status === 'released');
+        }
+        if ($shouldHaveDownload) {
+            $downloadUrl = normalize_url((string)($row['approved_document'] ?? ''), $FILE_BASE);
+        }
 
         // 5) Echo once
         echo json_encode([
@@ -629,6 +657,40 @@ try {
             color: #111827
         }
 
+        .toast {
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            min-width: 240px;
+            max-width: min(340px, calc(100vw - 48px));
+            background: var(--primary-color);
+            color: var(--white);
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: var(--box-shadow);
+            opacity: 0;
+            transform: translate(-50%, -10px);
+            pointer-events: none;
+            transition: opacity .25s ease, transform .25s ease;
+            z-index: 1100;
+            font-size: .95rem;
+            text-align: center;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+            pointer-events: auto;
+        }
+
+        .toast-success {
+            background: var(--primary-color);
+        }
+
+        .toast-error {
+            background: #dc2626;
+        }
+
         .card {
             background: #fff;
             border: 1px solid #e5e7eb;
@@ -737,7 +799,24 @@ try {
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 15px 45px rgba(0, 0, 0, .2)
+            box-shadow: 0 15px 45px rgba(0, 0, 0, .2);
+            overflow: auto;
+        }
+
+        #editPane {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            overflow: auto;
+            /* key line */
+        }
+
+        #editPane .edit-actions {
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            padding: 12px 16px;
         }
 
         .modal-header {
@@ -812,6 +891,111 @@ try {
             overflow: auto;
             flex: 1;
             min-height: 0
+        }
+
+        .edit-pane {
+            padding: 24px;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            display: none;
+        }
+
+        .edit-pane:not(.hidden) {
+            display: block;
+        }
+
+        .edit-sections {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .edit-section {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-height: 50vh;
+            overflow: auto;
+        }
+
+        .edit-field-list,
+        .edit-file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .edit-form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .edit-form-row label {
+            font-weight: 600;
+            font-size: .95rem;
+            color: #374151;
+        }
+
+        .edit-form-row input[type="text"],
+        .edit-form-row input[type="email"],
+        .edit-form-row input[type="date"],
+        .edit-form-row input[type="number"],
+        .edit-form-row textarea,
+        .edit-form-row select,
+        .edit-form-row input[type="file"] {
+            padding: 9px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: .95rem;
+            background: #fff;
+            transition: border-color .2s ease, box-shadow .2s ease;
+        }
+
+        .edit-form-row textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        .edit-form-row input:focus,
+        .edit-form-row textarea:focus,
+        .edit-form-row select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+
+        .edit-current-file {
+            font-size: .85rem;
+            color: #4b5563;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .edit-current-file a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .edit-message {
+            font-size: .9rem;
+            color: #9b1c1c;
+            padding: 8px 0;
+            min-height: 18px;
+        }
+
+        .edit-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
         }
 
         .deflist {
@@ -955,6 +1139,10 @@ try {
             .pane.left {
                 border-right: 0;
                 border-bottom: 1px solid #f3f4f6
+            }
+
+            .edit-sections {
+                grid-template-columns: 1fr;
             }
 
             .meta-strip {
@@ -1113,6 +1301,12 @@ try {
                 grid-template-columns: 1fr
             }
         }
+
+        @keyframes spin {
+            to {
+                transform: rotate(1turn)
+            }
+        }
     </style>
 </head>
 
@@ -1256,6 +1450,14 @@ try {
 
             <div class="table-wrap">
                 <table class="table">
+                    <colgroup>
+                        <col>
+                        <col>
+                        <col>
+                        <col>
+                        <col>
+                        <col style="width:240px"> <!-- <= adjust this number to taste -->
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Client First Name</th>
@@ -1274,16 +1476,19 @@ try {
                             $rt  = strtolower((string)($r['request_type'] ?? ''));
                             $pt  = strtolower((string)($r['permit_type'] ?? 'none'));
 
-                            // Compute download URL per your rule:
-                            // - permit_type 'none'  -> requirements.application_form
-                            // - new / renewal       -> approved_docs.approved_document
+                            // Compute download URL using rule:
+                            // - seedling requests: show download when status === 'approved'
+                            // - other requests: show download when status === 'released'
+                            // Download link is taken from approved_docs.approved_document (if available)
                             $downloadUrl = '';
-                            if ($st === 'approved') {
-                                if ($pt === 'none') {
-                                    $downloadUrl = normalize_url((string)($r['req_application_form'] ?? ''), $FILE_BASE);
-                                } else {
-                                    $downloadUrl = normalize_url((string)($r['approved_document'] ?? ''), $FILE_BASE);
-                                }
+                            $showDownload = false;
+                            if ($rt === 'seedling') {
+                                $showDownload = ($st === 'approved');
+                            } else {
+                                $showDownload = ($st === 'released');
+                            }
+                            if ($showDownload) {
+                                $downloadUrl = normalize_url((string)($r['approved_document'] ?? ''), $FILE_BASE);
                             }
                             ?>
                             <tr
@@ -1299,9 +1504,9 @@ try {
                                 <td><span class="badge status <?= $cls ?>"><?= ucfirst($st) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
                                 <td>
-                                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap; width: fit-content;">
                                         <button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button>
-                                        <?php if ($st === 'approved'): ?>
+                                        <?php if ($showDownload): ?>
                                             <button class="btn small" data-action="download" <?= $downloadUrl ? '' : 'disabled title="No file available yet"' ?>>
                                                 <i class="fas fa-download"></i> Download
                                             </button>
@@ -1320,6 +1525,14 @@ try {
             </div>
         </main>
     </div>
+    <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
+        <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;display:flex;gap:10px;align-items:center;">
+            <span class="loader" style="--loader-size:18px;width:var(--loader-size);height:var(--loader-size);border:2px solid #ddd;border-top-color:#2b6625;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite;"></span>
+            <span id="loadingMessage">Working...</span>
+        </div>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-hidden="true"></div>
+
 
     <!-- ===== TWO-PANE MODAL ===== -->
     <div id="viewModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -1331,8 +1544,17 @@ try {
                     <button class="btn small primary hidden" id="btnDownloadIssued" type="button" aria-hidden="true">
                         <i class="fas fa-download"></i> Download
                     </button>
+                    <button class="btn small ghost hidden" id="btnEditPending" type="button" aria-hidden="true">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
                     <button class="btn primary hidden" id="btnRequestAgain" type="button" aria-hidden="true">
                         <i class="fas fa-rotate-right"></i> Request again
+                    </button>
+                    <button class="btn small ghost hidden" id="btnCancelEdit" type="button" aria-hidden="true">
+                        Cancel
+                    </button>
+                    <button class="btn small primary hidden" id="btnSaveEdit" type="submit" form="editForm" aria-hidden="true">
+                        Save Changes
                     </button>
                     <button class="icon-btn" type="button" aria-label="Close" data-close-modal>
                         <i class="fas fa-times"></i>
@@ -1410,6 +1632,25 @@ try {
                     </div>
                 </section>
             </div>
+
+            <div id="editPane" class="edit-pane hidden">
+                <form id="editForm" novalidate>
+                    <input type="hidden" name="approval_id" id="editApprovalId" value="">
+                    <input type="hidden" name="request_type" id="editRequestType" value="">
+                    <input type="hidden" name="permit_type" id="editPermitType" value="">
+                    <div class="edit-sections">
+                        <section class="edit-section">
+                            <h4 class="pane-title"><i class="fas fa-edit"></i> Edit Application Form</h4>
+                            <div id="editFields" class="edit-field-list"></div>
+                        </section>
+                        <section class="edit-section">
+                            <h4 class="pane-title"><i class="fas fa-paperclip"></i> Update Documents</h4>
+                            <div id="editFiles" class="edit-file-list"></div>
+                        </section>
+                    </div>
+                    <div id="editMessage" class="edit-message" role="alert" aria-live="polite"></div>
+                </form>
+            </div>
         </div>
 
         <!-- Drawer -->
@@ -1480,26 +1721,276 @@ try {
             /* --- Modal utilities + state --- */
             const btnRequestAgain = document.getElementById('btnRequestAgain');
             const btnDownloadIssued = document.getElementById('btnDownloadIssued');
+            const btnEditPending = document.getElementById('btnEditPending');
             const modalEl = document.getElementById('viewModal');
             const modalSkeleton = document.getElementById('modalSkeleton');
             const metaStripEl = document.querySelector('.meta-strip');
             const modalContent = document.querySelector('.modal-content');
+            const editPane = document.getElementById('editPane');
+            const editForm = document.getElementById('editForm');
+            const editFieldsWrap = document.getElementById('editFields');
+            const editFilesWrap = document.getElementById('editFiles');
+            const editMessage = document.getElementById('editMessage');
+            const btnCancelEdit = document.getElementById('btnCancelEdit');
+            const btnSaveEdit = document.getElementById('btnSaveEdit');
+            const toastEl = document.getElementById('toast');
+            const editApprovalInput = document.getElementById('editApprovalId');
+            const editRequestTypeInput = document.getElementById('editRequestType');
+            const editPermitTypeInput = document.getElementById('editPermitType');
+            let toastTimeout = null;
 
             function showModalSkeleton() {
                 modalSkeleton.classList.remove('hidden');
                 metaStripEl.classList.add('hidden');
                 modalContent.classList.add('hidden');
+                editPane?.classList.add('hidden');
                 btnRequestAgain.classList.add('hidden');
-                if (btnDownloadIssued) btnDownloadIssued.classList.add('hidden'); // ← new
+                if (btnDownloadIssued) btnDownloadIssued.classList.add('hidden');
+                editMode = false;
+                resetEditFormContents();
             }
 
             function hideModalSkeleton() {
                 modalSkeleton.classList.add('hidden');
                 metaStripEl.classList.remove('hidden');
-                modalContent.classList.remove('hidden');
+                if (!editMode) modalContent.classList.remove('hidden');
             }
 
             let cachedDetails = null;
+            let editMode = false;
+
+            function showToast(message, {
+                type = 'success',
+                duration = 4000
+            } = {}) {
+                if (!toastEl) return;
+                const variant = type === 'error' ? 'error' : 'success';
+                toastEl.textContent = message;
+                toastEl.className = `toast toast-${variant}`;
+                toastEl.setAttribute('aria-hidden', 'false');
+                toastEl.classList.remove('show');
+                // Force reflow so the animation retriggers when called in succession.
+                void toastEl.offsetWidth;
+                toastEl.classList.add('show');
+                if (toastTimeout) clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => {
+                    toastEl.classList.remove('show');
+                    toastEl.setAttribute('aria-hidden', 'true');
+                }, Math.max(1000, duration));
+            }
+
+            function resetEditFormContents() {
+                if (editFieldsWrap) editFieldsWrap.innerHTML = '';
+                if (editFilesWrap) editFilesWrap.innerHTML = '';
+                if (editMessage) editMessage.textContent = '';
+                editForm?.reset();
+            }
+
+            function exitEditMode(silent = false) {
+                if (!editPane) return;
+                editMode = false;
+                resetEditFormContents();
+                editPane.classList.add('hidden');
+                if (!silent && modalContent) modalContent.classList.remove('hidden');
+                const meta = (cachedDetails && cachedDetails.meta) || {};
+                if (btnEditPending) {
+                    const canEdit = (meta.status || '').toLowerCase() === 'pending';
+                    btnEditPending.classList.toggle('hidden', !canEdit);
+                    btnEditPending.disabled = !canEdit;
+                    btnEditPending.setAttribute('aria-hidden', canEdit ? 'false' : 'true');
+                }
+                if (btnCancelEdit) {
+                    btnCancelEdit.classList.add('hidden');
+                    btnCancelEdit.setAttribute('aria-hidden', 'true');
+                    btnCancelEdit.disabled = true;
+                }
+                if (btnSaveEdit) {
+                    btnSaveEdit.classList.add('hidden');
+                    btnSaveEdit.setAttribute('aria-hidden', 'true');
+                    btnSaveEdit.disabled = true;
+                }
+            }
+
+            function createInputId(field) {
+                return `edit-field-${field.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+            }
+
+            function normalizeDateValue(value) {
+                const trimmed = (value || '').trim();
+                if (!trimmed) return '';
+                if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+                const parsed = Date.parse(trimmed);
+                if (Number.isNaN(parsed)) return '';
+                try {
+                    return new Date(parsed).toISOString().slice(0, 10);
+                } catch {
+                    return '';
+                }
+            }
+
+            const BLOCKED_EDIT_FIELDS = new Set([
+                'application_id', 'application id',
+                'application_for', 'application for',
+                'type_of_permit', 'type of permit'
+            ]);
+
+            function isBlocked(field) {
+                // check both DB name and label text
+                const f = (field?.field || '').toLowerCase().trim();
+                const l = (field?.label || '').toLowerCase().trim();
+                return BLOCKED_EDIT_FIELDS.has(f) || BLOCKED_EDIT_FIELDS.has(l);
+            }
+
+            function buildEditFieldRow(field) {
+                if (!editFieldsWrap) return;
+
+                // Skip blocked/system fields
+                if (isBlocked(field)) return;
+
+                const fieldName = field.field || '';
+                if (!fieldName || field.is_signature) return;
+
+                const row = document.createElement('div');
+                row.className = 'edit-form-row';
+
+                const labelEl = document.createElement('label');
+                const labelText = field.label || fieldName.replace(/_/g, ' ');
+                const inputId = createInputId(fieldName);
+                labelEl.setAttribute('for', inputId);
+                labelEl.textContent = labelText;
+                row.appendChild(labelEl);
+
+                const lower = fieldName.toLowerCase();
+                const value = field.value ?? '';
+                const longText = typeof value === 'string' && value.length > 180;
+
+                let inputEl;
+                if (longText) {
+                    inputEl = document.createElement('textarea');
+                    inputEl.value = value ?? '';
+                } else {
+                    inputEl = document.createElement('input');
+                    let type = 'text';
+                    if (lower.includes('date')) type = 'date';
+                    else if (lower.includes('email')) type = 'email';
+                    else if (lower.includes('contact') || lower.includes('phone')) type = 'tel';
+                    else if (lower.includes('age')) type = 'number';
+                    inputEl.type = type;
+                    inputEl.value = (type === 'date') ? normalizeDateValue(value) : (value ?? '');
+                }
+
+                inputEl.id = inputId;
+                inputEl.name = `fields[${fieldName}]`;
+                row.appendChild(inputEl);
+                editFieldsWrap.appendChild(row);
+            }
+
+
+            function buildEditFileRow(file) {
+                if (!editFilesWrap) return;
+                const fieldName = file.field || '';
+                if (!fieldName) return;
+                const row = document.createElement('div');
+                row.className = 'edit-form-row';
+                const labelEl = document.createElement('label');
+                const labelText = file.name || fieldName.replace(/_/g, ' ');
+                const inputId = createInputId(`file-${fieldName}`);
+                labelEl.setAttribute('for', inputId);
+                labelEl.textContent = labelText;
+                row.appendChild(labelEl);
+
+                if (file.url) {
+                    const currentWrap = document.createElement('div');
+                    currentWrap.className = 'edit-current-file';
+                    const link = document.createElement('a');
+                    link.href = file.url;
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    link.textContent = 'View current file';
+                    currentWrap.appendChild(link);
+                    row.appendChild(currentWrap);
+                }
+
+                const inputEl = document.createElement('input');
+                inputEl.type = 'file';
+                inputEl.id = inputId;
+                inputEl.name = `files[${fieldName}]`;
+                inputEl.accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic';
+                row.appendChild(inputEl);
+
+                const origin = document.createElement('input');
+                origin.type = 'hidden';
+                origin.name = `file_origins[${fieldName}]`;
+                origin.value = file.origin || 'requirements';
+                row.appendChild(origin);
+
+                editFilesWrap.appendChild(row);
+            }
+
+            function enterEditMode() {
+                if (!cachedDetails || !modalContent || !editPane) return;
+                const meta = cachedDetails.meta || {};
+                if ((meta.status || '').toLowerCase() !== 'pending') return;
+                editMode = true;
+                modalContent.classList.add('hidden');
+                editPane.classList.remove('hidden');
+                if (btnEditPending) {
+                    btnEditPending.classList.add('hidden');
+                    btnEditPending.setAttribute('aria-hidden', 'true');
+                }
+                if (btnCancelEdit) {
+                    btnCancelEdit.classList.remove('hidden');
+                    btnCancelEdit.setAttribute('aria-hidden', 'false');
+                }
+                if (btnSaveEdit) {
+                    btnSaveEdit.classList.remove('hidden');
+                    btnSaveEdit.setAttribute('aria-hidden', 'false');
+                }
+                resetEditFormContents();
+                if (editApprovalInput) editApprovalInput.value = meta.approval_id || '';
+                if (editRequestTypeInput) editRequestTypeInput.value = meta.request_type || '';
+                if (editPermitTypeInput) editPermitTypeInput.value = meta.permit_type || '';
+
+                if (Array.isArray(cachedDetails.application)) {
+                    cachedDetails.application.forEach(buildEditFieldRow);
+                }
+
+                const fileEntries = [];
+                if (Array.isArray(cachedDetails.files)) {
+                    cachedDetails.files.forEach(f => fileEntries.push(f));
+                }
+                if (Array.isArray(cachedDetails.application)) {
+                    cachedDetails.application.filter(f => f && f.is_signature).forEach(f => {
+                        fileEntries.push({
+                            name: f.label || f.field,
+                            url: f.value || '',
+                            field: f.field,
+                            origin: f.origin || 'application_form'
+                        });
+                    });
+                }
+
+                if (editFieldsWrap && editFieldsWrap.children.length === 0) {
+                    const info = document.createElement('p');
+                    info.className = 'edit-current-file';
+                    info.textContent = 'No editable form fields available.';
+                    editFieldsWrap.appendChild(info);
+                }
+
+                if (fileEntries.length) {
+                    fileEntries.forEach(buildEditFileRow);
+                } else if (editFilesWrap) {
+                    const info = document.createElement('p');
+                    info.className = 'edit-current-file';
+                    info.textContent = 'No documents available to update.';
+                    editFilesWrap.appendChild(info);
+                }
+
+                if (btnCancelEdit) btnCancelEdit.disabled = false;
+                if (btnSaveEdit) btnSaveEdit.disabled = false;
+                if (editMessage) editMessage.textContent = '';
+            }
+
             async function forceDownload(url) {
                 if (!url) return;
                 try {
@@ -1561,6 +2052,15 @@ try {
                 banner.classList.add('hidden');
                 banner.textContent = '';
 
+                editMode = false;
+                resetEditFormContents();
+                if (editPane) editPane.classList.add('hidden');
+                if (btnEditPending) {
+                    btnEditPending.classList.add('hidden');
+                    btnEditPending.disabled = true;
+                    btnEditPending.setAttribute('aria-hidden', 'true');
+                }
+
                 const list = document.getElementById('applicationFields');
                 const filesList = document.getElementById('filesList');
                 const formEmpty = document.getElementById('formEmpty');
@@ -1608,6 +2108,13 @@ try {
                 ms.textContent = st ? st[0].toUpperCase() + st.slice(1) : '—';
                 // 'released' uses the green badge like approved
                 ms.className = 'badge status ' + ((st === 'released' || st === 'approved') ? 'approved' : (st === 'rejected' ? 'rejected' : 'pending'));
+
+                if (btnEditPending) {
+                    const canEdit = st === 'pending';
+                    btnEditPending.classList.toggle('hidden', !canEdit);
+                    btnEditPending.disabled = !canEdit;
+                    btnEditPending.setAttribute('aria-hidden', canEdit ? 'false' : 'true');
+                }
 
                 // Toggle modal Download button only for released
                 if (btnDownloadIssued) {
@@ -1763,10 +2270,12 @@ try {
 
             // close modal
             document.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', () => {
+                exitEditMode();
                 document.getElementById('viewModal').classList.add('hidden');
                 closePreview();
             }));
             document.querySelector('.modal-backdrop')?.addEventListener('click', () => {
+                exitEditMode();
                 document.getElementById('viewModal').classList.add('hidden');
                 closePreview();
             });
@@ -1867,6 +2376,70 @@ try {
 
             // Run once to ensure the noRows state is correct when page loads
             applyFilters?.();
+
+
+            btnEditPending?.addEventListener('click', () => {
+                enterEditMode();
+            });
+
+            btnCancelEdit?.addEventListener('click', () => {
+                exitEditMode();
+            });
+
+            editForm?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!cachedDetails || !cachedDetails.meta) return;
+                if (editMessage) editMessage.textContent = '';
+
+                const overlay = document.getElementById('loadingIndicator');
+                const loadingMsgEl = document.getElementById('loadingMessage');
+
+                const meta = cachedDetails.meta;
+                const approvalId = meta.approval_id;
+                if (!approvalId) {
+                    if (editMessage) editMessage.textContent = 'Missing approval reference.';
+                    return;
+                }
+
+                const formData = new FormData(editForm);
+                formData.set('approval_id', approvalId);
+                formData.set('request_type', meta.request_type || '');
+                formData.set('permit_type', meta.permit_type || '');
+
+                if (btnSaveEdit) btnSaveEdit.disabled = true;
+                if (btnCancelEdit) btnCancelEdit.disabled = true;
+
+                try {
+                    if (overlay) {
+                        if (loadingMsgEl) loadingMsgEl.textContent = 'Saving changes…';
+                        overlay.style.display = 'flex';
+                    }
+
+                    const response = await fetch('../backend/users/update_application.php', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    const data = await response.json().catch(() => ({}));
+
+                    if (!response.ok || !data?.ok) {
+                        const msg = data?.error || 'Update failed. Please try again.';
+                        if (editMessage) editMessage.textContent = msg;
+                        return;
+                    }
+
+                    if (overlay && loadingMsgEl) loadingMsgEl.textContent = 'Refreshing details…';
+                    exitEditMode(true);
+                    await openApproval(approvalId);
+                    showToast('Application updated successfully.');
+                } catch (err) {
+                    if (editMessage) editMessage.textContent = 'Network error. Please try again.';
+                } finally {
+                    if (btnSaveEdit) btnSaveEdit.disabled = false;
+                    if (btnCancelEdit) btnCancelEdit.disabled = false;
+                    if (overlay) overlay.style.display = 'none';
+                }
+            });
+
 
             // Request again (guard to rejected only)
             btnRequestAgain?.addEventListener('click', () => {

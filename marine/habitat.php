@@ -4,17 +4,19 @@ $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Habitat Assessment</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-      <link rel="stylesheet" href="/denr/superadmin/css/habitat.css">
-        <link rel="stylesheet" href="/denr/superadmin/js/habitat.js">
+    <link rel="stylesheet" href="/denr/superadmin/css/habitat.css">
+    <link rel="stylesheet" href="/denr/superadmin/js/habitat.js">
 
 
 </head>
+
 <body>
     <header>
         <div class="logo">
@@ -22,12 +24,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -58,16 +60,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     </a>
                 </div>
             </div>
-            
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="marinemessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
-            
+
+
+
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -79,7 +74,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="marineeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -92,13 +87,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             </div>
                         </a>
                     </div>
-                    
+
                     <div class="notification-footer">
                         <a href="marinenotif.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon <?php echo $current_page === 'marineprofile.php' ? 'active' : ''; ?>">
@@ -117,18 +112,18 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
     </header>
-    
+
     <div class="main-content">
         <div class="page-header">
             <h1 class="page-title">
                 <i class="fas fa-tree"></i> Coastal and Marine Habitat Assessment
             </h1>
             <p class="page-description">
-                Comprehensive monitoring and assessment of coral reefs, mangroves, and seagrass ecosystems across protected areas in the Philippines. 
+                Comprehensive monitoring and assessment of coral reefs, mangroves, and seagrass ecosystems across protected areas in the Philippines.
                 Data collected supports the Coastal and Marine Ecosystems Management Program (CMEMP) for evidence-based conservation strategies.
             </p>
         </div>
-        
+
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Protected Areas Assessed</h3>
@@ -161,17 +156,17 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>
-                        Baseline assessment provides updated evaluation of the extent and condition of coastal and marine habitats, 
-                        including factors, threats, and pressures affecting their state and health. Regular habitat assessments 
-                        are conducted in established monitoring stations to gather annual conditions of coral reefs, seagrass beds, 
+                        Baseline assessment provides updated evaluation of the extent and condition of coastal and marine habitats,
+                        including factors, threats, and pressures affecting their state and health. Regular habitat assessments
+                        are conducted in established monitoring stations to gather annual conditions of coral reefs, seagrass beds,
                         and mangroves, assess trends, and determine recovery from threats.
                     </p>
-                    
+
                     <div class="centered-content">
                         <img src="region.png" alt="Map of assessed habitats" class="habitat-image">
                         <p class="image-caption">Figure 11.4: Map of the habitats assessed in two NIPAS MPAs in Region 10</p>
                     </div>
-                    
+
                     <h3>Key Findings:</h3>
                     <ul class="threat-list">
                         <li class="threat-item">
@@ -258,8 +253,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             </tr>
                         </tbody>
                     </table>
-                    
-                    
+
+
                 </div>
             </div>
         </div>
@@ -273,74 +268,74 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>
-                        Water quality monitoring within Protected Areas is vital to account for pollution load and other water-related 
-                        parameters that can be attributed to causes of pollution in coastal and marine ecosystems. In 2020, water 
+                        Water quality monitoring within Protected Areas is vital to account for pollution load and other water-related
+                        parameters that can be attributed to causes of pollution in coastal and marine ecosystems. In 2020, water
                         quality monitoring based on in-situ parameters has been conducted in monitoring stations of 15 PAs as targeted.
                     </p>
-                    
+
                     <div class="centered-content">
                         <img src="water.png" alt="Water quality monitoring" class="habitat-image">
                         <p class="image-caption">Figure 11.8: Water quality monitoring of marine and river waterbodies in Regions 3 and 5</p>
                     </div>
-                    
+
                     <p>
-                        Researchers recommend that besides capacity building for water quality methods, a more comprehensive monitoring 
-                        plan must be prepared and implemented for more accurate datasets on required parameters and more appropriate 
+                        Researchers recommend that besides capacity building for water quality methods, a more comprehensive monitoring
+                        plan must be prepared and implemented for more accurate datasets on required parameters and more appropriate
                         classification of water bodies.
                     </p>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
+
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     navContainer.classList.toggle('active');
                 });
             }
-            
+
             // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
-            
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                
+
                 // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
                 });
-                
+
                 // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
                     // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
-                
+
                 // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
             });
@@ -351,9 +346,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     });
                 }
             });
@@ -363,18 +358,18 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
-                    
+
                     toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
+
                         // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
-                        
+
                         // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
@@ -408,4 +403,5 @@ $current_page = basename($_SERVER['PHP_SELF']);
         });
     </script>
 </body>
+
 </html>

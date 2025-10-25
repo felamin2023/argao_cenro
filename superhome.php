@@ -282,6 +282,8 @@ $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
             z-index: 1000;
         }
 
+
+
         .as-item:hover>.as-dropdown-menu,
         .as-dropdown-menu:hover {
             opacity: 1;

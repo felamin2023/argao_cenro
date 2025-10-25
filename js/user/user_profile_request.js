@@ -214,10 +214,10 @@ document.addEventListener("DOMContentLoaded", function () {
       try {
         showLoading("Saving profile…");
         await flushPaint(); // <-- force paint so spinner appears
-        setFormDisabled(true);
-
         const formData = new FormData(profileForm);
         if (emailChanged) formData.append("request_otp", "1");
+
+        setFormDisabled(true);
 
         const response = await fetch("../backend/users/update_profile.php", {
           method: "POST",
@@ -240,7 +240,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (data.success) {
-          showNotification("Profile updated successfully!", "success");
+          console.log("[profile-update]", data);
+          if ((data.updated_rows || 0) === 0) {
+            showNotification("No changes detected.", "success");
+          } else {
+            showNotification("Profile updated successfully!", "success");
+          }
           setTimeout(() => location.reload(), 1200);
         } else {
           showNotification(data.error || "Update failed", "error");
@@ -289,10 +294,10 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       showLoading("Verifying code…");
       await flushPaint();
-      setFormDisabled(true);
-
       const formData = new FormData(profileForm);
       formData.append("otp_code", code);
+
+      setFormDisabled(true);
 
       const response = await fetch("../backend/users/update_profile.php", {
         method: "POST",
@@ -301,8 +306,13 @@ document.addEventListener("DOMContentLoaded", function () {
       const data = await response.json();
 
       if (data.success) {
+        console.log("[profile-update][otp]", data);
         hideOtpModal();
-        showNotification("Profile updated successfully!", "success");
+        if ((data.updated_rows || 0) === 0) {
+          showNotification("No changes detected.", "success");
+        } else {
+          showNotification("Profile updated successfully!", "success");
+        }
         setTimeout(() => location.reload(), 1200);
       } else {
         otpMessage.textContent = data.error || "Invalid verification code";

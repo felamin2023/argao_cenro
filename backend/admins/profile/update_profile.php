@@ -57,8 +57,7 @@ function guess_mime_by_ext(string $ext): string
     return $map[$ext] ?? 'application/octet-stream';
 }
 
-/* Read what’s currently saved (for default image, etc.) */
-$st = $pdo->prepare("SELECT image FROM public.users WHERE user_id = :uid LIMIT 1");
+$st = $pdo->prepare("SELECT image, email, first_name AS current_first_name, department AS current_department FROM public.users WHERE user_id = :uid LIMIT 1");
 $st->execute([':uid' => $user_uuid]);
 $current = $st->fetch(PDO::FETCH_ASSOC) ?: ['image' => null];
 
@@ -69,6 +68,8 @@ $age        = isset($_POST['age']) && $_POST['age'] !== '' ? (int)$_POST['age'] 
 $phone      = trim((string)($_POST['phone'] ?? '')); // add a <input name="phone"> if you want it
 $password   = (string)($_POST['password'] ?? '');
 $password_hash = $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null;
+$email      = trim((string)($_POST['email'] ?? ''));
+$department = trim((string)($_POST['department'] ?? ''));
 
 /* ---------------- Optional: upload new avatar to Supabase ---------------- */
 /* Only check storage config if a file is actually provided */
@@ -144,41 +145,76 @@ if (!empty($_FILES['profile_image']) && is_uploaded_file($_FILES['profile_image'
     }
 }
 
-/* ---------------- Update users directly ---------------- */
+/* ---------------- Create a profile update request (do not change users table) ---------------- */
 try {
-    // Use COALESCE to keep existing values when input is blank.
-    // - first_name/last_name/phone: blank -> keep old
-    // - image: only set if a new file was uploaded
-    // - password: only set if provided
-    // - age: we intentionally set to NULL if left blank
+    // Prevent multiple pending requests for the same user
+    $st = $pdo->prepare("SELECT COUNT(*) FROM public.profile_update_requests WHERE user_id = :uid AND lower(status) = 'pending'");
+    $st->execute([':uid' => $user_uuid]);
+    $pendingCount = (int)$st->fetchColumn();
+    if ($pendingCount > 0) {
+        out_err('A pending profile update request already exists.', ['code' => 'PENDING_EXISTS']);
+    }
+
+    // If the email is being changed, ensure it's not already used by another user
+    $currentEmail = trim((string)($current['email'] ?? ''));
+    if ($email !== '' && strcasecmp($email, $currentEmail) !== 0) {
+        $st = $pdo->prepare("SELECT 1 FROM public.users WHERE email = :email AND user_id != :uid LIMIT 1");
+        $st->execute([':email' => $email, ':uid' => $user_uuid]);
+        if ($st->fetchColumn()) {
+            out_err('Email already in use.', ['code' => 'EMAIL_IN_USE']);
+        }
+    }
+
     $sql = "
-        UPDATE public.users
-        SET
-            first_name = COALESCE(NULLIF(:first_name, ''), first_name),
-            last_name  = COALESCE(NULLIF(:last_name,  ''), last_name),
-            phone      = COALESCE(NULLIF(:phone,      ''), phone),
-            age        = :age,
-            image      = COALESCE(:image, image),
-            password   = COALESCE(:password, password)
-        WHERE user_id = :uid
-        RETURNING image, first_name, last_name, age, email, role, department
+        INSERT INTO public.profile_update_requests
+            (user_id, image, first_name, last_name, age, email, department, phone, password)
+        VALUES
+            (:uid, :image, :first_name, :last_name, :age, :email, :department, :phone, :password)
+        RETURNING reqpro_id, user_id, image, first_name, last_name, age, email, department, phone, status, created_at
     ";
+
     $st = $pdo->prepare($sql);
     $st->execute([
+        ':uid' => $user_uuid,
+        ':image' => $new_public_image_url !== null ? $new_public_image_url : null,
         ':first_name' => $first_name,
-        ':last_name'  => $last_name,
-        ':phone'      => $phone,
-        ':age'        => $age,                      // may be null (clears age)
-        ':image'      => $new_public_image_url,     // null if no new upload → keep old
-        ':password'   => $password_hash,            // null if not changing → keep old
-        ':uid'        => $user_uuid,
+        ':last_name' => $last_name,
+        ':age' => $age,
+        ':email' => $email !== '' ? $email : null,
+        ':department' => $department !== '' ? $department : null,
+        ':phone' => $phone !== '' ? $phone : null,
+        ':password' => $password_hash,
     ]);
-    $updated = $st->fetch(PDO::FETCH_ASSOC);
 
-    if (!$updated) out_err('User not found.', ['code' => 'NOT_FOUND'], 404);
+    $inserted = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$inserted) {
+        out_err('Failed creating request.', ['code' => 'DB_ERROR']);
+    }
 
-    out_ok(['user' => $updated]);
+    // Create an admin notification pointing to this profile update request
+    try {
+        $reqpro_id = $inserted['reqpro_id'] ?? null;
+        $notifyFrom = $user_uuid;
+        // Prefer the submitted department; fall back to current user's department
+        $dept = $department !== '' ? $department : (string)($current['current_department'] ?? '');
+        $actorName = trim((string)($current['current_first_name'] ?? '')) ?: trim((string)($first_name ?? 'User'));
+        $deptLabel = $dept !== '' ? $dept : 'Unknown';
+        $message = sprintf('%s department, %s requested to update their profile.', $deptLabel, $actorName);
+
+        $nst = $pdo->prepare('INSERT INTO public.notifications (message, "from", "to", reqpro_id) VALUES (:message, :from, :to, :reqpro_id)');
+        $nst->execute([
+            ':message' => $message,
+            ':from' => $notifyFrom,
+            ':to' => 'Cenro',
+            ':reqpro_id' => $reqpro_id,
+        ]);
+    } catch (Throwable $ne) {
+        // Log notification error but don't fail the main request
+        error_log('[PROFILE/NOTIF CREATE] ' . $ne->getMessage());
+    }
+
+    out_ok(['request' => $inserted]);
 } catch (Throwable $e) {
-    error_log('[PROFILE/USERS UPDATE] ' . $e->getMessage());
+    error_log('[PROFILE/REQUEST CREATE] ' . $e->getMessage());
     out_err('Server error.', ['code' => 'DB_ERROR']);
 }

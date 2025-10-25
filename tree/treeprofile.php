@@ -44,6 +44,76 @@ $email      = htmlspecialchars((string)($user['email'] ?? ''),      ENT_QUOTES, 
 $role       = htmlspecialchars((string)($user['role'] ?? ''),       ENT_QUOTES, 'UTF-8');
 $department = htmlspecialchars((string)($user['department'] ?? ''), ENT_QUOTES, 'UTF-8');
 $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 'UTF-8');
+
+// Simple helpers (used by header)
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
+// Fetch notifications and incidents for header (tree cutting)
+$combined = [];
+$unreadTree = 0;
+try {
+    $notifRows = $pdo->query("SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to, a.approval_id, COALESCE(NULLIF(btrim(a.permit_type), ''), 'none') AS permit_type, COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status, LOWER(COALESCE(a.request_type,'')) AS request_type, c.first_name AS client_first, c.last_name AS client_last FROM public.notifications n LEFT JOIN public.approval a ON a.approval_id = n.approval_id LEFT JOIN public.client c ON c.client_id = a.client_id WHERE LOWER(COALESCE(n.\"to\", '')) = 'tree cutting' ORDER BY n.is_read ASC, n.created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $incRows = $pdo->query("SELECT incident_id, COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text, status, is_read, created_at FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' ORDER BY created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadPermits = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications WHERE LOWER(COALESCE(\"to\", ''))='tree cutting' AND is_read=false")->fetchColumn();
+    $unreadIncidents = (int)$pdo->query("SELECT COUNT(*) FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false")->fetchColumn();
+    $unreadTree = $unreadPermits + $unreadIncidents;
+
+    foreach ($notifRows as $nf) {
+        $combined[] = [
+            'id' => $nf['notif_id'],
+            'type' => 'permit',
+            'message' => trim((string)$nf['message'] ?: (($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '') . ' submitted a request.')),
+            'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+            'created_at' => $nf['created_at'] ?? null,
+            'raw' => $nf
+        ];
+    }
+    foreach ($incRows as $ir) {
+        $combined[] = [
+            'id' => $ir['incident_id'],
+            'type' => 'incident',
+            'message' => trim((string)$ir['body_text']),
+            'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+            'created_at' => $ir['created_at'] ?? null,
+            'raw' => $ir
+        ];
+    }
+    usort($combined, function ($a, $b) {
+        $ta = $a['created_at'] ?? '';
+        $tb = $b['created_at'] ?? '';
+        return strcmp($tb, $ta);
+    });
+} catch (Throwable $e) {
+    error_log('[TREE PROFILE NOTIFS] ' . $e->getMessage());
+    $combined = [];
+    $unreadTree = 0;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -138,69 +208,68 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                    <i class="fas fa-bars"></i>
-                </div>
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="treecutting.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Tree Cutting</span>
-                    </a>
-                    <a href="lumber.php" class="dropdown-item">
-                        <i class="fas fa-store"></i>
-                        <span>Lumber Dealers</span>
-                    </a>
-                    <a href="chainsaw.php" class="dropdown-item">
-                        <i class="fas fa-tools"></i>
-                        <span>Registered Chainsaw</span>
-                    </a>
-                    <a href="woodprocessing.php" class="dropdown-item">
-                        <i class="fas fa-industry"></i>
-                        <span>Wood Processing</span>
+                    <!-- ACTIVE on this page -->
+                    <a href="requestpermits.php" class="dropdown-item active" aria-current="page">
+                        <i class="fas fa-file-signature"></i><span>Request Permits</span>
                     </a>
                     <a href="reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Incident Reports</span>
+                        <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
                 </div>
             </div>
 
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="treemessage.php" aria-label="Messages">
-                        <i class="fas fa-envelope" style="color:black;"></i>
-                    </a>
-                </div>
-            </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
+            <div class="nav-item dropdown" id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <span class="badge"><?= (int)$unreadTree ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="treeeach.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-triangle"></i>
+                    <div class="notification-list" id="notifDropdownList">
+                        <?php if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No notifications</div>
+                                    <div class="notification-message">You're all caught up.</div>
+                                </div>
                             </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Illegal Logging Alert</div>
-                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
-                                <div class="notification-time">15 minutes ago</div>
-                            </div>
-                        </a>
+                            <?php else:
+                            $count = 0;
+                            foreach ($combined as $nf):
+                                if ($count++ >= 8) break;
+                                $isUnread = empty($nf['is_read']) ? true : false;
+                                $icon = $nf['type'] === 'incident' ? 'fa-exclamation-triangle' : 'fa-bell';
+                                $href = '#';
+                                if ($nf['type'] === 'incident') {
+                                    $href = 'treeeach.php?id=' . urlencode((string)$nf['id']);
+                                } elseif (!empty($nf['raw']['approval_id'])) {
+                                    $href = 'requestpermits.php?approval_id=' . urlencode((string)$nf['raw']['approval_id']);
+                                } else {
+                                    $href = 'requestpermits.php';
+                                }
+                            ?>
+                                <div class="notification-item <?= $isUnread ? 'unread' : '' ?>" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? '')) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? ($nf['type'] === 'incident' ? $nf['id'] : ''))) ?>">
+                                    <a href="<?= h($href) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="fas <?= $icon ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= h(substr((string)$nf['message'], 0, 120)) ?></div>
+                                            <div class="notification-message"><?= h(substr((string)$nf['message'], 0, 240)) ?></div>
+                                            <div class="notification-time"><?= h(time_elapsed_string($nf['created_at'] ?? null)) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer">
-                        <a href="treenotification.php" class="view-all">View All Notifications</a>
-                    </div>
+                    <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 

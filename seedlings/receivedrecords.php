@@ -399,8 +399,9 @@ function fmt_dt($ts)
         }
 
         .container {
+            margin-top: -1%;
             max-width: 1220px;
-            margin: 110px auto 48px;
+            margin: 10px auto 48px;
             background: #fff;
             border-radius: 12px;
             box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
@@ -948,8 +949,6 @@ function fmt_dt($ts)
 </head>
 
 <body>
-
-    <!-- ===== New Header (no Incident Reports / Seedlings Request; Seedlings Received active) ===== -->
     <header>
         <div class="logo">
             <a href="seedlingshome.php">
@@ -974,22 +973,16 @@ function fmt_dt($ts)
                         <span class="quantity-badge"><?= (int)$quantities['total_received']; ?></span>
                     </a>
 
-                    <a href="releasedrecords.php" class="dropdown-item">
-                        <i class="fas fa-truck"></i>
-                        <span class="item-text">Seedlings Released</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_released']; ?></span>
+
+
+                    <a href="reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-file-invoice"></i>
+                        <span>Incident Reports</span>
                     </a>
 
-                    <a href="discardedrecords.php" class="dropdown-item">
-                        <i class="fas fa-trash-alt"></i>
-                        <span class="item-text">Seedlings Discarded</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_discarded']; ?></span>
-                    </a>
-
-                    <a href="balancerecords.php" class="dropdown-item">
-                        <i class="fas fa-calculator"></i>
-                        <span class="item-text">Seedlings Left</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_balance']; ?></span>
+                    <a href="user_requestseedlings.php" class="dropdown-item">
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Seedlings Request</span>
                     </a>
                 </div>
             </div>

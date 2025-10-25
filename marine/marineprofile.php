@@ -114,18 +114,16 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
         <button class="mobile-toggle" aria-label="Toggle menu"><i class="fas fa-bars"></i></button>
         <div class="nav-container">
             <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bars"></i></div>
+                <div class="nav-icon active"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="treecutting.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting</span></a>
-                    <a href="lumber.php" class="dropdown-item"><i class="fas fa-store"></i><span>Lumber Dealers</span></a>
-                    <a href="chainsaw.php" class="dropdown-item"><i class="fas fa-tools"></i><span>Registered Chainsaw</span></a>
-                    <a href="woodprocessing.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing</span></a>
-                    <a href="reportaccident.php" class="dropdown-item"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
+                    <a href="mpa-management.php" class="dropdown-item"><i class="fas fa-water"></i><span>MPA Management</span></a>
+                    <a href="habitat.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Habitat Assessment</span></a>
+                    <a href="species.php" class="dropdown-item"><i class="fas fa-fish"></i><span>Species Monitoring</span></a>
+                    <a href="reports.php" class="dropdown-item"><i class="fas fa-chart-bar"></i><span>Reports & Analytics</span></a>
+                    <a href="reportaccident.php" class="dropdown-item active-page"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
                 </div>
             </div>
-            <div class="nav-item">
-                <div class="nav-icon"><a href="treemessage.php" aria-label="Messages"><i class="fas fa-envelope" style="color:black;"></i></a></div>
-            </div>
+
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
                 <div class="dropdown-menu notifications-dropdown">
@@ -133,7 +131,7 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                         <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
                     <div class="notification-item unread">
-                        <a href="treeeach.php?id=1" class="notification-link">
+                        <a href="marineeach.php?id=1" class="notification-link">
                             <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
                             <div class="notification-content">
                                 <div class="notification-title">Illegal Logging Alert</div>

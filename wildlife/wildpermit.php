@@ -646,6 +646,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                 ':fromDept' => $fromDept,
                 ':toUser'   => $toUserId
             ]);
+            // Activity log: record that this department approved the permit (moved to for payment)
+            try {
+                $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+                $ilog->execute([
+                    ':uid' => $adminId,
+                    ':dept' => $fromDept,
+                    ':action' => 'approve_permit',
+                    ':details' => sprintf('%s approved renewal permit %s (for payment)', $fromDept ?? '', substr((string)$approvalId, 0, 8)),
+                ]);
+            } catch (Throwable $le) {
+                error_log('[WILD-ACTIVITY LOG APPROVE] ' . $le->getMessage());
+            }
 
             $pdo->commit();
             echo json_encode(['ok' => true, 'status' => 'for payment']);
@@ -692,6 +704,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                 ':fromDept' => $fromDept,
                 ':toUser'   => $toUserId
             ]);
+            // Activity log: record that this department released the permit
+            try {
+                $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+                $ilog->execute([
+                    ':uid' => $adminId,
+                    ':dept' => $fromDept,
+                    ':action' => 'release_permit',
+                    ':details' => sprintf('%s released permit %s', $fromDept ?? '', substr((string)$approvalId, 0, 8)),
+                ]);
+            } catch (Throwable $le) {
+                error_log('[WILD-ACTIVITY LOG RELEASE] ' . $le->getMessage());
+            }
 
             $pdo->commit();
             echo json_encode(['ok' => true, 'status' => 'released', 'document_url' => $docUrl]);
@@ -724,6 +748,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                 ':fromDept' => $fromDept,
                 ':toUser'   => $toUserId
             ]);
+            // Activity log: record that this department rejected the permit
+            try {
+                $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+                $ilog->execute([
+                    ':uid' => $adminId,
+                    ':dept' => $fromDept,
+                    ':action' => 'reject_permit',
+                    ':details' => sprintf('%s rejected permit %s. Reason: %s', $fromDept ?? '', substr((string)$approvalId, 0, 8), $reason),
+                ]);
+            } catch (Throwable $le) {
+                error_log('[WILD-ACTIVITY LOG REJECT] ' . $le->getMessage());
+            }
 
             $pdo->commit();
             echo json_encode(['ok' => true, 'status' => 'rejected']);

@@ -4,6 +4,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,9 +12,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <link rel="stylesheet" href="/denr/superadmin/css/species.css">
-      <link rel="stylesheet" href="/denr/superadmin/js/species.js">
-   
+    <link rel="stylesheet" href="/denr/superadmin/js/species.js">
+
 </head>
+
 <body>
     <header>
         <div class="logo">
@@ -21,12 +23,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -57,16 +59,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     </a>
                 </div>
             </div>
-            
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="marinemessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
-            
+
+
+
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -78,7 +73,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="marineeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -91,13 +86,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             </div>
                         </a>
                     </div>
-                    
+
                     <div class="notification-footer">
                         <a href="marinenotif.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon <?php echo $current_page === 'marineprofile.php' ? 'active' : ''; ?>">
@@ -116,14 +111,14 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
     </header>
-    
+
     <div class="main-content">
         <div class="page-header">
             <h1 class="page-title">
                 <i class="fas fa-fish"></i> Coastal and Marine Species Monitoring
             </h1>
             <p class="page-description">
-                Tracking and conservation of key marine species across protected areas in the Philippines. 
+                Tracking and conservation of key marine species across protected areas in the Philippines.
                 Data collected supports the Coastal and Marine Ecosystems Management Program (CMEMP) for biodiversity conservation.
             </p>
         </div>
@@ -137,11 +132,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>
-                        The CMEMP includes regular monitoring of marine species to assess population health, identify threats, 
-                        and implement conservation measures. Monitoring activities are conducted through scientific surveys, 
+                        The CMEMP includes regular monitoring of marine species to assess population health, identify threats,
+                        and implement conservation measures. Monitoring activities are conducted through scientific surveys,
                         community reporting, and technological tools.
                     </p>
-                    
+
                     <!-- Stats Grid moved inside the Species Monitoring Overview section -->
                     <div class="stats-grid">
                         <div class="stat-card">
@@ -185,7 +180,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                                 <p><strong>Threats:</strong> Poaching observed in Northern Sierra Madre Natural Park (Region 2)</p>
                             </div>
                         </div>
-                        
+
                         <!-- Marine Turtles Card -->
                         <div class="species-card">
                             <div class="species-header">
@@ -198,7 +193,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                                 <p><strong>Conservation:</strong> Community-based protection initiatives</p>
                             </div>
                         </div>
-                        
+
                         <!-- COTS Card -->
                         <div class="species-card">
                             <div class="species-header">
@@ -242,7 +237,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <strong>Sedimentation:</strong> Influx of riverine sediments affecting coral areas in Bacolod-Kauswagan PLS
                         </li>
                     </ul>
-                    
+
                     <img src="coral.png" alt="Coral reef monitoring" class="species-image">
                     <p class="image-caption">Figure 11.9: Coral reef monitoring using photo transect method in BBBIDA MPAN, Region 1</p>
                 </div>
@@ -274,67 +269,67 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <p class="stat-description">People's Organizations involved</p>
                         </div>
                     </div>
-                    
+
                     <p>
-                        Maintenance and protection activities in 2020 included patrolling, habitat surveillance, 
-                        direct conservation activities, and repair of signages/equipment across 38 NIPAS MPAs 
+                        Maintenance and protection activities in 2020 included patrolling, habitat surveillance,
+                        direct conservation activities, and repair of signages/equipment across 38 NIPAS MPAs
                         (32 Legislated, 4 Proclaimed and 2 Initial Components).
                     </p>
-                    
-                   
+
+
                 </div>
             </div>
         </div>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
+
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     navContainer.classList.toggle('active');
                 });
             }
-            
+
             // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
-            
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                
+
                 // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
                 });
-                
+
                 // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
                     // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
-                
+
                 // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
             });
@@ -345,9 +340,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     });
                 }
             });
@@ -357,18 +352,18 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
-                    
+
                     toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
+
                         // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
-                        
+
                         // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
@@ -402,4 +397,5 @@ $current_page = basename($_SERVER['PHP_SELF']);
         });
     </script>
 </body>
+
 </html>

@@ -37,10 +37,10 @@ try {
     $desired = isset($_POST['desired_permit_type']) && in_array(strtolower($_POST['desired_permit_type']), ['new', 'renewal'], true)
         ? strtolower($_POST['desired_permit_type']) : 'new';
 
-    $override_client_id = trim((string)($_POST['use_client_id'] ?? $_POST['use_existing_client_id'] ?? ''));
+    $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
 
     if ($first === '' && $middle === '' && $last === '' && $override_client_id === '') {
-        echo json_encode(['ok' => true]);
+        echo json_encode(['ok' => true, 'decision' => 'none']);
         exit;
     }
 
@@ -133,49 +133,40 @@ try {
         }
 
         if ($best && $bestScore >= $THRESHOLD) {
-            $suggested = [
+            $cand = [
                 'client_id'   => (string)$best['client_id'],
                 'first_name'  => (string)($best['first_name']  ?? ''),
                 'middle_name' => (string)($best['middle_name'] ?? ''),
                 'last_name'   => (string)($best['last_name']   ?? ''),
                 'score'       => round($bestScore, 2),
             ];
+            $cand['full_name'] = trim($cand['first_name'] . ' ' . $cand['middle_name'] . ' ' . $cand['last_name']);
+
             echo json_encode([
                 'ok' => true,
-                'needs_confirm' => true,
-                'candidates' => [[
-                    'client_id' => $suggested['client_id'],
-                    'first_name' => $suggested['first_name'],
-                    'middle_name' => $suggested['middle_name'],
-                    'last_name' => $suggested['last_name'],
-                    'score' => $suggested['score'],
-                ]],
-                'existing_client_id'     => $suggested['client_id'],
-                'existing_client_first'  => $suggested['first_name'],
-                'existing_client_middle' => $suggested['middle_name'],
-                'existing_client_last'   => $suggested['last_name'],
-                'existing_client_name'   => trim($suggested['first_name'] . ' ' . $suggested['middle_name'] . ' ' . $suggested['last_name']),
-                'suggestion_score'       => $suggested['score'],
+                'decision' => 'candidates',
+                'candidates' => [$cand],
             ]);
             exit;
         }
 
-        echo json_encode(['ok' => true]);
+        echo json_encode(['ok' => true, 'decision' => 'none']);
         exit;
     }
 
-    // If we have a client, compute Chainsaw flags and echo name
+    // If we have a client, compute Chainsaw flags and emit decision
     if ($client_id) {
         $nq = $pdo->prepare("SELECT first_name, middle_name, last_name FROM public.client WHERE client_id::text = :cid LIMIT 1");
         $nq->execute([':cid' => $client_id]);
         $nr = $nq->fetch(PDO::FETCH_ASSOC) ?: [];
-        $extra = [
-            'existing_client_id'     => (string)$client_id,
-            'existing_client_first'  => (string)($nr['first_name']  ?? ''),
-            'existing_client_middle' => (string)($nr['middle_name'] ?? ''),
-            'existing_client_last'   => (string)($nr['last_name']   ?? ''),
-            'existing_client_name'   => trim(($nr['first_name'] ?? '') . ' ' . ($nr['middle_name'] ?? '') . ' ' . ($nr['last_name'] ?? '')),
+
+        $clientData = [
+            'client_id'   => (string)$client_id,
+            'first_name'  => (string)($nr['first_name'] ?? ''),
+            'middle_name' => (string)($nr['middle_name'] ?? ''),
+            'last_name'   => (string)($nr['last_name'] ?? ''),
         ];
+        $clientData['full_name'] = trim(($clientData['first_name'] ?? '') . ' ' . ($clientData['middle_name'] ?? '') . ' ' . ($clientData['last_name'] ?? ''));
 
         $stmt = $pdo->prepare("
       SELECT
@@ -209,46 +200,65 @@ try {
         $uStmt->execute([':cid' => $client_id]);
         $hasUnexpiredReleased = (bool)$uStmt->fetchColumn();
 
-        if ($hasForPayment) {
-            echo json_encode(array_merge(['ok' => true, 'block' => 'for_payment'], $extra));
-            exit;
-        }
+        $flags = [
+            'has_pending_new'     => $hasPendingNew,
+            'has_pending_renewal' => $hasPendingRenewal,
+            'has_for_payment'     => $hasForPayment,
+            'has_released_new'    => $hasReleasedNew,
+            'has_unexpired'       => $hasUnexpiredReleased,
+        ];
 
-        if ($desired === 'new') {
+        $block = null;
+        $message = null;
+        $suggest = null;
+
+        if ($hasForPayment) {
+            $block = 'for_payment';
+            $message = 'You still have an unpaid chainsaw permit on record. Please settle this before filing another request.';
+        } elseif ($desired === 'new') {
             if ($hasPendingNew) {
-                echo json_encode(array_merge(['ok' => true, 'block' => 'pending_new'], $extra));
-                exit;
-            }
-            if ($hasPendingRenewal) {
-                echo json_encode(array_merge(['ok' => true, 'block' => 'pending_renewal'], $extra));
-                exit;
-            }
-            if ($hasReleasedNew) {
-                echo json_encode(array_merge(['ok' => true, 'offer' => 'renewal'], $extra));
-                exit;
+                $block = 'pending_new';
+                $message = 'You already have a pending NEW chainsaw application. Please wait for updates before submitting another one.';
+            } elseif ($hasPendingRenewal) {
+                $block = 'pending_renewal';
+                $message = 'You already have a pending chainsaw application. Please wait for the update first.';
+            } elseif ($hasReleasedNew) {
+                $suggest = 'renewal';
             }
         } else { // renewal
-            if ($hasPendingRenewal) {
-                echo json_encode(array_merge(['ok' => true, 'block' => 'pending_renewal'], $extra));
-                exit;
-            }
-
-            // NEW: block if a released chainsaw permit (new/renewal) is still unexpired
-            if (!empty($hasUnexpiredReleased)) {
-                echo json_encode(array_merge(['ok' => true, 'block' => 'unexpired_permit'], $extra));
-                exit;
-            }
-            if (!$hasReleasedNew) {
-                echo json_encode(array_merge(['ok' => true, 'block' => 'need_approved_new'], $extra));
-                exit;
+            if ($hasPendingRenewal || $hasPendingNew) {
+                $block = 'pending_renewal';
+                $message = 'You already have a pending chainsaw application. Please wait for the update first.';
+            } elseif ($hasUnexpiredReleased) {
+                $block = 'unexpired_permit';
+                $message = 'You still have an unexpired chainsaw permit. Please wait until it expires before requesting a renewal.';
+            } else {
+                // allow renewal — NO requirement for a released NEW permit
             }
         }
 
-        echo json_encode(array_merge(['ok' => true], $extra));
+
+
+        echo json_encode([
+            'ok' => true,
+            'decision' => 'existing',
+            'client' => $clientData,
+            'flags' => $flags,
+            'block' => $block,
+            'message' => $message,
+            'offer' => $suggest,      // NEW: align with frontend
+            'suggest' => $suggest,    // (keep for compatibility)
+            'existing_client_id'     => $clientData['client_id'],
+            'existing_client_first'  => $clientData['first_name'],
+            'existing_client_middle' => $clientData['middle_name'],
+            'existing_client_last'   => $clientData['last_name'],
+            'existing_client_name'   => $clientData['full_name'],
+        ]);
+
         exit;
     }
 
-    echo json_encode(['ok' => true]);
+    echo json_encode(['ok' => true, 'decision' => 'none']);
     exit;
 } catch (Throwable $e) {
     http_response_code(400);

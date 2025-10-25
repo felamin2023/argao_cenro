@@ -1,4 +1,170 @@
 <?php
+
+declare(strict_types=1);
+
+session_start();
+if (empty($_SESSION['user_id'])) {
+    header('Location: user_login.php');
+    exit();
+}
+
+require_once __DIR__ . '/../backend/connection.php';
+
+$notifs = [];
+$unreadCount = 0;
+
+/* AJAX endpoints used by the header JS:
+   - POST ?ajax=mark_all_read
+   - POST ?ajax=mark_read&notif_id=...
+*/
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where "to" = :uid and (is_read is null or is_read = false)
+            ');
+            $u->execute([':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and "to" = :uid
+            ');
+            $u->execute([':nid' => $nid, ':uid' => $_SESSION['user_id']]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[USER-NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) {
+            $unreadCount++;
+        }
+    }
+} catch (Throwable $e) {
+    error_log('[USER-NOTIFICATION PAGE] ' . $e->getMessage());
+}
+
+$cleanNotificationMessage = static function (?string $m): string {
+    $t = trim((string)$m);
+    if ($t === '') return "There's an update.";
+    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\--]\s*.*$/i', '', $t);
+    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+    $t = preg_replace('/\s{2,}/', ' ', $t);
+    $t = trim($t);
+    return $t !== '' ? $t : "There's an update.";
+};
+
+$renderNotificationItem = static function (array $n) use ($cleanNotificationMessage): string {
+    $notifId = (string)($n['notif_id'] ?? '');
+    if ($notifId === '') return '';
+
+    $isUnread = empty($n['is_read']);
+    $title = !empty($n['approval_id'])
+        ? 'Permit Update'
+        : (!empty($n['incident_id']) ? 'Incident Update' : 'Notification');
+
+    $rawMessage = (string)($n['message'] ?? '');
+    $summary = $cleanNotificationMessage($rawMessage);
+    $fullMessage = trim($rawMessage) !== '' ? trim($rawMessage) : $summary;
+
+    $createdAtRaw = (string)($n['created_at'] ?? '');
+    $ts = $createdAtRaw !== '' ? strtotime($createdAtRaw) : false;
+    if ($ts === false) $ts = time();
+
+    $iconClass = !empty($n['incident_id']) ? 'alert' : 'approve';
+
+    $actionUrl = '';
+    $actionLabel = '';
+    if (!empty($n['approval_id'])) {
+        $actionUrl = 'applicationstatus.php';
+        $actionLabel = 'Open Application Status';
+    } elseif (!empty($n['incident_id'])) {
+        $actionUrl = 'user_reportaccident.php?view=' . rawurlencode((string)$n['incident_id']);
+        $actionLabel = 'View Incident Report';
+    }
+
+    $attrs = [
+        'data-notif-id'    => $notifId,
+        'data-approval-id' => (string)($n['approval_id'] ?? ''),
+        'data-incident-id' => (string)($n['incident_id'] ?? ''),
+        'data-title'       => $title,
+        'data-summary'     => $summary,
+        'data-full-message' => $fullMessage,
+        'data-ts'          => (string)$ts,
+        'data-created'     => $createdAtRaw,
+        'data-is-read'     => $isUnread ? '0' : '1',
+        'data-action-url'  => $actionUrl,
+        'data-action-label' => $actionLabel,
+    ];
+
+    $attrStr = '';
+    foreach ($attrs as $k => $v) {
+        $attrStr .= ' ' . $k . '="' . htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '"';
+    }
+
+    $classes = 'notification-item' . ($isUnread ? ' unread' : '');
+    $titleEsc = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $summaryEsc = htmlspecialchars($summary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $tsEsc = htmlspecialchars((string)$ts, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $viewButtonClass = $isUnread ? 'action-button view-details-btn' : 'action-button action-button--half view-details-btn';
+    $viewButton = '<button type="button" class="' . $viewButtonClass . '">View Details</button>';
+    $markButton = $isUnread
+        ? '<button type="button" class="action-button mark-read-btn">Mark as Read</button>'
+        : '';
+
+    return <<<HTML
+        <div class="{$classes}"{$attrStr}>
+            <div class="notification-title">
+                <div class="notification-icon {$iconClass}"><i class="fas fa-exclamation-circle"></i></div>
+                {$titleEsc}
+            </div>
+            <div class="notification-content">
+                <div class="notification-message">{$summaryEsc}</div>
+                <div class="notification-time" data-ts="{$tsEsc}">just now</div>
+            </div>
+            <div class="notification-actions">
+                {$viewButton}
+                {$markButton}
+            </div>
+        </div>
+    HTML;
+};
+
 // Get the current page name
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
@@ -32,6 +198,220 @@ $current_page = basename($_SERVER['PHP_SELF']);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f9f9f9;
             padding-top: 80px;
+        }
+
+        /* Notifications dropdown styles copied from user_home.php */
+        :root {
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
+        }
+
+        .as-item {
+            position: relative;
+        }
+
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 999;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .as-center {
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%) translateY(10px);
+        }
+
+        .as-center.as-dropdown-menu:hover,
+        .as-item:hover>.as-center {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .as-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px 25px;
+            text-decoration: none;
+            color: #111;
+            transition: var(--as-trans);
+            font-size: 1.05rem;
+        }
+
+        .as-dropdown-item i {
+            width: 30px;
+            font-size: 1.5rem;
+            color: var(--as-primary) !important;
+        }
+
+        .as-dropdown-item:hover {
+            background: var(--as-light-gray);
+            padding-left: 30px;
+        }
+
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         /* Header Styles */
@@ -475,6 +855,14 @@ $current_page = basename($_SERVER['PHP_SELF']);
             font-size: 20px;
         }
 
+        .notification-icon.alert {
+            color: #e74c3c;
+        }
+
+        .notification-icon.approve {
+            color: var(--primary-color);
+        }
+
         .notification-content {
             color: #555;
             margin-bottom: 10px;
@@ -492,8 +880,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
         .notification-actions {
             display: flex;
+            justify-content: end;
             gap: 15px;
-            padding-left: 30px;
+            width: 27%;
         }
 
         .action-button {
@@ -506,6 +895,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
             font-size: 14px;
             font-weight: 500;
             transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .action-button--half {
+            width: 50%;
         }
 
         .action-button:hover {
@@ -676,6 +1070,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 width: auto;
             }
 
+            .action-button--half {
+                width: auto;
+            }
+
             .mark-all-button {
                 text-align: right;
             }
@@ -726,6 +1124,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
             .action-button {
                 font-size: 12px;
                 padding: 6px 10px;
+            }
+
+            .action-button--half {
+                width: auto;
             }
 
             .notification-actions {
@@ -810,33 +1212,58 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon active">
+            <div class="nav-item dropdown as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge"><?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+                <div class="as-dropdown-menu as-notifications">
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
+                    </div>
+                    <div class="notifcontainer">
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($notifs as $n): ?>
+                                <?php
+                                $unread = empty($n['is_read']);
+                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\--]\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There\'s an update.';
+                                })($n['message'] ?? '');
+                                ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
-                            </div>
-
-                            <div class="notification-content">
-                                <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
-                    </div>
-
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
@@ -866,47 +1293,43 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
         <div class="notification-tabs">
             <div id="all-tab" class="tab active">All Notifications</div>
-            <div id="unread-tab" class="tab">Unread <span class="tab-badge">1</span></div>
+            <div id="unread-tab" class="tab">Unread <span class="tab-badge" style="display:none;"></span></div>
         </div>
 
         <div id="all-notifications" class="notification-list">
-            <!-- Single Tree Cutting Notification -->
-            <div class="notification-item unread" id="tree-cutting-notification">
-                <div class="notification-title">
-                    <div class="notification-icon"><i class="fas fa-tree"></i></div>
-                    Chainsaw Renewal Status
+            <?php if (!$notifs): ?>
+                <div class="notification-item empty">
+                    <div class="notification-content">
+                        <div class="notification-title">No notifications yet</div>
+                        <div class="notification-message">We'll let you know once there's an update.</div>
+                    </div>
                 </div>
-                <div class="notification-content">
-                    Chainsaw Renewal has been approved.
-                </div>
-                <div class="notification-time">Today, 10:30 AM</div>
-                <div class="notification-actions">
-                    <button class="action-button view-details-btn">View Details</button>
-                    <button class="action-button mark-read-btn">Mark as Read</button>
-                </div>
-            </div>
+            <?php else: ?>
+                <?php foreach ($notifs as $notif): ?>
+                    <?= $renderNotificationItem($notif) ?>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
 
         <div id="unread-notifications" class="notification-list" style="display: none;">
-            <!-- Same notification appears in unread tab -->
-            <div class="notification-item unread" id="tree-cutting-notification-unread">
-                <div class="notification-title">
-                    <div class="notification-icon"><i class="fas fa-tree"></i></div>
-                    Chainsaw Renewal Status
-                </div>
+            <?php $hasUnread = false; ?>
+            <?php if ($notifs): ?>
+                <?php foreach ($notifs as $notif): ?>
+                    <?php if (!empty($notif['is_read'])) continue; ?>
+                    <?php $hasUnread = true; ?>
+                    <?= $renderNotificationItem($notif) ?>
+                <?php endforeach; ?>
+            <?php endif; ?>
+            <div class="notification-item empty" id="unread-empty" <?= $hasUnread ? 'style="display:none;"' : '' ?>>
                 <div class="notification-content">
-                    Chainsaw Renewal has been approved.
-                </div>
-                <div class="notification-time">Today, 10:30 AM</div>
-                <div class="notification-actions">
-                    <button class="action-button view-details-btn">View Details</button>
-                    <button class="action-button mark-read-btn">Mark as Read</button>
+                    <div class="notification-title">No unread notifications</div>
+                    <div class="notification-message">You're all caught up.</div>
                 </div>
             </div>
         </div>
 
         <div class="mark-all-button">
-            <button id="mark-all-read">✓ Mark all as read</button>
+            <button type="button" id="mark-all-read">Mark all as read</button>
         </div>
     </div>
 
@@ -915,116 +1338,355 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <div class="modal-content">
             <span class="close-modal">&times;</span>
             <div class="modal-header">
-                <h2>Chainsaw Renewal Approval</h2>
+                <h2 id="modalTitle">Notification Details</h2>
             </div>
             <div class="modal-body">
-                <p><strong>Category:</strong> Chainsaw Permit</p>
-                <p><strong>Received:</strong> 10 minutes ago</p>
-
-                <h3>Chainsaw Registration Renewal Approved</h3>
-
-                <p>Your chainsaw renewal application has been approved by the DENR.</p>
-
-                <p><strong>Chainsaw Model:</strong> STIHL MS 660</p>
-                <p><strong>Serial Number:</strong> ST660123456</p>
-                <p><strong>Date Approved:</strong> June 15, 2023</p>
-                <p><strong>Valid Until:</strong> June 15, 2024</p>
-                <p><strong>Approved By:</strong> DENR Regional Office</p>
-                <p><strong>Next Steps:</strong> You may now claim your renewed chainsaw permit at the DENR office.</p>
+                <p><strong>Category:</strong> <span id="modalCategory">N/A</span></p>
+                <p><strong>Received:</strong> <span id="modalReceived">N/A</span></p>
+                <p id="modalMessage" style="margin-top: 15px;">No additional details.</p>
             </div>
-
+            <div class="modal-footer" id="modalFooter" style="display:none;">
+                <a href="#" id="modalActionBtn" class="action-button">Open Details</a>
+            </div>
         </div>
     </div>
 
+    <!-- Notifications dropdown behavior -->
+    <script>
+        (function() {
+            function timeAgo(seconds) {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            }
+
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const tsMs = Number(el.dataset.ts || 0) * 1000;
+                if (!tsMs) return;
+                const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                el.textContent = timeAgo(diffSec);
+                el.title = new Date(tsMs).toLocaleString();
+            });
+
+            const badge = document.getElementById('asNotifBadge');
+            const markAllBtn = document.getElementById('asMarkAllRead');
+
+            markAllBtn?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
+                if (badge) badge.style.display = 'none';
+            });
+
+            const list = document.querySelector('.as-notifications');
+            list?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.as-notif-link');
+                if (!link) return;
+                e.preventDefault();
+
+                const row = link.closest('.as-notif-item');
+                const wasUnread = row?.classList.contains('unread');
+                row?.classList.remove('unread');
+
+                if (badge && wasUnread) {
+                    const current = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, current - 1);
+                    if (next <= 0) {
+                        badge.style.display = 'none';
+                    } else {
+                        badge.textContent = String(next);
+                    }
+                }
+
+                const nid = link.dataset.notifId || '';
+                if (nid) {
+                    try {
+                        await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(nid)}`, {
+                            method: 'POST',
+                            credentials: 'same-origin'
+                        });
+                    } catch {}
+                }
+
+                if (link.dataset.approvalId) {
+                    window.location.href = 'applicationstatus.php';
+                    return;
+                }
+                if (link.dataset.incidentId) {
+                    window.location.href = `user_reportaccident.php?view=${encodeURIComponent(link.dataset.incidentId)}`;
+                    return;
+                }
+                window.location.href = 'applicationstatus.php';
+            });
+        })();
+    </script>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
 
-            if (mobileToggle) {
+            if (mobileToggle && navContainer) {
                 mobileToggle.addEventListener('click', () => {
                     const isActive = navContainer.classList.toggle('active');
                     document.body.style.overflow = isActive ? 'hidden' : '';
                 });
+
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
+                        navContainer.classList.remove('active');
+                        document.body.style.overflow = '';
+                    }
+                });
             }
 
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.nav-container') && !e.target.closest('.mobile-toggle')) {
-                    navContainer.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-            });
-
-            // Tab switching
             const allTab = document.getElementById('all-tab');
             const unreadTab = document.getElementById('unread-tab');
             const allContent = document.getElementById('all-notifications');
             const unreadContent = document.getElementById('unread-notifications');
 
-            allTab.addEventListener('click', function() {
+            allTab?.addEventListener('click', function() {
                 allTab.classList.add('active');
-                unreadTab.classList.remove('active');
-                allContent.style.display = 'block';
-                unreadContent.style.display = 'none';
+                unreadTab?.classList.remove('active');
+                if (allContent) allContent.style.display = 'block';
+                if (unreadContent) unreadContent.style.display = 'none';
             });
 
-            unreadTab.addEventListener('click', function() {
+            unreadTab?.addEventListener('click', function() {
                 unreadTab.classList.add('active');
-                allTab.classList.remove('active');
-                unreadContent.style.display = 'block';
-                allContent.style.display = 'none';
+                allTab?.classList.remove('active');
+                if (unreadContent) unreadContent.style.display = 'block';
+                if (allContent) allContent.style.display = 'none';
             });
 
-            // Modal functionality
             const modal = document.getElementById('notification-modal');
-            const viewDetailsBtns = document.querySelectorAll('.view-details-btn');
-            const closeModal = document.querySelector('.close-modal');
+            const closeModalBtn = document.querySelector('.close-modal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalCategory = document.getElementById('modalCategory');
+            const modalReceived = document.getElementById('modalReceived');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalFooter = document.getElementById('modalFooter');
+            const modalActionBtn = document.getElementById('modalActionBtn');
 
-            viewDetailsBtns.forEach((btn) => {
-                btn.addEventListener('click', function() {
-                    modal.style.display = 'flex';
+            const timeAgo = (seconds) => {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            };
+
+            function updateRelativeTimes() {
+                document.querySelectorAll('.notification-time[data-ts]').forEach(el => {
+                    const tsMs = Number(el.dataset.ts || 0) * 1000;
+                    if (!tsMs) return;
+                    const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                    el.textContent = timeAgo(diffSec);
+                    el.title = new Date(tsMs).toLocaleString();
                 });
-            });
+            }
 
-            closeModal.addEventListener('click', function() {
-                modal.style.display = 'none';
-            });
+            const tabBadge = document.querySelector('.tab-badge');
+            const headerBadge = document.getElementById('asNotifBadge');
 
-            // Close modal when clicking outside
-            window.addEventListener('click', function(event) {
-                if (event.target === modal) {
-                    modal.style.display = 'none';
+            function updateCounters() {
+                const unreadItems = allContent ? allContent.querySelectorAll('.notification-item.unread') : [];
+                const unreadCount = unreadItems ? unreadItems.length : 0;
+
+                if (tabBadge) {
+                    if (unreadCount > 0) {
+                        tabBadge.style.display = 'inline-block';
+                        tabBadge.textContent = unreadCount;
+                    } else {
+                        tabBadge.style.display = 'none';
+                        tabBadge.textContent = '';
+                    }
                 }
-            });
 
-            // Mark all as read functionality
-            const markAllRead = document.getElementById('mark-all-read');
-            markAllRead.addEventListener('click', function() {
-                document.querySelectorAll('.notification-item.unread').forEach((item) => {
-                    item.classList.remove('unread');
-                });
-                updateUnreadCount();
-            });
-
-            // Function to update unread count
-            function updateUnreadCount() {
-                const unreadCount = document.querySelectorAll('.notification-item.unread').length;
-                const badge = document.querySelector('.tab-badge');
-                const navBadge = document.querySelector('.badge');
-
-                badge.textContent = unreadCount;
-                navBadge.textContent = unreadCount;
-
-                if (unreadCount === 0) {
-                    badge.style.display = 'none';
-                    navBadge.style.display = 'none';
-                } else {
-                    badge.style.display = 'inline-block';
-                    navBadge.style.display = 'flex';
+                if (headerBadge) {
+                    if (unreadCount > 0) {
+                        headerBadge.style.display = 'flex';
+                        headerBadge.textContent = unreadCount;
+                    } else {
+                        headerBadge.style.display = 'none';
+                    }
                 }
             }
+
+            function refreshUnreadList() {
+                if (!unreadContent) return;
+                const emptyState = document.getElementById('unread-empty');
+                let anyVisible = false;
+                unreadContent.querySelectorAll('.notification-item').forEach(item => {
+                    if (item.id === 'unread-empty') return;
+                    const isUnread = item.dataset.isRead !== '1' && item.classList.contains('unread');
+                    if (isUnread) {
+                        item.style.display = '';
+                        anyVisible = true;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+                if (emptyState) emptyState.style.display = anyVisible ? 'none' : '';
+            }
+
+            function applyReadState(notifId) {
+                if (!notifId) return;
+                document.querySelectorAll(`.notification-item[data-notif-id="${notifId}"]`).forEach(item => {
+                    item.classList.remove('unread');
+                    item.dataset.isRead = '1';
+                    const btn = item.querySelector('.mark-read-btn');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Read';
+                    }
+                });
+
+                document.querySelectorAll(`.as-notif-item.unread a[data-notif-id="${notifId}"]`).forEach(link => {
+                    const row = link.closest('.as-notif-item');
+                    row?.classList.remove('unread');
+                });
+
+                refreshUnreadList();
+                updateCounters();
+            }
+
+            const pendingMarks = new Set();
+
+            async function markNotificationRead(notifId) {
+                if (!notifId || pendingMarks.has(notifId)) return;
+                pendingMarks.add(notifId);
+                try {
+                    await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(notifId)}`, {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch (err) {
+                    console.error('Mark notification read failed', err);
+                } finally {
+                    pendingMarks.delete(notifId);
+                    applyReadState(notifId);
+                }
+            }
+
+            function openModalFor(item) {
+                if (!modal) return;
+                modalTitle.textContent = item.dataset.title || 'Notification Details';
+                modalCategory.textContent = item.dataset.title || 'Notification';
+
+                const ts = Number(item.dataset.ts || 0) * 1000;
+                modalReceived.textContent = ts ? new Date(ts).toLocaleString() : 'N/A';
+
+                const fullMessage = item.dataset.fullMessage || item.dataset.summary || "There's an update.";
+                modalMessage.textContent = fullMessage;
+
+                const actionUrl = item.dataset.actionUrl || '';
+                const actionLabel = item.dataset.actionLabel || '';
+                if (actionUrl && actionLabel) {
+                    modalFooter.style.display = '';
+                    modalActionBtn.href = actionUrl;
+                    modalActionBtn.textContent = actionLabel;
+                } else {
+                    modalFooter.style.display = 'none';
+                    modalActionBtn.removeAttribute('href');
+                }
+
+                modal.style.display = 'flex';
+            }
+
+            const hideModal = () => {
+                if (modal) modal.style.display = 'none';
+            };
+
+            closeModalBtn?.addEventListener('click', hideModal);
+            window.addEventListener('click', (event) => {
+                if (event.target === modal) hideModal();
+            });
+
+            document.querySelectorAll('.view-details-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = btn.closest('.notification-item');
+                    if (!item) return;
+                    openModalFor(item);
+                    if (item.classList.contains('unread')) {
+                        const notifId = item.dataset.notifId;
+                        if (notifId) markNotificationRead(notifId);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.mark-read-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = btn.closest('.notification-item');
+                    if (!item) return;
+                    const notifId = item.dataset.notifId;
+                    if (notifId) markNotificationRead(notifId);
+                });
+            });
+
+            const markAllButton = document.getElementById('mark-all-read');
+
+            async function markAllNotificationsRead() {
+                if (!markAllButton) return;
+                pendingMarks.clear();
+                markAllButton.disabled = true;
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch (err) {
+                    console.error('Mark all notifications failed', err);
+                } finally {
+                    markAllButton.disabled = false;
+                }
+
+                document.querySelectorAll('.notification-item[data-notif-id]').forEach(item => {
+                    item.classList.remove('unread');
+                    item.dataset.isRead = '1';
+                    const btn = item.querySelector('.mark-read-btn');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Read';
+                    }
+                });
+
+                document.querySelectorAll('.as-notif-item.unread').forEach(row => row.classList.remove('unread'));
+
+                if (headerBadge) headerBadge.style.display = 'none';
+
+                refreshUnreadList();
+                updateCounters();
+            }
+
+            markAllButton?.addEventListener('click', markAllNotificationsRead);
+
+            updateRelativeTimes();
+            refreshUnreadList();
+            updateCounters();
         });
     </script>
 </body>

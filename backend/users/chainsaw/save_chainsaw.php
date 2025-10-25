@@ -116,10 +116,18 @@ try {
     $max_guide           = trim($_POST['maximum_length_of_guide_bar'] ?? '');
 
     // NEW: optional override/force flags coming from precheck flow
-    $override_client_id   = trim((string)($_POST['use_existing_client_id'] ?? $_POST['use_client_id'] ?? ''));
-    $confirm_new_client   = isset($_POST['confirm_new_client'])
-        ? (($_POST['confirm_new_client'] === '1' || strtolower((string)$_POST['confirm_new_client']) === 'true'))
-        : false;
+    $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
+    $force_new_client = false;
+    foreach (['force_new_client', 'confirm_new_client'] as $flag) {
+        if (isset($_POST[$flag])) {
+            $val = strtolower((string)$_POST[$flag]);
+            if (in_array($val, ['1', 'true', 'yes', 'on'], true)) {
+                $force_new_client = true;
+                break;
+            }
+        }
+    }
+
 
     $complete_name_typed = trim(preg_replace('/\s+/', ' ', "{$first_name} {$middle_name} {$last_name}"));
     $present_address     = implode(', ', array_filter([$sitio_street, $barangay, $municipality, $province]));
@@ -177,7 +185,7 @@ try {
     // 3) Decide: use override; else reuse match unless user said "create new"; else create new client
     if ($client_id) {
         // use the override value as-is
-    } elseif ($existing_client_id && !$confirm_new_client) {
+    } elseif ($existing_client_id && !$force_new_client) {
         $client_id = $existing_client_id;
     } else {
         $stmt = $pdo->prepare("
@@ -226,18 +234,6 @@ try {
     $stmt->execute([':cid' => $client_id]);
     $hasPendingNew = (bool)$stmt->fetchColumn();
 
-    // RELEASED NEW (required for renewal)
-    $stmt = $pdo->prepare("
-        SELECT 1 FROM public.approval
-        WHERE client_id = :cid
-          AND lower(request_type) = 'chainsaw'
-          AND lower(permit_type)  = 'new'
-          AND lower(approval_status) = 'released'
-        LIMIT 1
-    ");
-    $stmt->execute([':cid' => $client_id]);
-    $hasReleasedNew = (bool)$stmt->fetchColumn();
-
     // PENDING RENEWAL
     $stmt = $pdo->prepare("
         SELECT 1 FROM public.approval
@@ -280,9 +276,6 @@ try {
             // You can include the date in the message if you want:
             // $nextExpiry ? " (expires on {$nextExpiry})" : ""
             throw new Exception('You still have an unexpired chainsaw permit. Please wait until it expires before requesting a renewal.');
-        }
-        if (empty($hasReleasedNew)) {
-            throw new Exception('To file a renewal, you must have a RELEASED NEW chainsaw permit on record.');
         }
     } else { // NEW
         if (!empty($hasPendingNew)) {

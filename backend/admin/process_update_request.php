@@ -48,25 +48,71 @@ try {
         // Delete the request (any status)
         $del = $pdo->prepare("DELETE FROM public.profile_update_requests WHERE id = :id");
         $del->execute([':id' => $request_id]);
+        // Activity log: record deletion of the request by CENRO admin
+        try {
+            $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+            $ilog->execute([
+                ':uid' => $admin_uuid,
+                ':dept' => $me['department'] ?? 'cenro',
+                ':action' => 'delete_profile_request',
+                ':details' => sprintf('Deleted profile update request id=%d', $request_id),
+            ]);
+        } catch (Throwable $le) {
+            error_log('[PROCESS/ACTIVITY LOG DELETE] ' . $le->getMessage());
+        }
         $pdo->commit();
         header('Location: /denr/superadmin/supernotif.php');
         exit();
     }
 
     if ($action === 'reject') {
+        // Update request and RETURN key fields to create a notification
         $rej = $pdo->prepare("
-            UPDATE public.profile_update_requests
-            SET status = 'rejected',
-                reason_for_rejection = :reason,
-                reviewed_at = now(),
-                reviewed_by = :reviewer
-            WHERE id = :id
-        ");
+                    UPDATE public.profile_update_requests
+                    SET status = 'rejected',
+                        reason_for_rejection = :reason,
+                        reviewed_at = now(),
+                        reviewed_by = :reviewer
+                    WHERE id = :id
+                    RETURNING reqpro_id, user_id, first_name, department
+                ");
         $rej->execute([
             ':reason'   => $reason,
             ':reviewer' => $admin_uuid,
             ':id'       => $request_id
         ]);
+        $rejRow = $rej->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        // Insert notification to the requester about rejection
+        if ($rejRow) {
+            try {
+                $notifMsg = sprintf('%s, your profile request update is rejected.', trim((string)$rejRow['first_name']));
+                $nst = $pdo->prepare('INSERT INTO public.notifications (message, "from", "to", reqpro_id) VALUES (:message, :from, :to, :reqpro_id)');
+                $deptTo = trim((string)($rejRow['department'] ?? '')) ?: 'Unknown';
+                $nst->execute([
+                    ':message' => $notifMsg,
+                    ':from' => "Cenro",
+                    ':to' => $deptTo,
+                    ':reqpro_id' => $rejRow['reqpro_id']
+                ]);
+                // Activity log: record rejection
+                try {
+                    $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+                    $ilog->execute([
+                        ':uid' => $admin_uuid,
+                        ':dept' => $me['department'] ?? 'cenro',
+                        ':action' => 'reject_profile_request',
+                        ':details' => sprintf('Rejected profile update req %s. Reason: %s', substr((string)($rejRow['reqpro_id'] ?? ''), 0, 8), $reason ?? ''),
+                    ]);
+                } catch (Throwable $le) {
+                    error_log('[PROCESS/ACTIVITY LOG REJECT] ' . $le->getMessage());
+                }
+            } catch (Throwable $ne) {
+                error_log('[PROCESS/NOTIF REJECT] ' . $ne->getMessage());
+                // do not fail the main flow
+            }
+        }
+
         $pdo->commit();
         header('Location: /denr/superadmin/supernotif.php');
         exit();
@@ -80,7 +126,7 @@ try {
             reviewed_at = now(),
             reviewed_by = :reviewer
         WHERE id = :id
-        RETURNING user_id, image, first_name, last_name, age, email, department, phone, password
+        RETURNING reqpro_id, user_id, image, first_name, last_name, age, email, department, phone, password
     ");
     $upd->execute([':reviewer' => $admin_uuid, ':id' => $request_id]);
     $req = $upd->fetch(PDO::FETCH_ASSOC);
@@ -115,6 +161,34 @@ try {
         $sql = "UPDATE public.users SET " . implode(', ', $sets) . " WHERE user_id = :uid";
         $doUser = $pdo->prepare($sql);
         $doUser->execute($params);
+    }
+
+    // Notify requester about approval
+    try {
+        $notifMsg = sprintf('%s, your profile request update is approved.', trim((string)($req['first_name'] ?? '')));
+        $nst = $pdo->prepare('INSERT INTO public.notifications (message, "from", "to", reqpro_id) VALUES (:message, :from, :to, :reqpro_id)');
+        $deptTo = trim((string)($req['department'] ?? '')) ?: 'Unknown';
+        $nst->execute([
+            ':message' => $notifMsg,
+            ':from' => 'Cenro',
+            ':to' => $deptTo,
+            ':reqpro_id' => $req['reqpro_id'] ?? null,
+        ]);
+        // Activity log: record approval
+        try {
+            $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+            $ilog->execute([
+                ':uid' => $admin_uuid,
+                ':dept' => $me['department'] ?? 'cenro',
+                ':action' => 'approve_profile_request',
+                ':details' => sprintf('Approved profile update req %s', substr((string)($req['reqpro_id'] ?? ''), 0, 8)),
+            ]);
+        } catch (Throwable $le) {
+            error_log('[PROCESS/ACTIVITY LOG APPROVE] ' . $le->getMessage());
+        }
+    } catch (Throwable $ne) {
+        error_log('[PROCESS/NOTIF APPROVE] ' . $ne->getMessage());
+        // ignore notification failure
     }
 
     $pdo->commit();

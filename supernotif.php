@@ -124,11 +124,6 @@ function time_elapsed_string($datetime, $full = false)
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="supermessage.php"><i class="fas fa-envelope" style="color:black;"></i></a>
-                </div>
-            </div>
 
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -252,8 +247,7 @@ function time_elapsed_string($datetime, $full = false)
                             <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
                                 Requested <?= time_elapsed_string((string)$notif['created_at']) ?>
                             <?php else: ?>
-                                <?= ucfirst((string)$notif['status']) ?> by
-                                <?= htmlspecialchars((string)$notif['reviewed_by']) ?>
+
                                 <?= time_elapsed_string((string)$notif['reviewed_at']) ?>
                             <?php endif; ?>
                         </div>

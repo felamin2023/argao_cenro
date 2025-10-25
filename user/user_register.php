@@ -247,6 +247,15 @@ $success = isset($_GET['success']) && $_GET['success'] == 1;
             padding-top: 60px;
         }
 
+        #verifyEmailBtn,
+        #registerBtn {
+            display: block;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 200px;
+            /* Optional: control button width */
+        }
+
         .modal-content {
             background-color: #fefefe;
             margin: 5% auto;

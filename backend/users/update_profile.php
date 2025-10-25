@@ -106,7 +106,7 @@ $idCol   = $isUuid ? 'user_id' : 'id';
 $idParam = $isUuid ? $sessionVal : (string)(int)$sessionVal;
 
 // --------- Fetch current email & image ----------
-$stmt = $pdo->prepare("SELECT email, image FROM public.users WHERE {$idCol} = :id LIMIT 1");
+$stmt = $pdo->prepare("SELECT user_id, email, image, first_name, last_name, age, phone FROM public.users WHERE {$idCol} = :id LIMIT 1");
 $stmt->execute([':id' => $idParam]);
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$row) {
@@ -115,6 +115,10 @@ if (!$row) {
 }
 $current_email = (string)($row['email'] ?? '');
 $current_image = (string)($row['image'] ?? '');
+$current_first = (string)($row['first_name'] ?? '');
+$current_last  = (string)($row['last_name'] ?? '');
+$current_age   = $row['age'] ?? null;
+$current_phone = (string)($row['phone'] ?? '');
 
 // --------- Handle RESEND OTP ----------
 if (isset($_POST['resend']) && $_POST['resend'] === 'true') {
@@ -179,14 +183,28 @@ if ($password && $password !== $confirm) {
     echo json_encode(['success' => false, 'error' => 'Passwords do not match.']);
     exit();
 }
-if ($first_name === '' || $last_name === '') {
-    echo json_encode(['success' => false, 'error' => 'Missing required fields.']);
-    exit();
-}
 $age = ($age_raw === '' ? null : (is_numeric($age_raw) ? (int)$age_raw : null));
 
+if ($first_name === '') {
+    $first_name = $current_first;
+}
+if ($last_name === '') {
+    $last_name = $current_last;
+}
+if ($age === null && $age_raw === '' && $current_age !== null) {
+    $age = (int)$current_age;
+}
+if ($phone === '') {
+    $phone = $current_phone;
+}
+
 // --------- Email change flow (pre-check) ----------
-$email_changed = (strcasecmp($email, $current_email) !== 0);
+$email_changed = false;
+if ($email === '') {
+    $email = $current_email;
+} else {
+    $email_changed = (strcasecmp($email, $current_email) !== 0);
+}
 if ($email_changed && !isset($_POST['otp_code'])) {
     $q = $pdo->prepare("SELECT COUNT(*) FROM public.users WHERE lower(email) = lower(:em) AND {$idCol} <> :id");
     $q->execute([':em' => $email, ':id' => $idParam]);
@@ -294,7 +312,51 @@ try {
     $stmt = $pdo->prepare($sql);
     $ok = $stmt->execute($params);
     if ($ok) {
-        echo json_encode(['success' => true]);
+        $targetClientUserId = $row['user_id'] ?? null;
+        if ($targetClientUserId) {
+            try {
+                $clientExistsStmt = $pdo->prepare("SELECT client_id FROM public.client WHERE user_id = :uid LIMIT 1");
+                $clientExistsStmt->execute([':uid' => $targetClientUserId]);
+                $clientRow = $clientExistsStmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($clientRow) {
+                    $clientUpdate = $pdo->prepare("
+                        UPDATE public.client
+                        SET first_name = :fn,
+                            last_name = :ln,
+                            contact_number = :ph
+                        WHERE user_id = :uid
+                    ");
+                    $clientUpdate->execute([
+                        ':fn'  => $fields['first_name'],
+                        ':ln'  => $fields['last_name'],
+                        ':ph'  => $fields['phone'],
+                        ':uid' => $targetClientUserId,
+                    ]);
+                } else {
+                    $clientInsert = $pdo->prepare("
+                        INSERT INTO public.client (user_id, first_name, last_name, contact_number)
+                        VALUES (:uid, :fn, :ln, :ph)
+                    ");
+                    $clientInsert->execute([
+                        ':uid' => $targetClientUserId,
+                        ':fn'  => $fields['first_name'],
+                        ':ln'  => $fields['last_name'],
+                        ':ph'  => $fields['phone'],
+                    ]);
+                }
+            } catch (Throwable $clientErr) {
+                error_log('[update_profile] Failed to sync client table: ' . $clientErr->getMessage());
+            }
+        }
+        $refreshStmt = $pdo->prepare("SELECT first_name, last_name, age, email, phone FROM public.users WHERE {$idCol} = :id LIMIT 1");
+        $refreshStmt->execute([':id' => $idParam]);
+        $fresh = $refreshStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        echo json_encode([
+            'success' => true,
+            'updated_rows' => $stmt->rowCount(),
+            'user' => $fresh,
+        ]);
     } else {
         echo json_encode(['success' => false, 'error' => 'Update failed.']);
     }

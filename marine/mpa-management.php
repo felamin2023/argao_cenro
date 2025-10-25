@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,11 +8,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <link rel="stylesheet" href="/denr/superadmin/css/mpa-management.css">
-     <link rel="stylesheet" href="/denr/superadmin/js/mpa-management.js">
+    <link rel="stylesheet" href="/denr/superadmin/js/mpa-management.js">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-   
+
 </head>
+
 <body>
     <header>
         <div class="logo">
@@ -19,12 +21,12 @@
                 <img src="seal.png" alt="Site Logo">
             </a>
         </div>
-        
+
         <!-- Mobile menu toggle -->
         <button class="mobile-toggle">
             <i class="fas fa-bars"></i>
         </button>
-        
+
         <!-- Navigation on the right -->
         <div class="nav-container">
             <!-- Dashboard Dropdown -->
@@ -56,16 +58,8 @@
                     </a>
                 </div>
             </div>
-                
-            <!-- Messages Icon -->
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="marinemessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
-            
+
+
             <!-- Notifications -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -77,7 +71,7 @@
                         <h3>Notifications</h3>
                         <a href="#" class="mark-all-read">Mark all as read</a>
                     </div>
-                    
+
                     <div class="notification-item unread">
                         <a href="marineeach.php?id=1" class="notification-link">
                             <div class="notification-icon">
@@ -90,13 +84,13 @@
                             </div>
                         </a>
                     </div>
-                    
+
                     <div class="notification-footer">
                         <a href="marinenotif.php" class="view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
                 <div class="nav-icon">
@@ -115,13 +109,13 @@
             </div>
         </div>
     </header>
-    
+
     <div class="main-content">
         <div class="component-section">
             <div class="content-header">
                 <h3 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 700; font-size: 24px; color: var(--primary-dark); text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px;">MPA Management & Networking</h3>
             </div>
-            
+
             <div class="figure-container">
                 <div class="chart-container">
                     <canvas id="performanceChart"></canvas>
@@ -130,7 +124,7 @@
                     </div>
                 </div>
             </div>
-           
+
             <div class="dashboard-cards">
                 <div class="stat-card">
                     <h3>Established</h3>
@@ -159,7 +153,7 @@
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>Despite challenges from the COVID-19 pandemic, CMEMP achieved 100% or higher completion of targets in its fourth year of implementation.</p>
-                    
+
                     <div class="dashboard-cards">
                         <div class="stat-card">
                             <h3>Protected Areas</h3>
@@ -182,7 +176,7 @@
                             <p class="stat-description">of targeted database updates completed</p>
                         </div>
                     </div>
-                    
+
                     <p>Activities included baseline assessments of corals, mangroves, and seagrass in protected areas, providing updated data on habitat extent and conditions.</p>
                 </div>
             </div>
@@ -197,7 +191,7 @@
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>An MPA Network (MPAN) is a collection of individual MPAs operating cooperatively at various spatial scales to achieve objectives that a single reserve cannot achieve.</p>
-                    
+
                     <div class="performance-grid">
                         <div class="performance-item">
                             <h4><i class="fas fa-graduation-cap"></i> MPAN Training</h4>
@@ -229,7 +223,7 @@
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>38 NIPAS MPAs conducted maintenance and protection activities including patrolling, habitat surveillance, and facility repairs.</p>
-                    
+
                     <div class="performance-grid">
                         <div class="performance-item">
                             <h4><i class="fas fa-map-marked-alt"></i> Region 1</h4>
@@ -261,7 +255,7 @@
             <div class="section-content">
                 <div class="section-content-inner">
                     <p>The CMEMP program has identified several key priorities for future implementation:</p>
-                    
+
                     <div class="performance-grid">
                         <div class="performance-item">
                             <h4><i class="fas fa-handshake"></i> Convergence</h4>
@@ -292,55 +286,55 @@
             </div>
         </div>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            
+
             if (mobileToggle) {
                 mobileToggle.addEventListener('click', () => {
                     navContainer.classList.toggle('active');
                 });
             }
-            
+
             // Improved dropdown functionality
             const dropdowns = document.querySelectorAll('.dropdown');
-            
+
             dropdowns.forEach(dropdown => {
                 const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                            
+
                 // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
                 });
-                
+
                 // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
                     // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
-                
+
                 // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     }
                 });
             });
@@ -351,9 +345,9 @@
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
                     });
                 }
             });
@@ -363,18 +357,18 @@
                 dropdowns.forEach(dropdown => {
                     const toggle = dropdown.querySelector('.nav-icon');
                     const menu = dropdown.querySelector('.dropdown-menu');
-                    
+
                     toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        
+
                         // Close other dropdowns
                         document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
                             if (otherMenu !== menu) {
                                 otherMenu.style.display = 'none';
                             }
                         });
-                        
+
                         // Toggle current dropdown
                         if (menu.style.display === 'block') {
                             menu.style.display = 'none';
@@ -412,8 +406,7 @@
                 type: 'bar',
                 data: {
                     labels: ['PAs assessed', 'PAs monitored', 'PAs water quality', 'MPA Network', 'Habitats monitored'],
-                    datasets: [
-                        {
+                    datasets: [{
                             label: 'Target',
                             data: [100, 100, 100, 100, 100],
                             backgroundColor: 'rgba(169, 169, 169, 0.7)',
@@ -465,7 +458,7 @@
                     }
                 }
             });
-            
+
             // Custom legend
             const legendItems = performanceChart.data.datasets.map((dataset, i) => {
                 return {
@@ -474,20 +467,20 @@
                     borderColor: dataset.borderColor
                 };
             });
-            
+
             const legendContainer = document.getElementById('chartLegend');
             legendItems.forEach(item => {
                 const legendItem = document.createElement('div');
                 legendItem.className = 'legend-item';
-                
+
                 const colorBox = document.createElement('div');
                 colorBox.className = 'legend-color';
                 colorBox.style.backgroundColor = item.backgroundColor;
                 colorBox.style.border = `1px solid ${item.borderColor}`;
-                
+
                 const text = document.createElement('span');
                 text.textContent = item.label;
-                
+
                 legendItem.appendChild(colorBox);
                 legendItem.appendChild(text);
                 legendContainer.appendChild(legendItem);
@@ -495,4 +488,5 @@
         });
     </script>
 </body>
+
 </html>

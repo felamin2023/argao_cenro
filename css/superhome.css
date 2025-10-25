@@ -497,6 +497,70 @@ th {
   border: 2px solid var(--primary-dark); /* Add a border around each header cell */
 }
 
+/* Fix Age column size */
+.admin-table table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Make Age column smaller */
+th:nth-child(4),
+td:nth-child(4) {
+  width: 60px !important; /* Fixed small width */
+  min-width: 60px !important;
+  max-width: 60px !important;
+  text-align: center !important; /* Center the age numbers */
+}
+
+#add-form {
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px; /* Border radius for add form */
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  max-width: 600px;
+  width: 90%;
+}
+
+/* Adjust other column widths to compensate */
+th:nth-child(1),
+td:nth-child(1) {
+  width: 8%;
+} /* ID */
+th:nth-child(2),
+td:nth-child(2) {
+  width: 14%;
+} /* First Name */
+th:nth-child(3),
+td:nth-child(3) {
+  width: 14%;
+} /* Last Name */
+th:nth-child(5),
+td:nth-child(5) {
+  width: 22%;
+} /* Email */
+th:nth-child(6),
+td:nth-child(6) {
+  width: 14%;
+} /* Department */
+th:nth-child(7),
+td:nth-child(7) {
+  width: 12%;
+} /* Status */
+th:nth-child(8),
+td:nth-child(8) {
+  width: 16%;
+} /* Actions */
+
+/* Ultra-compact Age column */
+th:nth-child(4),
+td:nth-child(4) {
+  width: 40px !important; /* Very small width */
+  min-width: 40px !important;
+  max-width: 40px !important;
+  text-align: center !important;
+  padding: 8px 4px !important; /* Reduce padding for compact look */
+}
+
 /* Remove the left border for the first header cell */
 th:first-child {
   border-left: none;

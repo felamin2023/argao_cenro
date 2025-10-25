@@ -50,6 +50,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
           $_SESSION['role']       = 'Admin';
           $_SESSION['department'] = (string)$row['department'];
 
+          // --- Activity log: record non-CENRO admin login ---
+          try {
+            $deptLower = strtolower((string)$row['department']);
+            if ($deptLower !== 'cenro') {
+              $ilog = $pdo->prepare('INSERT INTO public.admin_activity_logs (admin_user_id, admin_department, action, details) VALUES (:uid, :dept, :action, :details)');
+              $ilog->execute([
+                ':uid' => (string)$row['user_id'],
+                ':dept' => (string)$row['department'],
+                ':action' => 'login',
+                ':details' => 'Logged in to the system'
+              ]);
+            }
+          } catch (Throwable $e) {
+            // don't prevent login if logging fails
+            error_log('[ADMIN-ACTIVITY-LOG] ' . $e->getMessage());
+          }
+
+          // mark user active
+          try {
+            $uact = $pdo->prepare('UPDATE public.users SET is_active = true WHERE user_id = :uid');
+            $uact->execute([':uid' => (string)$row['user_id']]);
+          } catch (Throwable $e) {
+            error_log('[ADMIN-ACTIVITY-LOG] set is_active true: ' . $e->getMessage());
+          }
+
           // Redirect by department
           switch (strtolower((string)$row['department'])) {
             case 'wildlife':

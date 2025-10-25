@@ -14,6 +14,99 @@ require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Sup
 
 $user_id = (string)$_SESSION['user_id'];
 
+/* ---------- Helpers used by the header (copied from treehome.php) ---------- */
+function h(?string $s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function time_elapsed_string($datetime, $full = false): string
+{
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+
+    $totalDays = $diff->days ?? 0;
+    $weeks = intdiv($totalDays, 7);
+    $days  = $totalDays % 7;
+
+    $parts = [];
+    $map = [
+        'y' => $diff->y,
+        'm' => $diff->m,
+        'w' => $weeks,
+        'd' => $days,
+        'h' => $diff->h,
+        'i' => $diff->i,
+        's' => $diff->s,
+    ];
+    foreach ($map as $label => $v) {
+        if ($v > 0) {
+            $name = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'][$label];
+            $parts[] = $v . ' ' . $name . ($v > 1 ? 's' : '');
+        }
+    }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+/* ---------- Notifications for the header (Tree Cutting) ---------- */
+$treeNotifs = [];
+$incRows    = [];
+$unreadTree = 0;
+
+try {
+    // Permit notifications addressed to 'Tree Cutting'
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+    WHERE LOWER(COALESCE(n.\"to\", '')) = 'tree cutting'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ");
+    $treeNotifs = $notifRows ? $notifRows->fetchAll(PDO::FETCH_ASSOC) : [];
+
+    // Unread counts (permits + incidents)
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", ''))='tree cutting' AND n.is_read=false
+    ")->fetchColumn();
+
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadTree = $unreadPermits + $unreadIncidents;
+
+    // Incident rows (category = Tree Cutting)
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='tree cutting'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+    error_log('[TREE HEADER NOTIFS] ' . $e->getMessage());
+    $treeNotifs = [];
+    $incRows    = [];
+    $unreadTree = 0;
+}
+
+// Used by the profile icon "active" state
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
+
 try {
     // Ensure this admin belongs to TREE CUTTING
     $st = $pdo->prepare("
@@ -80,69 +173,88 @@ try {
         </button>
 
         <div class="nav-container">
-            <div class="nav-item dropdown">
-                <div class="nav-icon active" aria-haspopup="true" aria-expanded="false">
-                    <i class="fas fa-bars"></i>
-                </div>
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="treecutting.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Tree Cutting</span>
+                    <a href="requestpermits.php" class="dropdown-item">
+                        <i class="fas fa-file-signature"></i><span>Request Permits</span>
                     </a>
-                    <a href="lumber.php" class="dropdown-item">
-                        <i class="fas fa-store"></i>
-                        <span>Lumber Dealers</span>
-                    </a>
-                    <a href="chainsaw.php" class="dropdown-item">
-                        <i class="fas fa-tools"></i>
-                        <span>Registered Chainsaw</span>
-                    </a>
-                    <a href="woodprocessing.php" class="dropdown-item">
-                        <i class="fas fa-industry"></i>
-                        <span>Wood Processing</span>
-                    </a>
-                    <a href="reportaccident.php" class="dropdown-item active-page">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Incident Reports</span>
+                    <a href="reportaccident.php" class="dropdown-item active-page" aria-current="page">
+                        <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="treemessage.php" aria-label="Messages">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
+
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <span class="badge"><?= (int)$unreadTree ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
+                    </div>
+                    <div class="notification-list" id="treeNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits
+                        foreach ($treeNotifs as $nf) {
+                            $combined[] = [
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => 'requestpermits.php' // keep users on this page for permit notifs
+                            ];
+                        }
+
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No tree cutting notifications</div>
+                                </div>
+                            </div>
+                            <?php else:
+                            // (Optional) Sort newest-first across both sets
+                            usort($combined, fn($a, $b) => strcmp($b['ago'], $a['ago'])); // lightweight; server-side already orders each set
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="treeeach.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Illegal Logging Alert</div>
-                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
-                                <div class="notification-time">15 minutes ago</div>
-                            </div>
-                        </a>
-                    </div>
-
-                    <div class="notification-footer">
-                        <a href="treenotification.php" class="view-all">View All Notifications</a>
-                    </div>
+                    <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -256,7 +368,26 @@ try {
                                     <td><?= htmlspecialchars((string)$row['where']) ?></td>
                                     <td><?= htmlspecialchars($row['when'] ? (new DateTime($row['when']))->format('Y-m-d H:i') : '') ?></td>
                                     <td><?= htmlspecialchars((string)$row['why']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['status']) ?></td>
+                                    <?php
+                                    $statusRaw = (string)($row['status'] ?? '');
+                                    $statusKey = strtolower(trim($statusRaw));
+                                    if ($statusKey === '') {
+                                        $statusClass = 'pending';
+                                        $statusLabel = 'Pending';
+                                    } else {
+                                        $statusClassSanitized = preg_replace('/[^a-z0-9]+/', '-', $statusKey);
+                                        $statusClassSanitized = $statusClassSanitized !== '' ? $statusClassSanitized : 'unknown';
+                                        $knownStatuses = ['pending', 'approved', 'resolved', 'rejected'];
+                                        $statusClass = in_array($statusClassSanitized, $knownStatuses, true) ? $statusClassSanitized : 'unknown';
+                                        $labelSource = str_replace(['-', '_'], ' ', $statusKey);
+                                        $statusLabel = ucwords($labelSource);
+                                    }
+                                    ?>
+                                    <td>
+                                        <span class="status-pill status-pill--<?= htmlspecialchars($statusClass, ENT_QUOTES) ?>">
+                                            <?= htmlspecialchars($statusLabel) ?>
+                                        </span>
+                                    </td>
                                     <td>
                                         <button class="view-btn" data-id="<?= htmlspecialchars((string)$row['id']) ?>">View</button>
 
@@ -296,8 +427,9 @@ try {
                     </div>
                     <div><strong>Created At:</strong> <span id="modal-created-at"></span></div>
                 </div>
-                <div style="margin-top:20px;display:flex;gap:10px;">
+                <div style="margin-top:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <button id="update-status-btn" style="padding:8px 16px;background:#005117;color:white;border:none;border-radius:4px;cursor:pointer;">Update</button>
+                    <span id="resolved-lock-note" class="resolved-lock-note" style="display:none;">This incident is already resolved and can no longer be updated.</span>
                 </div>
             </div>
 
@@ -379,7 +511,8 @@ try {
                             badge.style.display = n > 0 ? 'inline-block' : 'none';
                         }
                     } catch (e) {
-                        /* silent */ }
+                        /* silent */
+                    }
                 }
 
                 if (markAll) {
@@ -402,7 +535,8 @@ try {
                                 await refreshUnread();
                             }
                         } catch (err) {
-                            /* silent */ }
+                            /* silent */
+                        }
                     });
                 }
 
@@ -437,10 +571,12 @@ try {
             const confirmRejectBtn = document.getElementById("confirmRejectBtn");
             const cancelRejectBtn = document.getElementById("cancelRejectBtn");
             const statusSelect = document.getElementById("modal-status");
+            const resolvedLockNote = document.getElementById("resolved-lock-note");
             const rejectionReasonInput = document.getElementById("rejection-reason");
 
             const notificationEl = document.getElementById("profile-notification");
             let currentReportId = null;
+            let currentReportLocked = false;
 
             function showNotification(message) {
                 notificationEl.textContent = message;
@@ -517,7 +653,27 @@ try {
                         photosContainer.appendChild(img);
                     });
 
-                    // Show modal
+                    // Reset state then show modal
+                    // (reset UI in case previous modal left Update hidden)
+                    currentReportLocked = false;
+                    if (statusSelect) statusSelect.disabled = false;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = false;
+                        updateStatusBtn.style.display = 'inline-block';
+                        updateStatusBtn.title = '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = 'none';
+
+                    const isResolved = (report.status || "").toLowerCase() === "resolved";
+                    currentReportLocked = isResolved;
+                    if (statusSelect) statusSelect.disabled = isResolved;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = isResolved;
+                        updateStatusBtn.style.display = isResolved ? 'none' : 'inline-block';
+                        updateStatusBtn.title = isResolved ? 'Resolved incidents can no longer be updated' : '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = isResolved ? 'block' : 'none';
+
                     viewModal.style.display = "block";
                     document.body.style.overflow = "hidden";
                 } catch (err) {
@@ -528,6 +684,10 @@ try {
 
             // ===== Update Status flow =====
             updateStatusBtn.addEventListener("click", () => {
+                if (currentReportLocked) {
+                    showNotification("Resolved incidents can no longer be updated");
+                    return;
+                }
                 const newStatus = statusSelect.value;
                 if (newStatus === "rejected") {
                     rejectReasonModal.style.display = "block";
@@ -646,6 +806,17 @@ try {
             const closeModal = (el) => {
                 el.style.display = "none";
                 document.body.style.overflow = "auto";
+                // restore Update button when closing the view modal
+                if (el === viewModal) {
+                    currentReportLocked = false;
+                    if (statusSelect) statusSelect.disabled = false;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = false;
+                        updateStatusBtn.style.display = 'inline-block';
+                        updateStatusBtn.title = '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = 'none';
+                }
             };
             closeViewModal.addEventListener("click", () => closeModal(viewModal));
             closeConfirmStatusModal.addEventListener("click", () => (confirmStatusModal.style.display = "none"));

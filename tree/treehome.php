@@ -234,7 +234,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         endif; ?>
                     </div>
 
-                    <div class="notification-footer"><a href="reportaccident.php" class="view-all">View All Notifications</a></div>
+                    <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -242,7 +242,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             <div class="nav-item dropdown" data-dropdown>
                 <div class="nav-icon <?php echo $current_page === 'forestry-profile' ? 'active' : ''; ?>"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
-                    <a href="wildprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="treeprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
                     <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>

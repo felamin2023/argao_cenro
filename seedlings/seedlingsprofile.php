@@ -116,16 +116,21 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="treecutting.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting</span></a>
-                    <a href="lumber.php" class="dropdown-item"><i class="fas fa-store"></i><span>Lumber Dealers</span></a>
-                    <a href="chainsaw.php" class="dropdown-item"><i class="fas fa-tools"></i><span>Registered Chainsaw</span></a>
-                    <a href="woodprocessing.php" class="dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing</span></a>
-                    <a href="reportaccident.php" class="dropdown-item"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
+
+                    <a href="incoming.php" class="dropdown-item">
+                        <i class="fas fa-seedling"></i><span>Seedlings Received</span>
+                    </a>
+
+                    <a href="reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
+                    </a>
+
+                    <a href="user_requestseedlings.php" class="dropdown-item">
+                        <i class="fas fa-paper-plane"></i><span>Seedlings Request</span>
+                    </a>
                 </div>
             </div>
-            <div class="nav-item">
-                <div class="nav-icon"><a href="treemessage.php" aria-label="Messages"><i class="fas fa-envelope" style="color:black;"></i></a></div>
-            </div>
+
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
                 <div class="dropdown-menu notifications-dropdown">

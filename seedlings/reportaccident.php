@@ -94,18 +94,7 @@ $quantities = [
                         <i class="fas fa-seedling"></i><span class="item-text">Seedlings Received</span>
                         <span class="quantity-badge"><?= (int)$quantities['total_received'] ?></span>
                     </a>
-                    <a href="releasedrecords.php" class="dropdown-item">
-                        <i class="fas fa-truck"></i><span class="item-text">Seedlings Released</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_released'] ?></span>
-                    </a>
-                    <a href="discardedrecords.php" class="dropdown-item">
-                        <i class="fas fa-trash-alt"></i><span class="item-text">Seedlings Discarded</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_discarded'] ?></span>
-                    </a>
-                    <a href="balancerecords.php" class="dropdown-item">
-                        <i class="fas fa-calculator"></i><span class="item-text">Seedlings Left</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_balance'] ?></span>
-                    </a>
+
 
                     <a href="reportaccident.php" class="dropdown-item active-page">
                         <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
@@ -117,9 +106,7 @@ $quantities = [
                 </div>
             </div>
 
-            <div class="nav-item">
-                <div class="nav-icon"><a href="seedlingsmessage.php"><i class="fas fa-envelope" style="color:black;"></i></a></div>
-            </div>
+
 
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
@@ -243,7 +230,26 @@ $quantities = [
                                     <td><?= htmlspecialchars((string)$row['where']) ?></td>
                                     <td><?= htmlspecialchars($row['when'] ? (new DateTime($row['when']))->format('Y-m-d H:i') : '') ?></td>
                                     <td><?= htmlspecialchars((string)$row['why']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['status']) ?></td>
+                                    <?php
+                                    $statusRaw = (string)($row['status'] ?? '');
+                                    $statusKey = strtolower(trim($statusRaw));
+                                    if ($statusKey === '') {
+                                        $statusClass = 'pending';
+                                        $statusLabel = 'Pending';
+                                    } else {
+                                        $statusClassSanitized = preg_replace('/[^a-z0-9]+/', '-', $statusKey);
+                                        $statusClassSanitized = $statusClassSanitized !== '' ? $statusClassSanitized : 'unknown';
+                                        $knownStatuses = ['pending', 'approved', 'resolved', 'rejected'];
+                                        $statusClass = in_array($statusClassSanitized, $knownStatuses, true) ? $statusClassSanitized : 'unknown';
+                                        $labelSource = str_replace(['-', '_'], ' ', $statusKey);
+                                        $statusLabel = ucwords($labelSource);
+                                    }
+                                    ?>
+                                    <td>
+                                        <span class="status-pill status-pill--<?= htmlspecialchars($statusClass, ENT_QUOTES) ?>">
+                                            <?= htmlspecialchars($statusLabel) ?>
+                                        </span>
+                                    </td>
                                     <td>
                                         <button class="view-btn" data-id="<?= htmlspecialchars((string)$row['id']) ?>">View</button>
 
@@ -283,8 +289,9 @@ $quantities = [
                     </div>
                     <div><strong>Created At:</strong> <span id="modal-created-at"></span></div>
                 </div>
-                <div style="margin-top:20px;display:flex;gap:10px;">
+                <div style="margin-top:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <button id="update-status-btn" style="padding:8px 16px;background:#005117;color:white;border:none;border-radius:4px;cursor:pointer;">Update</button>
+                    <span id="resolved-lock-note" class="resolved-lock-note" style="display:none;">This incident is already resolved and can no longer be updated.</span>
                 </div>
             </div>
 
@@ -349,10 +356,12 @@ $quantities = [
             const confirmRejectBtn = document.getElementById("confirmRejectBtn");
             const cancelRejectBtn = document.getElementById("cancelRejectBtn");
             const statusSelect = document.getElementById("modal-status");
+            const resolvedLockNote = document.getElementById("resolved-lock-note");
             const rejectionReasonInput = document.getElementById("rejection-reason");
 
             const notificationEl = document.getElementById("profile-notification");
             let currentReportId = null;
+            let currentReportLocked = false;
 
             function showNotification(message) {
                 notificationEl.textContent = message;
@@ -432,7 +441,26 @@ $quantities = [
                         photosContainer.appendChild(img);
                     });
 
-                    // Show modal
+                    // Reset UI state then show modal
+                    currentReportLocked = false;
+                    if (statusSelect) statusSelect.disabled = false;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = false;
+                        updateStatusBtn.style.display = 'inline-block';
+                        updateStatusBtn.title = '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = 'none';
+
+                    const isResolved = (report.status || "").toLowerCase() === "resolved";
+                    currentReportLocked = isResolved;
+                    if (statusSelect) statusSelect.disabled = isResolved;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = isResolved;
+                        updateStatusBtn.style.display = isResolved ? 'none' : 'inline-block';
+                        updateStatusBtn.title = isResolved ? 'Resolved incidents can no longer be updated' : '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = isResolved ? 'block' : 'none';
+
                     viewModal.style.display = "block";
                     document.body.style.overflow = "hidden";
                 } catch (err) {
@@ -443,6 +471,10 @@ $quantities = [
 
             // ===== Update Status flow =====
             updateStatusBtn.addEventListener("click", () => {
+                if (currentReportLocked) {
+                    showNotification("Resolved incidents can no longer be updated");
+                    return;
+                }
                 const newStatus = statusSelect.value;
                 if (newStatus === "rejected") {
                     rejectReasonModal.style.display = "block";
@@ -562,6 +594,17 @@ $quantities = [
             const closeModal = (el) => {
                 el.style.display = "none";
                 document.body.style.overflow = "auto";
+                // restore Update button when closing the view modal
+                if (el === viewModal) {
+                    currentReportLocked = false;
+                    if (statusSelect) statusSelect.disabled = false;
+                    if (updateStatusBtn) {
+                        updateStatusBtn.disabled = false;
+                        updateStatusBtn.style.display = 'inline-block';
+                        updateStatusBtn.title = '';
+                    }
+                    if (resolvedLockNote) resolvedLockNote.style.display = 'none';
+                }
             };
             closeViewModal.addEventListener("click", () => closeModal(viewModal));
             closeConfirmStatusModal.addEventListener("click", () => (confirmStatusModal.style.display = "none"));

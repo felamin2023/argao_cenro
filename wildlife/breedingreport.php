@@ -3,6 +3,138 @@
 declare(strict_types=1);
 session_start();
 
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+date_default_timezone_set('Asia/Manila');
+
+/* Adjust path if your connection file is elsewhere */
+require_once __DIR__ . '/../backend/connection.php'; // provides $pdo
+
+/* ---- AJAX: mark single / mark all read (handled by this same page) ---- */
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId    = $_POST['notif_id']    ?? '';
+            $incidentId = $_POST['incident_id'] ?? '';
+            if (!$notifId && !$incidentId) {
+                echo json_encode(['ok' => false, 'error' => 'missing ids']);
+                exit;
+            }
+
+            if ($notifId) {
+                $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+                $st->execute([':id' => $notifId]);
+            }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
+                $st->execute([':id' => $incidentId]);
+            }
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("
+                UPDATE public.notifications
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
+            ");
+            $pdo->exec("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+            ");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[WILD NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit;
+}
+
+/* ---- helpers used by the UI snippet ---- */
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
+/* ---- data needed by your pasted UI (badge + lists) ---- */
+$wildNotifs = [];
+$incRows = [];
+$unreadWildlife = 0;
+
+try {
+    $wildNotifs = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id   = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications
+        WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadWildlife = $unreadPermits + $unreadIncidents;
+} catch (Throwable $e) {
+    error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
+    $wildNotifs = [];
+    $incRows = [];
+    $unreadWildlife = 0;
+}
+
 /* ======================= ACCESS GUARD ======================= */
 // Must be logged in and an Admin (Wildlife)
 if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {
@@ -263,6 +395,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['__action'] ?? '') === 'sav
 /* ======================= NOTIFICATIONS + INCIDENTS (unchanged UI) ======================= */
 $wildNotifs = [];
 $unreadWildlife = 0;
+$notifRows = [];
+$incRows = [];
 
 try {
     // A) notifications addressed to "wildlife"
@@ -342,6 +476,75 @@ try {
     error_log('[WILDHOME NOTIFS] ' . $e->getMessage());
     $wildNotifs = [];
     $unreadWildlife = 0;
+    $notifRows = [];
+    $incRows = [];
+}
+
+if (isset($_GET['ajax'])) {
+    $ajaxAction = (string)$_GET['ajax'];
+
+    if ($ajaxAction === 'mark_read') {
+        header('Content-Type: application/json');
+        $notifId    = $_POST['notif_id'] ?? '';
+        $incidentId = $_POST['incident_id'] ?? '';
+
+        if (!$notifId && !$incidentId) {
+            echo json_encode(['ok' => false, 'error' => 'missing notif_id or incident_id']);
+            exit();
+        }
+
+        try {
+            if ($notifId) {
+                $st = $pdo->prepare("UPDATE public.notifications SET is_read = true WHERE notif_id = :id");
+                $st->execute([':id' => $notifId]);
+            }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read = true WHERE incident_id = :id");
+                $st->execute([':id' => $incidentId]);
+            }
+
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            error_log('[BREEDING MARK_READ] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => 'server error']);
+        }
+        exit();
+    }
+
+    if ($ajaxAction === 'mark_all_read') {
+        header('Content-Type: application/json');
+        try {
+            $pdo->beginTransaction();
+
+            $updNotif = $pdo->prepare("
+                UPDATE public.notifications
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(\"to\", '')) = 'wildlife'
+                   AND is_read = false
+            ");
+            $updNotif->execute();
+            $countNotifs = $updNotif->rowCount();
+
+            $updInc = $pdo->prepare("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
+                   AND is_read = false
+            ");
+            $updInc->execute();
+            $countInc = $updInc->rowCount();
+
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'updated' => ['notifications' => $countNotifs, 'incidents' => $countInc]]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('[BREEDING MARK_ALL_READ] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => 'server error']);
+        }
+        exit();
+    }
 }
 
 $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
@@ -356,6 +559,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quarterly Breeding Report</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/denr/superadmin/css/wildhome.css">
     <style>
         /* ==== (your styles kept; only tiny tweaks) ==== */
         :root {
@@ -690,6 +894,50 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             font-size: 2rem;
             cursor: pointer;
             padding: 15px
+        }
+
+        @media (max-width: 840px) {
+            .nav-container {
+                display: none;
+                position: absolute;
+                top: 58px;
+                right: 0;
+                left: 0;
+                flex-direction: column;
+                background: var(--primary-color);
+                padding: 16px;
+                gap: 12px;
+                box-shadow: 0 10px 20px rgba(0, 0, 0, .2);
+            }
+
+            .nav-container.active {
+                display: flex;
+            }
+
+            .nav-container .dropdown-menu {
+                position: static;
+                opacity: 1 !important;
+                visibility: visible !important;
+                transform: none !important;
+                min-width: unset;
+                width: 100%;
+                box-shadow: none;
+                margin-top: 8px;
+            }
+
+            .nav-container .dropdown-menu.center {
+                left: auto;
+            }
+
+            .nav-item .nav-icon.active::after {
+                display: none;
+            }
+
+            .mobile-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
         }
 
         .notification-link {
@@ -1096,141 +1344,106 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 <body>
     <header>
         <div class="logo">
-            <a href="wildhome.php">
-                <img src="seal.png" alt="Site Logo">
-            </a>
+            <a href="wildhome.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
 
-        <!-- Navigation on the right -->
-        <div class="nav-container">
-            <!-- Dashboard Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon active">
-                    <i class="fas fa-bars"></i>
-                </div>
-                <div class="dropdown-menu center">
-                    <a href="breedingreport.php" class="dropdown-item active-page">
-                        <i class="fas fa-plus-circle"></i>
-                        <span>Add Record</span>
-                    </a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><i class="fas fa-bars"></i></button>
 
+        <div class="nav-container">
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon active" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
+                <div class="dropdown-menu center">
+                    <a href="breedingreport.php" class="dropdown-item active-page" aria-current="page">
+                        <i class="fas fa-plus-circle"></i><span>Add Record</span>
+                    </a>
                     <a href="wildpermit.php" class="dropdown-item">
-                        <i class="fas fa-paw"></i>
-                        <span>Wildlife Permit</span>
+                        <i class="fas fa-paw"></i><span>Wildlife Permit</span>
                     </a>
                     <a href="reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Incident Reports</span>
+                        <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
                     </a>
                 </div>
             </div>
 
-            <!-- Messages Icon -->
-            <!-- <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="wildmessage.php" aria-label="Messages">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div> -->
-
-            <!-- Notifications -->
             <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
                     <span class="badge"><?= (int)$unreadWildlife ?></span>
                 </div>
-
                 <div class="dropdown-menu notifications-dropdown">
-                    <!-- Sticky header -->
                     <div class="notification-header">
                         <h3 style="margin:0;">Notifications</h3>
                         <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-
-                    <!-- Scrollable list -->
                     <div class="notification-list" id="wildNotifList">
-                        <?php if (empty($wildNotifs)): ?>
+                        <?php
+                        $combined = [];
+
+                        // Permits
+                        foreach ($wildNotifs as $nf) {
+                            $combined[] = [
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                            ];
+                        }
+
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
                             <div class="notification-item">
                                 <div class="notification-content">
                                     <div class="notification-title">No wildlife notifications</div>
                                 </div>
                             </div>
-                        <?php else: ?>
-                            <?php foreach ($wildNotifs as $nf):
-                                $st = strtolower((string)($nf['approval_status'] ?? 'pending'));
-                                $isIncident = !empty($nf['incident_id']);
-
-                                if ($isIncident) {
-                                    $icon = $st === 'approved' ? 'fa-check-circle'
-                                        : ($st === 'rejected' ? 'fa-times-circle' : 'fa-exclamation-triangle');
-                                    $title = 'Incident ' . ucfirst($st);
-                                } else {
-                                    $icon = 'fa-file';
-                                    $title = 'New wildlife permit request';
-                                }
-
-                                $permit = strtolower((string)($nf['permit_type'] ?? ''));
-                                $who = h((string)($nf['client_first'] ?? 'A client'));
-                                $msg = trim((string)($nf['message'] ?? ''));
-                                if ($msg === '') {
-                                    $msg = $who . ' requested a wildlife ' . ($permit ?: 'new') . ' permit.';
-                                }
-
-                                $ago = time_elapsed_string($nf['created_at'] ?? date('c'));
-                                if (!empty($nf['incident_id'])) {
-                                    $href = 'reportaccident.php?focus=' . urlencode((string)$nf['incident_id']);
-                                } elseif (!empty($nf['approval_id'])) {
-                                    $href = 'wildeach.php?id=' . urlencode((string)$nf['approval_id']);
-                                } else {
-                                    $href = 'wildnotification.php';
-                                }
-
-                                $isRead = ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1');
+                            <?php else:
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
-                                <div class="notification-item <?= $isRead ? '' : 'unread' ?> status-<?= h($st) ?>"
-                                    data-notif-id="<?= h((string)($nf['notif_id'] ?? '')) ?>"
-                                    data-incident-id="<?= h((string)($nf['incident_id'] ?? '')) ?>">
-                                    <a href="<?= h($href) ?>" class="notification-link">
-                                        <div class="notification-icon">
-                                            <i class="fas <?= h($icon) ?>"></i>
-                                        </div>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
                                             <div class="notification-title"><?= h($title) ?></div>
-                                            <div class="notification-message"><?= h($msg) ?></div>
-                                            <div class="notification-time"><?= h($ago) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
                                         </div>
                                     </a>
                                 </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <!-- Sticky footer -->
-                    <div class="notification-footer">
-                        <a href="wildnotification.php" class="view-all">View All Notifications</a>
-                    </div>
+                    <div class="notification-footer"><a href="wildnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
-            <!-- Profile Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon <?php echo $current_page === 'forestry-profile.php' ? 'active' : ''; ?>">
-                    <i class="fas fa-user-circle"></i>
-                </div>
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
-                    <a href="wildprofile.php" class="dropdown-item">
-                        <i class="fas fa-user-edit"></i>
-                        <span>Edit Profile</span>
-                    </a>
-                    <a href="../superlogin.php" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
+                    <a href="wildprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
     </header>
+
 
     <div class="content">
         <div style="display: flex; justify-content: flex-end; margin-bottom: 25px;">
@@ -1470,6 +1683,240 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
         </form>
     </div>
     <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const NOTIF_ENDPOINT = '<?php echo basename(__FILE__); ?>'; // calls THIS page for AJAX
+
+            // Minimal dropdown open/close just for the bell
+            const dd = document.getElementById('notifDropdown');
+            if (dd) {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger?.setAttribute('aria-expanded', 'true');
+                    if (menu) {
+                        menu.style.opacity = '1';
+                        menu.style.visibility = 'visible';
+                    }
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger?.setAttribute('aria-expanded', 'false');
+                    if (menu) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                    }
+                };
+                trigger?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dd.classList.toggle('open');
+                    if (dd.classList.contains('open')) open();
+                    else close();
+                });
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('#notifDropdown')) close();
+                });
+            }
+
+            // Mark ALL as read
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                // optimistic UI
+                document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch(`${NOTIF_ENDPOINT}?ajax=mark_all_read`, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch {
+                    location.reload();
+                }
+            });
+
+            // Mark ONE as read + follow link
+            document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                e.preventDefault();
+
+                const item = link.closest('.notification-item');
+                const notifId = item?.getAttribute('data-notif-id') || '';
+                const incidentId = item?.getAttribute('data-incident-id') || '';
+                const href = link.getAttribute('href') || '#';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+                    await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch {}
+
+                item?.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // mobile menu
+            const mobileToggle = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
+            mobileToggle?.addEventListener('click', () => navContainer.classList.toggle('active'));
+
+            // dropdowns
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+            const isTouch = matchMedia('(pointer: coarse)').matches;
+
+            dropdowns.forEach(dd => {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                if (!trigger || !menu) return;
+
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger.setAttribute('aria-expanded', 'true');
+                    menu.style.opacity = '1';
+                    menu.style.visibility = 'visible';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger.setAttribute('aria-expanded', 'false');
+                    menu.style.opacity = '0';
+                    menu.style.visibility = 'hidden';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                    if (isTouch) menu.style.display = 'none';
+                };
+
+                if (!isTouch) {
+                    dd.addEventListener('mouseenter', open);
+                    dd.addEventListener('mouseleave', (e) => {
+                        if (!dd.contains(e.relatedTarget)) close();
+                    });
+                } else {
+                    trigger.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const openNow = dd.classList.contains('open');
+                        document.querySelectorAll('[data-dropdown].open').forEach(o => {
+                            if (o !== dd) o.classList.remove('open');
+                        });
+                        if (openNow) close();
+                        else {
+                            menu.style.display = 'block';
+                            open();
+                        }
+                    });
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-dropdown]')) {
+                    document.querySelectorAll('[data-dropdown].open').forEach(dd => {
+                        const menu = dd.querySelector('.dropdown-menu');
+                        dd.classList.remove('open');
+                        if (menu) {
+                            menu.style.opacity = '0';
+                            menu.style.visibility = 'hidden';
+                            menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                            if (matchMedia('(pointer: coarse)').matches) menu.style.display = 'none';
+                        }
+                        dd.querySelector('.nav-icon')?.setAttribute('aria-expanded', 'false');
+                    });
+                }
+            });
+
+            // mark all read
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                // optimistic UI
+                document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch {
+                    location.reload();
+                }
+            });
+
+            // single item read + follow
+            document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                const item = link.closest('.notification-item');
+                if (!item) return;
+                e.preventDefault();
+
+                const href = link.getAttribute('href') || 'wildnotification.php';
+                const notifId = item.getAttribute('data-notif-id') || '';
+                const incidentId = item.getAttribute('data-incident-id') || '';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+                    await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch {}
+
+                item.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
+        });
+    </script>
+
+    <script>
         // ======= Image preview (main)
         document.getElementById('species_image_main').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -1688,23 +2135,171 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             if (e.target === confirmM) closeConfirmModal();
         };
 
-        // ======= Dropdown hover (kept behavior)
-        document.addEventListener('DOMContentLoaded', function() {
-            const dropdowns = document.querySelectorAll('.dropdown');
+        document.addEventListener('DOMContentLoaded', () => {
+            const mobileToggle = document.querySelector('.mobile-toggle');
+            const navContainer = document.querySelector('.nav-container');
+            if (mobileToggle && navContainer) {
+                mobileToggle.addEventListener('click', () => {
+                    navContainer.classList.toggle('active');
+                });
+            }
+
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+            const isTouch = matchMedia('(pointer: coarse)').matches;
+
             dropdowns.forEach(dropdown => {
+                const trigger = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
-                dropdown.addEventListener('mouseenter', () => {
+                if (!trigger || !menu) return;
+
+                const open = () => {
+                    dropdown.classList.add('open');
+                    trigger.setAttribute('aria-expanded', 'true');
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
-                });
-                dropdown.addEventListener('mouseleave', (e) => {
-                    if (!dropdown.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(0)' :
+                        'translateY(0)';
+                };
+
+                const close = () => {
+                    dropdown.classList.remove('open');
+                    trigger.setAttribute('aria-expanded', 'false');
+                    menu.style.opacity = '0';
+                    menu.style.visibility = 'hidden';
+                    menu.style.transform = menu.classList.contains('center') ?
+                        'translateX(-50%) translateY(10px)' :
+                        'translateY(10px)';
+                    if (isTouch) {
+                        menu.style.display = 'none';
                     }
-                });
+                };
+
+                if (!isTouch) {
+                    dropdown.addEventListener('mouseenter', open);
+                    dropdown.addEventListener('mouseleave', event => {
+                        if (!dropdown.contains(event.relatedTarget)) {
+                            close();
+                        }
+                    });
+                } else {
+                    trigger.addEventListener('click', event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const alreadyOpen = dropdown.classList.contains('open');
+                        document.querySelectorAll('[data-dropdown].open').forEach(dd => {
+                            if (dd !== dropdown) {
+                                dd.classList.remove('open');
+                                const ddMenu = dd.querySelector('.dropdown-menu');
+                                if (ddMenu) {
+                                    ddMenu.style.opacity = '0';
+                                    ddMenu.style.visibility = 'hidden';
+                                    ddMenu.style.display = 'none';
+                                }
+                                const ddTrigger = dd.querySelector('.nav-icon');
+                                ddTrigger?.setAttribute('aria-expanded', 'false');
+                            }
+                        });
+                        if (alreadyOpen) {
+                            close();
+                        } else {
+                            menu.style.display = 'block';
+                            open();
+                        }
+                    });
+                }
+            });
+
+            document.addEventListener('click', event => {
+                if (!event.target.closest('[data-dropdown]')) {
+                    document.querySelectorAll('[data-dropdown].open').forEach(dropdown => {
+                        dropdown.classList.remove('open');
+                        const menu = dropdown.querySelector('.dropdown-menu');
+                        if (menu) {
+                            menu.style.opacity = '0';
+                            menu.style.visibility = 'hidden';
+                            menu.style.transform = menu.classList.contains('center') ?
+                                'translateX(-50%) translateY(10px)' :
+                                'translateY(10px)';
+                            if (matchMedia('(pointer: coarse)').matches) {
+                                menu.style.display = 'none';
+                            }
+                        }
+                        const trigger = dropdown.querySelector('.nav-icon');
+                        trigger?.setAttribute('aria-expanded', 'false');
+                    });
+                }
+            });
+
+            document.getElementById('markAllRead')?.addEventListener('click', async event => {
+                event.preventDefault();
+
+                document.querySelectorAll('#wildNotifList .notification-item.unread')
+                    .forEach(el => el.classList.remove('unread'));
+
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const response = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    const data = await response.json();
+                    if (!data || data.ok !== true) {
+                        location.reload();
+                    }
+                } catch (_) {
+                    location.reload();
+                }
+            });
+
+            document.getElementById('wildNotifList')?.addEventListener('click', async event => {
+                const link = event.target.closest('.notification-link');
+                if (!link) return;
+
+                const item = link.closest('.notification-item');
+                if (!item) return;
+
+                event.preventDefault();
+                const href = link.getAttribute('href') || 'wildnotification.php';
+                const notifId = item.getAttribute('data-notif-id') || '';
+                const incidentId = item.getAttribute('data-incident-id') || '';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
+
+                    await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch (_) {
+                    // ignore network errors, still proceed with optimistic UI
+                }
+
+                item.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const current = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, current - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) {
+                        badge.style.display = 'none';
+                    }
+                }
+
+                window.location.href = href;
             });
         });
     </script>

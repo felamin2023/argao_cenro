@@ -31,45 +31,114 @@ if (!in_array($status, $allowed, true)) {
 }
 
 try {
-    if ($status === 'rejected') {
-        $sql = '
-            UPDATE public.incident_report
-               SET status = :status,
-                   approved_by = :approved_by,
-                   approved_at = NOW(),
-                   rejection_reason = :reason
-             WHERE id = :id
-        ';
-        $st = $pdo->prepare($sql);
-        $st->execute([
-            ':status'      => $status,
-            ':approved_by' => $user_id,
-            ':reason'      => $reason,
-            ':id'          => $id,
-        ]);
-    } else {
-        $sql = '
-            UPDATE public.incident_report
-               SET status = :status,
-                   approved_by = :approved_by,
-                   approved_at = NOW(),
-                   rejection_reason = NULL
-             WHERE id = :id
-        ';
-        $st = $pdo->prepare($sql);
-        $st->execute([
-            ':status'      => $status,
-            ':approved_by' => $user_id,
-            ':id'          => $id,
-        ]);
+    $pdo->beginTransaction();
+
+    $fetch = $pdo->prepare('
+        SELECT status, incident_id, user_id, who, rejection_reason
+          FROM public.incident_report
+         WHERE id = :id
+         FOR UPDATE
+    ');
+    $fetch->execute([':id' => $id]);
+    $incident = $fetch->fetch(PDO::FETCH_ASSOC);
+
+    if (!$incident) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Incident not found']);
+        exit;
     }
 
-    $changed = $st->rowCount();
+    $currentStatus = strtolower((string)($incident['status'] ?? ''));
+    if ($currentStatus === 'resolved') {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Incident already resolved']);
+        exit;
+    }
+
+    if ($status === 'rejected') {
+        if ($reason === null || trim($reason) === '') {
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => 'Rejection reason is required']);
+            exit;
+        }
+        $rejectionReason = $reason;
+    } else {
+        $rejectionReason = null;
+    }
+
+    $update = $pdo->prepare('
+        UPDATE public.incident_report
+           SET status = :status,
+               approved_by = :approved_by,
+               approved_at = NOW(),
+               rejection_reason = :reason
+         WHERE id = :id
+    ');
+    $update->execute([
+        ':status'      => $status,
+        ':approved_by' => $user_id,
+        ':reason'      => $rejectionReason,
+        ':id'          => $id,
+    ]);
+
+    $reporterId = trim((string)($incident['user_id'] ?? ''));
+    $firstName = '';
+    if ($reporterId !== '') {
+        $first = $pdo->prepare("
+            SELECT COALESCE(NULLIF(btrim(first_name), ''), 'User')
+              FROM public.users
+             WHERE user_id = :id
+             LIMIT 1
+        ");
+        $first->execute([':id' => $reporterId]);
+        $firstName = (string)$first->fetchColumn();
+    }
+    if ($firstName === '' && !empty($incident['who'])) {
+        $parts = preg_split('/\s+/', trim((string)$incident['who']));
+        $firstName = $parts[0] ?? '';
+    }
+    if ($firstName === '') {
+        $firstName = 'User';
+    }
+
+    $department = '';
+    $deptStmt = $pdo->prepare("
+        SELECT COALESCE(NULLIF(btrim(department), ''), 'Wildlife')
+          FROM public.users
+         WHERE user_id = :id
+         LIMIT 1
+    ");
+    $deptStmt->execute([':id' => $user_id]);
+    $department = trim((string)$deptStmt->fetchColumn());
+    if ($department === '') {
+        $department = 'Wildlife';
+    }
+
+    $statusLabel = strtolower($status);
+    $notifMessage = sprintf('%s, admin %s your incident report', $firstName, $statusLabel);
+
+    // Notifications should show they came from the Wildlife department
+    $notifStmt = $pdo->prepare('
+        INSERT INTO public.notifications (approval_id, incident_id, message, is_read, "from", "to")
+        VALUES (NULL, :incident_id, :message, false, :from, :to)
+    ');
+    $notifStmt->execute([
+        ':incident_id' => $incident['incident_id'] ?? null,
+        ':message'     => $notifMessage,
+        ':from'        => 'wildlife',
+        ':to'          => $reporterId !== '' ? $reporterId : null,
+    ]);
+
+    $pdo->commit();
+
     echo json_encode([
-        'success' => $changed > 0,
-        'message' => $changed > 0 ? 'Updated' : 'No changes made',
+        'success' => true,
+        'message' => 'Status updated',
     ]);
 } catch (Throwable $e) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error']);
 }

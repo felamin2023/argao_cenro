@@ -138,6 +138,24 @@ function time_elapsed_string($datetime, $full = false)
     if (!$full) $parts = array_slice($parts, 0, 1);
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
+
+// =================== Load admin activity logs ===================
+$logRows = [];
+try {
+    $ls = $pdo->prepare('
+        SELECT l.id, l.admin_user_id, l.admin_department, l.action, l.details, l.created_at,
+               u.first_name, u.last_name
+        FROM public.admin_activity_logs l
+        LEFT JOIN public.users u ON u.user_id = l.admin_user_id
+        ORDER BY l.created_at DESC
+        LIMIT 100
+    ');
+    $ls->execute();
+    $logRows = $ls->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+    error_log('[SUPERLOGS LOAD] ' . $e->getMessage());
+    $logRows = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -509,35 +527,28 @@ function time_elapsed_string($datetime, $full = false)
                         <th>Admin</th>
                         <th>Action</th>
                         <th>Details</th>
-                        <th>IP Address</th>
                         <th>Timestamp</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>treecutting</td>
-                        <td><span class="log-action action-login">Login</span></td>
-                        <td>Logged in to the system</td>
-                        <td>192.168.1.45</td>
-                        <td>2023-11-15 08:32:45</td>
-                    </tr>
-
-                    <tr>
-                        <td>superadmin</td>
-                        <td><span class="log-action action-update">Update</span></td>
-                        <td>Updated user profile: juan_delacruz</td>
-                        <td>192.168.1.78</td>
-                        <td>2023-11-15 10:42:10</td>
-                    </tr>
-
-
-                    <tr>
-                        <td>wildlife</td>
-                        <td><span class="log-action action-login">Login</span></td>
-                        <td>Logged in to the system</td>
-                        <td>192.168.1.78</td>
-                        <td>2023-11-15 15:18:42</td>
-                    </tr>
+                    <?php if (empty($logRows)): ?>
+                        <tr>
+                            <td colspan="5">No activity logs found.</td>
+                        </tr>
+                        <?php else: foreach ($logRows as $lr):
+                            $adminName = trim((string)($lr['first_name'] ?? '')) ?: (string)($lr['admin_user_id'] ?? '');
+                            $action = htmlspecialchars((string)($lr['action'] ?? ''), ENT_QUOTES);
+                            $details = htmlspecialchars((string)($lr['details'] ?? ''), ENT_QUOTES);
+                            $ts = htmlspecialchars((string)($lr['created_at'] ?? ''), ENT_QUOTES);
+                        ?>
+                            <tr>
+                                <td><?= htmlspecialchars($adminName, ENT_QUOTES) ?></td>
+                                <td><span class="log-action"><?= $action ?></span></td>
+                                <td><?= $details ?></td>
+                                <td><?= $ts ?></td>
+                            </tr>
+                    <?php endforeach;
+                    endif; ?>
                 </tbody>
             </table>
         </div>

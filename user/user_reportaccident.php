@@ -381,13 +381,29 @@ try {
 </head>
 
 <body>
-    <!-- Loading overlay (unchanged) -->
-    <div id="loadingScreen" class="loading-overlay" aria-hidden="true">
-        <div class="loading-card">
-            <img id="loadingLogo" src="../denr.png" alt="Loading Logo" />
-            <div class="loading-text">Loading...</div>
+    <!-- Loading overlay (replaced with your loader) -->
+    <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
+        <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;display:flex;gap:10px;align-items:center;">
+            <span class="loader" style="width:var(--loader-size);height:var(--loader-size);border:2px solid #ddd;border-top-color:#2b6625;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite;"></span>
+            <span id="loadingMessage">Working...</span>
         </div>
     </div>
+    <style>
+        :root {
+            --loader-size: 18px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+
 
     <!-- ✅ Standard Green Header (active = Report Incident) -->
     <header class="as-header">
@@ -688,9 +704,17 @@ try {
             const maxPhotos = 5;
             let selectedFiles = [];
 
-            const loadingEl = document.getElementById('loadingScreen');
-            const showLoading = () => loadingEl && (loadingEl.style.display = 'flex');
-            const hideLoading = () => loadingEl && (loadingEl.style.display = 'none');
+            const loadingEl = document.getElementById('loadingIndicator');
+            const loadingMsg = document.getElementById('loadingMessage');
+            const showLoading = (msg = 'Working...') => {
+                if (!loadingEl) return;
+                if (loadingMsg) loadingMsg.textContent = msg;
+                loadingEl.style.display = 'flex';
+            };
+            const hideLoading = () => {
+                if (loadingEl) loadingEl.style.display = 'none';
+            };
+
 
             addPhotoBtn.addEventListener('click', () => photoInput.click());
             photoInput.addEventListener('change', function() {
@@ -773,7 +797,7 @@ try {
                     }))
                 });
 
-                showLoading();
+                showLoading('Submitting report...');
                 try {
                     const data = await postJSON(form.action, fd);
                     if (data && data.echo) console.log('[SERVER] echo:', data.echo);

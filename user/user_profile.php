@@ -459,6 +459,24 @@ $phone      = $e($user['phone'] ?? '');
         .is-busy select {
             opacity: .7;
         }
+
+        /* Input field styles */
+        .profile-info-value {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .profile-info-value:focus {
+            border-color: #1a8cff;
+            outline: none;
+        }
+
+        .profile-info-value.error {
+            border-color: #ff4757;
+        }
     </style>
 </head>
 
@@ -550,7 +568,7 @@ $phone      = $e($user['phone'] ?? '');
                                     $t = trim((string)$m);
                                     $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
                                     $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
-                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There\'s an update.';
                                 })($n['message'] ?? '');
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
@@ -626,20 +644,19 @@ $phone      = $e($user['phone'] ?? '');
                 <div class="profile-info-grid ">
                     <div class="profile-info-item">
                         <div class="profile-info-label">First Name</div>
-                        <input type="text" class="profile-info-value" id="first-name" name="first_name" value="<?php echo $first_name; ?>">
+                        <input type="text" class="profile-info-value" id="first-name" name="first_name" value="<?php echo $first_name; ?>" required>
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Last Name</div>
-                        <input type="text" class="profile-info-value" id="last-name" name="last_name" value="<?php echo $last_name; ?>">
+                        <input type="text" class="profile-info-value" id="last-name" name="last_name" value="<?php echo $last_name; ?>" required>
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Age</div>
-                        <input type="number" class="profile-info-value" id="age" name="age" value="<?php echo $age; ?>" min="0">
+                        <input type="number" class="profile-info-value" id="age" name="age" value="<?php echo $age; ?>" min="1" max="150" required>
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Email</div>
-                        <!-- pass the original email via data- attribute (no PHP inside .js files) -->
-                        <input type="email" class="profile-info-value" id="email" name="email" value="<?php echo $email; ?>" data-original-email="<?php echo $email; ?>">
+                        <input type="email" class="profile-info-value" id="email" name="email" value="<?php echo $email; ?>" required data-original-email="<?php echo $email; ?>">
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Role</div>
@@ -647,7 +664,7 @@ $phone      = $e($user['phone'] ?? '');
                     </div>
                     <div class="profile-info-item">
                         <div class="profile-info-label">Phone</div>
-                        <input type="text" class="profile-info-value" id="phone" name="phone" value="<?php echo $phone; ?>">
+                        <input type="text" class="profile-info-value" id="phone" name="phone" value="<?php echo $phone; ?>" required>
                     </div>
 
                     <div class="profile-info-item">
@@ -680,21 +697,6 @@ $phone      = $e($user['phone'] ?? '');
         </div>
     </div>
 
-    <!-- OTP Modal -->
-    <div id="otpModal" class="modal">
-        <div class="modal-content">
-            <span class="close" id="closeModal">&times;</span>
-            <h3>Email Verification</h3>
-            <p>We've sent a 6-digit code to your email address.</p>
-            <input type="text" id="otpInput" maxlength="6" placeholder="Enter OTP code">
-            <div style="margin-top:10px; display: flex; align-items: center; gap: 10px;">
-                <button type="button" id="sendOtpBtn">Verify</button>
-                <button type="button" id="resendOtpBtn">Resend</button>
-                <span id="otpMessage" style="color:red; margin-left: 10px; font-size: 13px;"></span>
-            </div>
-        </div>
-    </div>
-
     <!-- Global loading overlay -->
     <div id="global-loading" role="alert" aria-live="polite" aria-busy="true">
         <div class="box">
@@ -703,7 +705,256 @@ $phone      = $e($user['phone'] ?? '');
         </div>
     </div>
 
-    <script src="/denr/superadmin/js/user/user_profile_request.js"></script>
+    <script>
+        // Fixed JavaScript validation
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('profile-form');
+            const updateBtn = document.getElementById('update-profile-btn');
+            const confirmModal = document.getElementById('profile-confirm-modal');
+            const confirmBtn = document.getElementById('confirm-profile-update-btn');
+            const cancelBtn = document.getElementById('cancel-profile-update-btn');
+            const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirm-password');
+            const passwordError = document.getElementById('password-error');
+            const profileUploadInput = document.getElementById('profile-upload-input');
+            const profilePicture = document.getElementById('profile-picture');
+            const globalLoading = document.getElementById('global-loading');
+            const loadingText = document.getElementById('global-loading-text');
+
+            // Password matching validation
+            function validatePasswords() {
+                const password = passwordInput.value.trim();
+                const confirmPassword = confirmPasswordInput.value.trim();
+
+                if (password !== '' && confirmPassword !== '' && password !== confirmPassword) {
+                    passwordError.style.display = 'block';
+                    passwordInput.style.borderColor = '#ff4757';
+                    confirmPasswordInput.style.borderColor = '#ff4757';
+                    return false;
+                } else {
+                    passwordError.style.display = 'none';
+                    passwordInput.style.borderColor = '';
+                    confirmPasswordInput.style.borderColor = '';
+                    return true;
+                }
+            }
+
+            // Validate all required fields
+            function validateForm() {
+                const requiredFields = [{
+                        element: document.getElementById('first-name'),
+                        name: 'First Name'
+                    },
+                    {
+                        element: document.getElementById('last-name'),
+                        name: 'Last Name'
+                    },
+                    {
+                        element: document.getElementById('age'),
+                        name: 'Age'
+                    },
+                    {
+                        element: document.getElementById('email'),
+                        name: 'Email'
+                    },
+                    {
+                        element: document.getElementById('phone'),
+                        name: 'Phone'
+                    }
+                ];
+
+                let isValid = true;
+                let missingFields = [];
+
+                // Check each required field
+                requiredFields.forEach(field => {
+                    const value = field.element.value.trim();
+                    if (!value) {
+                        isValid = false;
+                        missingFields.push(field.name);
+                        field.element.style.borderColor = '#ff4757';
+                    } else {
+                        field.element.style.borderColor = '';
+                    }
+                });
+
+                // Validate age range
+                const age = parseInt(document.getElementById('age').value);
+                if (age < 1 || age > 150) {
+                    isValid = false;
+                    missingFields.push('Valid age (1-150)');
+                    document.getElementById('age').style.borderColor = '#ff4757';
+                }
+
+                // Validate passwords if provided
+                const password = passwordInput.value.trim();
+                const confirmPassword = confirmPasswordInput.value.trim();
+
+                if (password || confirmPassword) {
+                    if (!validatePasswords()) {
+                        isValid = false;
+                        missingFields.push('Password confirmation');
+                    }
+                }
+
+                // Validate email format
+                const email = document.getElementById('email').value.trim();
+                if (email && !isValidEmail(email)) {
+                    isValid = false;
+                    missingFields.push('Valid email address');
+                    document.getElementById('email').style.borderColor = '#ff4757';
+                }
+
+                if (!isValid) {
+                    showNotification(`Please fill in: ${missingFields.join(', ')}`, 'error');
+                    return false;
+                }
+
+                return true;
+            }
+
+            // Email validation
+            function isValidEmail(email) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                return emailRegex.test(email);
+            }
+
+            // Show notification
+            function showNotification(message, type = 'info') {
+                const notification = document.getElementById('profile-notification');
+                notification.textContent = message;
+                notification.style.display = 'block';
+                notification.style.background = type === 'error' ? '#ff4757' : type === 'success' ? '#2ed573' : '#1a8cff';
+
+                setTimeout(() => {
+                    notification.style.display = 'none';
+                }, 5000);
+            }
+
+            // Show loading
+            function showLoading(message = 'Please wait...') {
+                loadingText.textContent = message;
+                globalLoading.style.display = 'flex';
+                document.body.classList.add('is-busy');
+            }
+
+            // Hide loading
+            function hideLoading() {
+                globalLoading.style.display = 'none';
+                document.body.classList.remove('is-busy');
+            }
+
+            // Handle profile picture upload preview
+            profileUploadInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    if (!file.type.startsWith('image/')) {
+                        showNotification('Please select a valid image file', 'error');
+                        return;
+                    }
+
+                    // Check file size (max 5MB)
+                    if (file.size > 5 * 1024 * 1024) {
+                        showNotification('Image size should be less than 5MB', 'error');
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        profilePicture.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Password validation on input
+            [passwordInput, confirmPasswordInput].forEach(input => {
+                input.addEventListener('input', validatePasswords);
+            });
+
+            // Form submission
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                if (!validateForm()) {
+                    return;
+                }
+
+                // Show confirmation modal
+                confirmModal.style.display = 'flex';
+            });
+
+            // Confirm update
+            confirmBtn.addEventListener('click', function() {
+                confirmModal.style.display = 'none';
+                submitForm();
+            });
+
+            // Cancel update
+            cancelBtn.addEventListener('click', function() {
+                confirmModal.style.display = 'none';
+            });
+
+            // Submit form via AJAX
+            function submitForm() {
+                showLoading('Updating profile...');
+
+                const formData = new FormData(form);
+
+                // Add session user_id to identify the user
+                formData.append('user_id', '<?php echo $_SESSION["user_id"]; ?>');
+
+                fetch('user_profile_update.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        hideLoading();
+
+                        if (data.success) {
+                            showNotification('Profile updated successfully!', 'success');
+
+                            // Update the original email data attribute if email was changed
+                            const emailInput = document.getElementById('email');
+                            emailInput.setAttribute('data-original-email', emailInput.value);
+
+                            // Clear password fields
+                            passwordInput.value = '';
+                            confirmPasswordInput.value = '';
+
+                        } else {
+                            showNotification(data.error || 'Failed to update profile', 'error');
+                        }
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        console.error('Error:', error);
+                        showNotification('Network error. Please try again.', 'error');
+                    });
+            }
+
+            // Close modal when clicking outside
+            confirmModal.addEventListener('click', function(e) {
+                if (e.target === confirmModal) {
+                    confirmModal.style.display = 'none';
+                }
+            });
+
+            // Remove error styling when user starts typing
+            const inputs = document.querySelectorAll('.profile-info-value');
+            inputs.forEach(input => {
+                input.addEventListener('input', function() {
+                    this.style.borderColor = '';
+                });
+            });
+        });
+    </script>
 </body>
 
 </html>
