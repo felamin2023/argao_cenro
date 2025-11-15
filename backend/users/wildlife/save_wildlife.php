@@ -195,7 +195,7 @@ try {
     $client_resolution = null;
 
     if (!$force_new_client) {
-        $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
+        $override_client_id = trim((string)$_POST['use_existing_client_id'] ?? '');
         if ($override_client_id !== '') {
             if (!preg_match('/^[0-9a-fA-F-]{36}$/', $override_client_id)) {
                 throw new Exception('Invalid client id format.');
@@ -358,6 +358,7 @@ try {
         $reqParams[':application_form'] = $uploaded['application_form'];
     }
 
+    $setColumns = [];
     foreach ($map as $postField => $col) {
         if (!empty($_FILES[$postField]) && is_uploaded_file($_FILES[$postField]['tmp_name'])) {
             $f = $_FILES[$postField];
@@ -367,6 +368,30 @@ try {
             $url = supa_upload($bucket, $prefix . $safe, $f['tmp_name'], $f['type'] ?: 'application/octet-stream');
             $reqSet[] = "{$col} = :{$col}";
             $reqParams[":{$col}"] = $url;
+            $setColumns[$col] = true;
+        }
+    }
+
+    // ---- Accept existing file URLs (from detected data) when no new upload was sent ----
+    $existingFileUrls = [];
+    if (!empty($_POST['existing_file_urls'])) {
+        $decoded = json_decode((string)$_POST['existing_file_urls'], true);
+        if (is_array($decoded)) {
+            // Normalize keys: hyphens -> underscores, lower-case
+            $normalized = [];
+            foreach ($decoded as $k => $v) {
+                $normalized[str_replace('-', '_', strtolower((string)$k))] = trim((string)$v);
+            }
+            $existingFileUrls = $normalized;
+        }
+    }
+    foreach ($existingFileUrls as $postField => $url) {
+        $col = $map[$postField] ?? null; // $postField MUST match e.g. renewal_file_2
+        $url = trim((string)$url);
+        if ($col && $url !== '' && empty($setColumns[$col])) {
+            $reqSet[] = "{$col} = :{$col}";
+            $reqParams[":{$col}"] = $url;
+            $setColumns[$col] = true;
         }
     }
 

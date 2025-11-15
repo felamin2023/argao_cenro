@@ -856,9 +856,17 @@ try {
                COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
                COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
                a.submitted_at,
-               c.first_name
+               c.first_name,
+               ad.approved_document AS document_url
         FROM public.approval a
         LEFT JOIN public.client c ON c.client_id = a.client_id
+        LEFT JOIN LATERAL (
+            SELECT approved_document
+            FROM public.approved_docs
+            WHERE approval_id = a.approval_id
+            ORDER BY approved_id DESC
+            LIMIT 1
+        ) ad ON TRUE
         WHERE LOWER(COALESCE(a.request_type,''))='wildlife'
         ORDER BY a.submitted_at DESC NULLS LAST, a.approval_id DESC
         LIMIT 200
@@ -1909,7 +1917,14 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                                 <td><span class="pill neutral"><?= h(strtolower((string)$r['permit_type'])) ?></span></td>
                                 <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
-                                <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
+                                <td>
+                                    <button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button>
+                                    <?php if ($st === 'released' && !empty($r['document_url'])): ?>
+                                        <a class="btn small ghost" href="<?= h($r['document_url']) ?>" target="_blank" rel="noopener" download>
+                                            <i class="fas fa-download"></i> Download
+                                        </a>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -2297,6 +2312,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
             /* View button -> open modal + fetch details */
             let currentApprovalId = null;
+            let detailDocUrl = '';
             document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
                 const btn = e.target.closest('[data-action="view"]');
                 if (!btn) return;
@@ -2331,6 +2347,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }).catch(() => {});
 
                 // Fetch details
+                // Fetch details
                 const res = await fetch(`<?php echo basename(__FILE__); ?>?ajax=details&approval_id=${encodeURIComponent(currentApprovalId)}`, {
                     headers: {
                         'Accept': 'application/json'
@@ -2338,6 +2355,17 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }).then(r => r.json()).catch(() => ({
                     ok: false
                 }));
+
+                // Fallback: get document_url from the row's Download button (if it exists)
+                let rowDocUrl = '';
+                const rowDownloadLink = tr?.querySelector('a[download]');
+                if (rowDownloadLink) {
+                    rowDocUrl = rowDownloadLink.getAttribute('href') || '';
+                }
+
+                // Prefer JSON document_url; if missing, use the row's download href
+                detailDocUrl = (res.document_url || '').trim() || rowDocUrl;
+
 
                 if (!res.ok) {
                     hideModalSkeleton();
@@ -2474,7 +2502,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
                 // Actions based on status
                 renderActionsForStatus(st);
-                modalActions.classList.toggle('hidden', !(st === 'pending' || st === 'for payment'));
+                modalActions.classList.toggle('hidden', !(st === 'pending' || st === 'for payment' || st === 'released'));
 
                 hideModalSkeleton();
             });
@@ -2602,6 +2630,16 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     releaseBtn.addEventListener('click', () => openConfirm('release'));
                     modalActions.appendChild(releaseBtn);
                     modalActions.classList.remove('hidden');
+                } else if (st === 'released' && detailDocUrl) {
+                    const downloadBtn = document.createElement('a');
+                    downloadBtn.className = 'btn small ghost';
+                    downloadBtn.href = detailDocUrl;
+                    downloadBtn.target = '_blank';
+                    downloadBtn.rel = 'noopener';
+                    downloadBtn.setAttribute('download', '');
+                    downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download';
+                    modalActions.appendChild(downloadBtn);
+                    modalActions.classList.remove('hidden');
                 } else {
                     modalActions.classList.add('hidden');
                 }
@@ -2651,6 +2689,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     alert(res.error || 'Failed to release');
                     return;
                 }
+                detailDocUrl = res.document_url || detailDocUrl;
                 applyDecisionUI('released');
                 closeAllConfirms();
                 showToast('Request released', 'success');

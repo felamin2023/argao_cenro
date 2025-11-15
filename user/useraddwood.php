@@ -8,6 +8,10 @@ include_once __DIR__ . '/../backend/connection.php';
 
 $notifs = [];
 $unreadCount = 0;
+$wfpRecords = [];
+$wfpSelectOptions = [];
+$wfpRecordsJson = '{}';
+$myClientIds = [];
 
 /* AJAX endpoints used by the header JS:
    - POST ?ajax=mark_all_read
@@ -77,6 +81,194 @@ try {
     $unreadCount = 0;
 }
 
+/* Prefetch linked client IDs for current user */
+if (!empty($_SESSION['user_id'])) {
+    try {
+        $stmt = $pdo->prepare('SELECT client_id FROM public.client WHERE user_id = :uid');
+        $stmt->execute([':uid' => $_SESSION['user_id']]);
+        $myClientIds = array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'client_id');
+    } catch (Throwable $e) {
+        error_log('[WOOD-MY-CLIENTS] ' . $e->getMessage());
+        $myClientIds = [];
+    }
+}
+
+/* Prefetch WFP numbers + metadata for renewal picker */
+try {
+    $stmt = $pdo->prepare("
+        WITH my_clients AS (
+            SELECT client_id FROM public.client WHERE user_id = :uid
+        ),
+        doc_rows AS (
+            SELECT
+                d.approved_id,
+                d.approval_id AS doc_approval_id,
+                NULLIF(trim(d.wfp_no), '') AS wfp_no,
+                d.date_issued,
+                d.expiry_date,
+                d.approved_document,
+                d.series,
+                d.meeting_date,
+                a.approval_id,
+                a.permit_type,
+                a.application_id,
+                a.requirement_id,
+                a.submitted_at,
+                a.approval_status,
+                a.client_id,
+                CASE WHEN a.client_id IN (SELECT client_id FROM my_clients) THEN 0 ELSE 1 END AS priority,
+                c.first_name    AS client_first,
+                c.middle_name   AS client_middle,
+                c.last_name     AS client_last,
+                c.user_id       AS client_user_id,
+                af.contact_number,
+                af.email_address,
+                af.present_address,
+                af.legitimate_business_address,
+                af.plant_location,
+                af.plant_location_barangay_municipality_province,
+                af.form_of_ownership,
+                af.kind_of_wood_processing_plant,
+                af.daily_rated_capacity_per8_hour_shift,
+                af.machineries_and_equipment_to_be_used_with_specifications,
+                af.suppliers_json,
+                af.declaration_name,
+                af.permit_number,
+                af.expiry_date AS permit_expiry_date,
+                af.additional_information,
+                req.wood_monthly_reports,
+                req.wood_importer_registration,
+                req.wood_importer_supply_contracts,
+                req.wood_proof_of_importation
+            FROM public.approved_docs d
+            JOIN public.approval a ON a.approval_id = d.approval_id
+            LEFT JOIN public.client c ON c.client_id = a.client_id
+            LEFT JOIN public.application_form af ON af.application_id = a.application_id
+            LEFT JOIN public.requirements req ON req.requirement_id = a.requirement_id
+            WHERE NULLIF(trim(d.wfp_no), '') IS NOT NULL
+              AND lower(coalesce(a.request_type, '')) = 'wood'
+        ),
+        ranked AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY upper(wfp_no)
+                       ORDER BY priority ASC, COALESCE(date_issued, submitted_at) DESC, approved_id DESC
+                   ) AS rn
+            FROM doc_rows
+        )
+        SELECT *
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY priority ASC, COALESCE(date_issued, submitted_at) DESC, approved_id DESC
+        LIMIT 80
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id'] ?? null]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $fileMap = [
+        'uploaded-files-r1' => ['approved_document', 'Previously Approved WPP Permit'],
+        'uploaded-files-r4' => ['wood_monthly_reports', 'Monthly Production and Disposition Report'],
+        'uploaded-files-r5' => ['wood_importer_registration', 'Certificate of Registration as Log/Veneer/Lumber Importer'],
+        'uploaded-files-r6' => ['wood_importer_supply_contracts', 'Importer Supply Contracts'],
+        'uploaded-files-r7' => ['wood_proof_of_importation', 'Proof of Importation'],
+    ];
+
+    foreach ($rows as $row) {
+        $wfpNumber = $row['wfp_no'] ?? '';
+        $key = sha1(($row['approval_id'] ?? uniqid('', true)) . '|' . $wfpNumber . '|' . ($row['date_issued'] ?? ''));
+        $issueLabel = '';
+        if (!empty($row['date_issued'])) {
+            $dt = date_create($row['date_issued']);
+            if ($dt) {
+                $issueLabel = 'issued ' . $dt->format('M d, Y');
+            }
+        }
+        $clientLabel = trim(($row['client_last'] ?? '') . ', ' . ($row['client_first'] ?? ''));
+        $labelParts = array_filter([
+            $wfpNumber ?: null,
+            $clientLabel ?: null,
+            $issueLabel ?: null,
+        ]);
+        $optionLabel = $labelParts ? implode(' • ', $labelParts) : ($wfpNumber ?: 'Released WFP');
+        $wfpSelectOptions[] = [
+            'key' => $key,
+            'label' => $optionLabel,
+        ];
+
+        $files = [];
+        foreach ($fileMap as $containerId => [$column, $display]) {
+            $url = trim((string)($row[$column] ?? ''));
+            if ($url === '') continue;
+            $files[$containerId] = [[
+                'url' => $url,
+                'label' => $display,
+            ]];
+        }
+
+        $machRows = [];
+        if (!empty($row['machineries_and_equipment_to_be_used_with_specifications'])) {
+            $decoded = json_decode($row['machineries_and_equipment_to_be_used_with_specifications'], true);
+            if (is_array($decoded)) {
+                $machRows = $decoded;
+            }
+        }
+        $supplierRows = [];
+        if (!empty($row['suppliers_json'])) {
+            $decoded = json_decode($row['suppliers_json'], true);
+            if (is_array($decoded)) {
+                $supplierRows = $decoded;
+            }
+        }
+        $additionalInfo = [];
+        if (!empty($row['additional_information'])) {
+            $decoded = json_decode($row['additional_information'], true);
+            if (is_array($decoded)) {
+                $additionalInfo = $decoded;
+            }
+        }
+
+        $info = [
+            'address' => $row['present_address'] ?? $row['legitimate_business_address'] ?? '',
+            'contact_number' => $row['contact_number'] ?? '',
+            'email_address' => $row['email_address'] ?? '',
+            'plant_location' => $row['plant_location'] ?? $row['plant_location_barangay_municipality_province'] ?? '',
+            'ownership_type' => $row['form_of_ownership'] ?? '',
+            'permit_number' => $row['permit_number'] ?? '',
+            'expiry_date' => $row['permit_expiry_date'] ?? $row['expiry_date'] ?? '',
+            'declaration_name' => $row['declaration_name'] ?? '',
+            'declaration_address' => $additionalInfo['declaration_address'] ?? '',
+            'power_source' => $additionalInfo['power_source'] ?? '',
+            'plant_type' => $row['kind_of_wood_processing_plant'] ?? '',
+            'daily_capacity' => $row['daily_rated_capacity_per8_hour_shift'] ?? '',
+            'machinery_rows' => $machRows,
+            'supplier_rows' => $supplierRows,
+        ];
+
+        $wfpRecords[$key] = [
+            'key' => $key,
+            'wfp_number' => $wfpNumber,
+            'issue_date' => $row['date_issued'] ?? null,
+            'expiry_date' => $row['expiry_date'] ?? null,
+            'label' => $optionLabel,
+            'priority' => (int)($row['priority'] ?? 1),
+            'client' => [
+                'first_name' => $row['client_first'] ?? '',
+                'middle_name' => $row['client_middle'] ?? '',
+                'last_name' => $row['client_last'] ?? '',
+            ],
+            'info' => $info,
+            'files' => $files,
+        ];
+    }
+    $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+    $wfpRecordsJson = $wfpRecords ? (json_encode($wfpRecords, $jsonFlags) ?: '{}') : '{}';
+} catch (Throwable $e) {
+    error_log('[WOOD-WFP] ' . $e->getMessage());
+    $wfpRecords = [];
+    $wfpSelectOptions = [];
+    $wfpRecordsJson = '{}';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -104,6 +296,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $stmt->close();
+}
+
+$clientRows = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT client_id, user_id, first_name, middle_name, last_name,
+               sitio_street, barangay, municipality, city, contact_number
+        FROM public.client
+        ORDER BY (user_id = :uid) DESC, last_name ASC, first_name ASC
+        LIMIT 500
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id']]);
+    $clientRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[WOOD-CLIENTS] ' . $e->getMessage());
+    $clientRows = [];
 }
 ?>
 <!DOCTYPE html>
@@ -1030,6 +1238,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         display: flex;
         justify-content: flex-start;
         margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
     }
 
     .permit-type-btn {
@@ -1054,6 +1265,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         color: white;
     }
 
+    .wfp-details-card {
+        width: 100%;
+        border: 1px solid #dfe6dd;
+        border-radius: 10px;
+        padding: 15px 18px;
+        background: #f9fff6;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+        margin-bottom: 12px;
+    }
+
+    .wfp-details-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+    .wfp-details-meta {
+        display: flex;
+        gap: 14px;
+        font-size: .9rem;
+        color: #4d5a4f;
+        flex-wrap: wrap;
+    }
+
+    .wfp-details-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px 18px;
+    }
+
+    .wfp-detail-label {
+        font-size: .78rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #5b6a5e;
+        margin-bottom: 2px;
+    }
+
+    .wfp-detail-value {
+        font-size: .95rem;
+        font-weight: 600;
+        color: #1f2d21;
+    }
+
     /* Add new styles for name fields */
     .name-fields {
         display: flex;
@@ -1076,6 +1334,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         transition: border-color 0.3s;
         height: 40px;
         box-sizing: border-box;
+    }
+
+    .readonly-input {
+        background-color: #f4f4f4 !important;
+        cursor: not-allowed;
     }
 
     .name-field input:focus {
@@ -1653,24 +1916,126 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-body">
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
-                    <button class="permit-type-btn active" data-type="new">New Permit</button>
-                    <button class="permit-type-btn" data-type="renewal">Renewal</button>
+                    <div style="display:flex;align-items:center;gap:8px; ">
+                        <button class="permit-type-btn active" data-type="new">New Permit</button>
+                        <button class="permit-type-btn" data-type="renewal">Renewal</button>
+                        <div id="wfpPicker" style="display:flex; text-align: center; gap:6px;min-width:220px; border: 1px dashed #c8d3c5; border-radius: 6px; background: #f8fbf7; padding:  5px;">
+                            <label for="wfpSelect" style="font-size:.85rem;margin-bottom:4px;">Select Permit No.</label>
+                            <?php if ($wfpSelectOptions): ?>
+                                <select id="wfpSelect" style="min-width:220px;height:38px;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                    <option value="">-- Select Permit No. --</option>
+                                    <?php foreach ($wfpSelectOptions as $opt): ?>
+                                        <option value="<?= htmlspecialchars($opt['key'], ENT_QUOTES) ?>"><?= htmlspecialchars($opt['label'], ENT_QUOTES) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <select id="wfpSelect" disabled style="min-width:220px;height:38px;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                    <option value="">-- No WFP records yet --</option>
+                                </select>
+                                <small style="margin-top:4px;font-size: 10px;color:#666;">No released WFP numbers on record.</small>
+                            <?php endif; ?>
+
+                        </div>
+                        <div class="client-mode-toggle" id="clientModeToggle" style="display:<?= $clientRows ? 'flex' : 'none' ?>;flex-wrap:wrap;align-items:center;gap:8px;">
+                            <button type="button" id="btnExisting" class="btn btn-outline">
+                                <i class="fas fa-user-check"></i>&nbsp;Existing client
+                            </button>
+                            <button type="button" id="btnNew" class="btn btn-outline" style="display:none;">
+                                <i class="fas fa-user-plus"></i>&nbsp;New client
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
+
+                <small id="clientModeHint" style="display:<?= $clientRows ? 'block' : 'none' ?>;margin-bottom:15px;opacity:.8;">Choose <b>Existing client</b> if the record already exists; otherwise stay on <b>New client</b>.</small>
 
                 <!-- ======= I. GENERAL INFORMATION ======= -->
                 <!-- New Permit -->
                 <div id="general-new" class="general-section" style="display:block;">
                     <h3 style="margin:18px 0 10px;">I. GENERAL INFORMATION (New)</h3>
 
-                    <div class="name-fields">
-                        <div class="name-field">
-                            <input type="text" id="new-first-name" placeholder="First Name" required>
-                        </div>
-                        <div class="name-field">
-                            <input type="text" id="new-middle-name" placeholder="Middle Name">
-                        </div>
-                        <div class="name-field">
-                            <input type="text" id="new-last-name" placeholder="Last Name" required>
+                    <input type="hidden" id="clientMode" value="new">
+
+                    <div id="existingClientRow" class="form-group" style="display:none;margin-bottom:16px;">
+                        <label for="clientPick" style="font-weight:600;margin-bottom:6px;display:block;">Select client</label>
+                        <?php if ($clientRows): ?>
+                            <select id="clientPick" style="height:42px;width:100%;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                <option value="">-- Select a client --</option>
+                                <?php
+                                $myId = (string)($_SESSION['user_id'] ?? '');
+                                $renderOption = static function (array $c) {
+                                    $full = trim(trim((string)($c['first_name'] ?? '')) . ' ' . trim((string)($c['middle_name'] ?? '')) . ' ' . trim((string)($c['last_name'] ?? '')));
+                                    $full = trim(preg_replace('/\s+/', ' ', $full)) ?: 'Unnamed client';
+                                    $addrParts = [];
+                                    if (!empty($c['sitio_street'])) $addrParts[] = $c['sitio_street'];
+                                    if (!empty($c['barangay'])) $addrParts[] = 'Brgy. ' . $c['barangay'];
+                                    if (!empty($c['municipality']) || !empty($c['city'])) {
+                                        $addrParts[] = $c['municipality'] ?: $c['city'];
+                                    }
+                                    $addressValue = $addrParts ? implode(', ', $addrParts) : '';
+                                    $label = $full . ($addressValue ? ' - ' . $addressValue : '');
+                                    $attrs = sprintf(
+                                        ' value="%s" data-first="%s" data-middle="%s" data-last="%s" data-address="%s" data-contact="%s"',
+                                        htmlspecialchars((string)($c['client_id'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['first_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['middle_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['last_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars($addressValue, ENT_QUOTES),
+                                        htmlspecialchars((string)($c['contact_number'] ?? ''), ENT_QUOTES)
+                                    );
+                                    return '<option' . $attrs . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                };
+                                $hasMine = false;
+                                foreach ($clientRows as $row) {
+                                    if ((string)($row['user_id'] ?? '') === $myId) {
+                                        $hasMine = true;
+                                        break;
+                                    }
+                                }
+                                if ($hasMine) {
+                                    echo '<optgroup label="Your clients">';
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') !== $myId) continue;
+                                        echo $renderOption($row);
+                                    }
+                                    echo '</optgroup>';
+                                }
+                                $hasOthers = false;
+                                foreach ($clientRows as $row) {
+                                    if ((string)($row['user_id'] ?? '') === $myId) continue;
+                                    $hasOthers = true;
+                                    break;
+                                }
+                                if ($hasOthers) {
+                                    echo '<optgroup label="All clients (others)">';
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') === $myId) continue;
+                                        echo $renderOption($row);
+                                    }
+                                    echo '</optgroup>';
+                                }
+                                ?>
+                            </select>
+                        <?php else: ?>
+                            <div style="padding:10px 12px;border:1px dashed #aaa;border-radius:4px;color:#555;background:#fafafa;">
+                                No existing clients have been recorded yet.
+                            </div>
+                        <?php endif; ?>
+                        <div id="clientPickError" class="field-error" style="display:none;"></div>
+                    </div>
+
+                    <div id="newClientRow">
+                        <div class="name-fields">
+                            <div class="name-field">
+                                <input type="text" id="new-first-name" placeholder="First Name" required>
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="new-middle-name" placeholder="Middle Name">
+                            </div>
+                            <div class="name-field">
+                                <input type="text" id="new-last-name" placeholder="Last Name" required>
+                            </div>
                         </div>
                     </div>
 
@@ -1960,7 +2325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">c</span>
+                                <span class="requirement-number">a</span>
                                 Copy of Certificate of Registration, Articles of Incorporation, Partnership or Cooperation
                             </div>
                         </div>
@@ -1980,7 +2345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">d</span>
+                                <span class="requirement-number">b</span>
                                 Authorization issued by the Corporation, Partnership or Association in favor of the person signing the application
                             </div>
                         </div>
@@ -2000,7 +2365,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">e</span>
+                                <span class="requirement-number">c</span>
                                 Feasibility Study/Business Plan
                             </div>
                         </div>
@@ -2020,7 +2385,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">f</span>
+                                <span class="requirement-number">d</span>
                                 Business Permit
                             </div>
                         </div>
@@ -2040,7 +2405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">g</span>
+                                <span class="requirement-number">e</span>
                                 Environmental Compliance Certificate (ECC)
                             </div>
                         </div>
@@ -2060,7 +2425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">h</span>
+                                <span class="requirement-number">f</span>
                                 For individual persons, proof of Filipino citizenship (Birth Certificate/Certificate of Naturalization)
                             </div>
                         </div>
@@ -2080,7 +2445,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">i</span>
+                                <span class="requirement-number">g</span>
                                 Evidence of ownership of machines
                             </div>
                         </div>
@@ -2100,7 +2465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">j</span>
+                                <span class="requirement-number">h</span>
                                 GIS generated map with geo-tagged photos showing the location of WPP
                             </div>
                         </div>
@@ -2120,7 +2485,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">k</span>
+                                <span class="requirement-number">i</span>
                                 Certification from the Regional Office that the WPP is not within the illegal logging hotspot area
                             </div>
                         </div>
@@ -2140,7 +2505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">l</span>
+                                <span class="requirement-number">j</span>
                                 Proof of sustainable sources of legally cut logs for at least 5 years
                             </div>
                         </div>
@@ -2160,7 +2525,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="requirement-item">
                         <div class="requirement-header">
                             <div class="requirement-title">
-                                <span class="requirement-number">m</span>
+                                <span class="requirement-number">k</span>
                                 Supporting Documents
                             </div>
                         </div>
@@ -2410,6 +2775,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
     <script>
+        window.__WFP_RECORDS__ = <?= $wfpRecordsJson ?? '{}' ?>;
         (function() {
             /* ===================== CONFIG ===================== */
             const SIG_WIDTH = 220; // for doc image tag (px)
@@ -2423,6 +2789,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const $$ = (sel) => Array.from(document.querySelectorAll(sel));
             const v = (id) => (document.getElementById(id)?.value || '').trim();
             const show = (el, on = true) => el && (el.style.display = on ? 'block' : 'none');
+            const wfpRecords = window.__WFP_RECORDS__ || {};
+            const wfpSelect = document.getElementById('wfpSelect');
+            const wfpDetailsCard = document.getElementById('wfpDetailsCard');
+            const wfpDetailFields = {
+                number: document.getElementById('wfpDetailNumber'),
+                issued: document.getElementById('wfpDetailIssued'),
+                expiry: document.getElementById('wfpDetailExpiry'),
+                client: document.getElementById('wfpDetailClient'),
+                address: document.getElementById('wfpDetailAddress'),
+                plant: document.getElementById('wfpDetailPlant'),
+                contact: document.getElementById('wfpDetailContact'),
+                email: document.getElementById('wfpDetailEmail'),
+                ownership: document.getElementById('wfpDetailOwnership'),
+                permit: document.getElementById('wfpDetailPermit')
+            };
+            const existingFileCache = Object.create(null);
+            const existingFileFetches = Object.create(null);
+            const existingFileTargets = Object.create(null);
+            const renewalFileContainers = [
+                'uploaded-files-r1',
+                'uploaded-files-r2',
+                'uploaded-files-r3',
+                'uploaded-files-r4',
+                'uploaded-files-r5',
+                'uploaded-files-r6',
+                'uploaded-files-r7'
+            ];
+            const fileInputByContainer = {
+                'uploaded-files-r1': 'file-r1',
+                'uploaded-files-r2': 'file-r2',
+                'uploaded-files-r3': 'file-r3',
+                'uploaded-files-r4': 'file-r4',
+                'uploaded-files-r5': 'file-r5',
+                'uploaded-files-r6': 'file-r6',
+                'uploaded-files-r7': 'file-r7'
+            };
+            const rFirstInput = document.getElementById('r-first-name');
+            const rMiddleInput = document.getElementById('r-middle-name');
+            const rLastInput = document.getElementById('r-last-name');
+            const rAddressInput = document.getElementById('r-address');
+            const rPlantLocationInput = document.getElementById('r-plant-location');
+            const rContactInput = document.getElementById('r-contact-number');
+            const rEmailInput = document.getElementById('r-email-address');
+            const rOwnershipInputs = $$('input[name="r-ownership-type"]');
+            const rPrevPermitInput = document.getElementById('r-previous-permit');
+            const rExpiryInput = document.getElementById('r-expiry-date');
+            const declarationNameRenewalInput = document.getElementById('declaration-name-renewal');
+            const plantTypeInputs = $$('input[name="plant-type"]');
+            const powerInputs = $$('input[name="power-source"]');
+            const otherPlantInput = document.getElementById('other-plant-specify');
+            const otherPowerInput = document.getElementById('other-power-specify');
+            const dailyCapacityInput = document.getElementById('daily-capacity');
+            const machTbody = document.querySelector('#machinery-table tbody');
+            const supplyTbody = document.querySelector('#supply-table tbody');
 
             function toast(msg) {
                 const n = document.getElementById('profile-notification');
@@ -2439,24 +2859,560 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }, 2400);
             }
 
+            const toYMD = (value) => {
+                if (!value) return '';
+                if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+                const d = new Date(value);
+                if (isNaN(d.getTime())) return '';
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${d.getFullYear()}-${mm}-${dd}`;
+            };
+
+            const friendlyDate = (value) => {
+                if (!value) return '--';
+                const parsed = new Date(value);
+                if (!isNaN(parsed)) {
+                    return parsed.toLocaleDateString(void 0, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                }
+                return value;
+            };
+
             const activePermitType = () =>
                 (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
 
             /* ===================== Permit type toggle ===================== */
             const btnNew = document.querySelector('.permit-type-btn[data-type="new"]');
             const btnRenewal = document.querySelector('.permit-type-btn[data-type="renewal"]');
+            const clientModeEl = document.getElementById('clientMode');
+            const btnExisting = document.getElementById('btnExisting');
+            const btnNewClient = document.getElementById('btnNew');
+            const existingClientRow = document.getElementById('existingClientRow');
+            const newClientRow = document.getElementById('newClientRow');
+            const clientPick = document.getElementById('clientPick');
+            const clientPickError = document.getElementById('clientPickError');
+            const clientModeToggle = document.getElementById('clientModeToggle');
+            const clientModeHint = document.getElementById('clientModeHint');
+            const wfpPicker = document.getElementById('wfpPicker');
+            const firstNameInput = document.getElementById('new-first-name');
+            const middleNameInput = document.getElementById('new-middle-name');
+            const lastNameInput = document.getElementById('new-last-name');
+            const declarationNameInput = document.getElementById('declaration-name-new');
+            const declarationAddressInput = document.getElementById('declaration-address');
+            const contactInput = document.getElementById('new-contact-number');
+            const nameInputs = [firstNameInput, middleNameInput, lastNameInput];
+            const hasClientOptions = !!clientPick;
+            let manualClientCache = {
+                first: firstNameInput?.value || '',
+                middle: middleNameInput?.value || '',
+                last: lastNameInput?.value || '',
+                declarationName: declarationNameInput?.value || '',
+                declarationAddress: declarationAddressInput?.value || '',
+                contact: contactInput?.value || ''
+            };
 
-            function setType(type) {
+            function setClientPickError(msg) {
+                if (!clientPickError) return;
+                if (msg) {
+                    clientPickError.textContent = msg;
+                    clientPickError.style.display = 'block';
+                    clientPick?.classList?.add('invalid');
+                    clientPick?.setAttribute('aria-invalid', 'true');
+                } else {
+                    clientPickError.textContent = '';
+                    clientPickError.style.display = 'none';
+                    clientPick?.classList?.remove('invalid');
+                    clientPick?.removeAttribute('aria-invalid');
+                }
+            }
+
+            function setInputValue(input, value, opts = {}) {
+                if (!input) return;
+                input.value = value || '';
+                if (!opts.silent) {
+                    input.dispatchEvent(new Event('input', {
+                        bubbles: true
+                    }));
+                    input.dispatchEvent(new Event('change', {
+                        bubbles: true
+                    }));
+                }
+            }
+
+            function setRenewalNames(first, middle, last, opts = {}) {
+                setInputValue(rFirstInput, first, opts);
+                setInputValue(rMiddleInput, middle, opts);
+                setInputValue(rLastInput, last, opts);
+            }
+
+            function setOwnershipValue(value) {
+                const target = (value || '').toLowerCase();
+                let matched = false;
+                rOwnershipInputs.forEach((radio) => {
+                    const isMatch = target && radio.value.toLowerCase() === target;
+                    radio.checked = isMatch;
+                    if (isMatch) matched = true;
+                });
+                if (!matched) {
+                    rOwnershipInputs.forEach((radio) => (radio.checked = false));
+                }
+            }
+
+            function setPlantTypeValue(raw) {
+                const val = (raw || '').trim();
+                let matched = false;
+                plantTypeInputs.forEach((radio) => {
+                    const isMatch = val && radio.value.toLowerCase() === val.toLowerCase();
+                    radio.checked = isMatch;
+                    if (isMatch) matched = true;
+                });
+                if (matched) {
+                    if (otherPlantInput) otherPlantInput.value = '';
+                    return;
+                }
+                if (!val) {
+                    plantTypeInputs.forEach((radio) => (radio.checked = false));
+                    if (otherPlantInput) otherPlantInput.value = '';
+                    return;
+                }
+                const otherRadio = document.getElementById('other-plant');
+                if (otherRadio) otherRadio.checked = true;
+                if (otherPlantInput) {
+                    otherPlantInput.value = val.replace(/^other\s*[-:]\s*/i, '').trim() || val;
+                }
+            }
+
+            function setPowerSourceValue(raw) {
+                const val = (raw || '').trim();
+                let matched = false;
+                powerInputs.forEach((radio) => {
+                    const isMatch = val && radio.value.toLowerCase() === val.toLowerCase();
+                    radio.checked = isMatch;
+                    if (isMatch) matched = true;
+                });
+                if (matched) {
+                    if (otherPowerInput) otherPowerInput.value = '';
+                    return;
+                }
+                if (!val) {
+                    powerInputs.forEach((radio) => (radio.checked = false));
+                    if (otherPowerInput) otherPowerInput.value = '';
+                    return;
+                }
+                const otherRadio = document.getElementById('other-power');
+                if (otherRadio) otherRadio.checked = true;
+                if (otherPowerInput) {
+                    otherPowerInput.value = val.replace(/^other\s*[-:]\s*/i, '').trim() || val;
+                }
+            }
+
+            function createMachineryRow(values = []) {
+                const tr = document.createElement('tr');
+                const types = ['text', 'text', 'text', 'number'];
+                for (let i = 0; i < 4; i++) {
+                    const td = document.createElement('td');
+                    const input = document.createElement('input');
+                    input.type = types[i];
+                    input.className = 'table-input';
+                    if (types[i] === 'number') input.min = '1';
+                    input.value = values[i] ?? '';
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                }
+                const actionTd = document.createElement('td');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'remove-row-btn';
+                btn.textContent = 'Remove';
+                btn.addEventListener('click', () => tr.remove());
+                actionTd.appendChild(btn);
+                tr.appendChild(actionTd);
+                return tr;
+            }
+
+            function createSupplyRow(values = []) {
+                const tr = document.createElement('tr');
+                for (let i = 0; i < 3; i++) {
+                    const td = document.createElement('td');
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'table-input';
+                    input.value = values[i] ?? '';
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                }
+                const actionTd = document.createElement('td');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'remove-row-btn';
+                btn.textContent = 'Remove';
+                btn.addEventListener('click', () => tr.remove());
+                actionTd.appendChild(btn);
+                tr.appendChild(actionTd);
+                return tr;
+            }
+
+            function setMachineryRows(rows = []) {
+                if (!machTbody) return;
+                const data = Array.isArray(rows) && rows.length ? rows : [
+                    []
+                ];
+                machTbody.innerHTML = '';
+                data.forEach((row) => {
+                    machTbody.appendChild(createMachineryRow(Array.isArray(row) ? row : []));
+                });
+            }
+
+            function setSupplyRows(rows = []) {
+                if (!supplyTbody) return;
+                const data = Array.isArray(rows) && rows.length ? rows : [
+                    []
+                ];
+                supplyTbody.innerHTML = '';
+                data.forEach((row) => {
+                    supplyTbody.appendChild(createSupplyRow(Array.isArray(row) ? row : []));
+                });
+            }
+
+            function populateNameInputs(first, middle, last, opts = {}) {
+                const values = [first, middle, last];
+                nameInputs.forEach((input, idx) => setInputValue(input, values[idx], opts));
+            }
+
+            function fileNameFromEntry(entry) {
+                if (!entry) return '';
+                if (entry.filename) return entry.filename;
+                if (entry.url) {
+                    try {
+                        const clean = entry.url.split('?')[0];
+                        const last = clean.substring(clean.lastIndexOf('/') + 1);
+                        return decodeURIComponent(last) || entry.label || '';
+                    } catch {
+                        return entry.label || '';
+                    }
+                }
+                return entry.label || '';
+            }
+
+            function clearRenewalFilePreviews() {
+                renewalFileContainers.forEach((containerId) => {
+                    const holder = document.getElementById(containerId);
+                    if (holder) holder.innerHTML = '';
+                    const inputId = fileInputByContainer[containerId];
+                    if (inputId) {
+                        const input = document.getElementById(inputId);
+                        if (input) {
+                            input.value = '';
+                            const nameSpan = input.parentElement?.querySelector('.file-name');
+                            if (nameSpan) nameSpan.textContent = 'No file chosen';
+                        }
+                        delete existingFileCache[inputId];
+                        delete existingFileFetches[inputId];
+                        delete existingFileTargets[inputId];
+                    }
+                });
+            }
+
+            function applyExistingFileToInput(fieldId) {
+                const file = existingFileCache[fieldId];
+                if (!file) return;
+                const input = document.getElementById(fieldId);
+                if (!input) return;
+                if (typeof DataTransfer === 'undefined') return;
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                } catch (err) {
+                    console.warn('Unable to attach existing file', err);
+                }
+            }
+
+            function queueExistingFileDownload(fieldId, entry) {
+                if (!fieldId || !entry || !entry.url) {
+                    delete existingFileCache[fieldId];
+                    delete existingFileFetches[fieldId];
+                    delete existingFileTargets[fieldId];
+                    return;
+                }
+                const url = entry.url;
+                existingFileTargets[fieldId] = url;
+                const fetchPromise = fetch(url, {
+                    credentials: 'include'
+                }).then((res) => {
+                    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+                    return res.blob();
+                }).then((blob) => {
+                    if (existingFileTargets[fieldId] !== url) return;
+                    const filename = fileNameFromEntry(entry) || `${fieldId}.dat`;
+                    existingFileCache[fieldId] = new File([blob], filename, {
+                        type: blob.type || 'application/octet-stream'
+                    });
+                    applyExistingFileToInput(fieldId);
+                }).catch((err) => {
+                    console.error(err);
+                    delete existingFileCache[fieldId];
+                }).finally(() => {
+                    delete existingFileFetches[fieldId];
+                });
+                existingFileFetches[fieldId] = fetchPromise;
+            }
+
+            function renderRenewalFiles(data = {}) {
+                clearRenewalFilePreviews();
+                const fileMap = data.files || {};
+                Object.entries(fileMap).forEach(([containerId, entries]) => {
+                    const holder = document.getElementById(containerId);
+                    if (!holder) return;
+                    const list = Array.isArray(entries) ? entries : [entries];
+                    const frag = document.createDocumentFragment();
+                    list.forEach((entry) => {
+                        if (!entry || !entry.url) return;
+                        const link = document.createElement('a');
+                        link.href = entry.url;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = entry.label || entry.url;
+                        link.style.display = 'block';
+                        frag.appendChild(link);
+                    });
+                    if (frag.childNodes.length) {
+                        holder.appendChild(frag);
+                        const inputId = fileInputByContainer[containerId];
+                        if (inputId && list[0]) {
+                            const input = document.getElementById(inputId);
+                            const nameSpan = input?.parentElement?.querySelector('.file-name');
+                            if (nameSpan) nameSpan.textContent = fileNameFromEntry(list[0]) || 'Existing file detected';
+                            queueExistingFileDownload(inputId, list[0]);
+                        }
+                    }
+                });
+            }
+
+            async function waitForExistingFiles() {
+                const pending = Object.values(existingFileFetches).filter(Boolean);
+                if (!pending.length) return;
+                try {
+                    await Promise.allSettled(pending);
+                } catch (err) {
+                    console.warn('Some existing files failed to load', err);
+                }
+            }
+
+            function updateWfpDetailsCard(record) {
+                if (!wfpDetailsCard) return;
+                if (!record) {
+                    wfpDetailsCard.style.display = 'none';
+                    Object.values(wfpDetailFields).forEach((el) => {
+                        if (el) el.textContent = '--';
+                    });
+                    return;
+                }
+                const info = record.info || {};
+                const client = record.client || {};
+                const fullName = [client.first_name || client.first, client.middle_name || client.middle, client.last_name || client.last].filter(Boolean).join(' ').trim() || '--';
+                wfpDetailsCard.style.display = 'block';
+                if (wfpDetailFields.number) wfpDetailFields.number.textContent = record.wfp_number || info.permit_number || '--';
+                if (wfpDetailFields.issued) wfpDetailFields.issued.textContent = `Issued ${friendlyDate(record.issue_date)}`;
+                if (wfpDetailFields.expiry) wfpDetailFields.expiry.textContent = `Expires ${friendlyDate(info.expiry_date || record.expiry_date)}`;
+                if (wfpDetailFields.client) wfpDetailFields.client.textContent = fullName;
+                if (wfpDetailFields.address) wfpDetailFields.address.textContent = info.address || '--';
+                if (wfpDetailFields.plant) wfpDetailFields.plant.textContent = info.plant_location || '--';
+                if (wfpDetailFields.contact) wfpDetailFields.contact.textContent = info.contact_number || '--';
+                if (wfpDetailFields.email) wfpDetailFields.email.textContent = info.email_address || '--';
+                if (wfpDetailFields.ownership) wfpDetailFields.ownership.textContent = info.ownership_type || '--';
+                if (wfpDetailFields.permit) wfpDetailFields.permit.textContent = info.permit_number || record.wfp_number || '--';
+            }
+
+            function applyWfpRecord(record) {
+                if (!record) return;
+                const info = record.info || {};
+                const client = record.client || {};
+                const first = client.first_name || client.first || '';
+                const middle = client.middle_name || client.middle || '';
+                const last = client.last_name || client.last || '';
+                setRenewalNames(first, middle, last, {
+                    silent: true
+                });
+                setInputValue(rAddressInput, info.address || '', {
+                    silent: true
+                });
+                setInputValue(rPlantLocationInput, info.plant_location || '', {
+                    silent: true
+                });
+                setInputValue(rContactInput, info.contact_number || '', {
+                    silent: true
+                });
+                setInputValue(rEmailInput, info.email_address || '', {
+                    silent: true
+                });
+                setOwnershipValue(info.ownership_type || '');
+                setInputValue(rPrevPermitInput, info.permit_number || record.wfp_number || '', {
+                    silent: true
+                });
+                setInputValue(rExpiryInput, toYMD(info.expiry_date || record.expiry_date || ''), {
+                    silent: true
+                });
+                setInputValue(declarationNameRenewalInput, info.declaration_name || [first, last].filter(Boolean).join(' ').trim(), {
+                    silent: true
+                });
+                setInputValue(declarationAddressInput, info.declaration_address || '', {
+                    silent: true
+                });
+                setInputValue(dailyCapacityInput, info.daily_capacity || '', {
+                    silent: true
+                });
+                setPlantTypeValue(info.plant_type || '');
+                setPowerSourceValue(info.power_source || '');
+                setMachineryRows(info.machinery_rows || []);
+                setSupplyRows(info.supplier_rows || []);
+                updateWfpDetailsCard(record);
+                renderRenewalFiles(record);
+            }
+
+            wfpSelect?.addEventListener('change', () => {
+                const key = wfpSelect.value || '';
+                const record = key && wfpRecords[key] ? wfpRecords[key] : null;
+                if (record) {
+                    applyWfpRecord(record);
+                } else {
+                    updateWfpDetailsCard(null);
+                    clearRenewalFilePreviews();
+                }
+            });
+
+            function setDeclarationFields(name, address, opts = {}) {
+                setInputValue(declarationNameInput, name, opts);
+                setInputValue(declarationAddressInput, address, opts);
+            }
+
+            function setContactValue(value, opts = {}) {
+                setInputValue(contactInput, value, opts);
+            }
+
+            function applyClientPickValues(showError = false) {
+                if (!clientPick) return;
+                if (!clientPick.value) {
+                    if (showError) setClientPickError('Please select an existing client.');
+                    else setClientPickError('');
+                    populateNameInputs('', '', '', {
+                        silent: true
+                    });
+                    setDeclarationFields('', '', {
+                        silent: true
+                    });
+                    setContactValue('', {
+                        silent: true
+                    });
+                    chosenClientName = null;
+                    chosenClientId = null;
+                    return;
+                }
+                const opt = clientPick.options[clientPick.selectedIndex];
+                const first = opt?.dataset?.first || '';
+                const middle = opt?.dataset?.middle || '';
+                const last = opt?.dataset?.last || '';
+                const address = opt?.dataset?.address || '';
+                const contact = opt?.dataset?.contact || '';
+                populateNameInputs(first, middle, last);
+                const fullName = [first, middle, last].filter(Boolean).join(' ');
+                setDeclarationFields(fullName, address);
+                setContactValue(contact);
+                setClientPickError('');
+                chosenClientName = {
+                    first,
+                    middle,
+                    last
+                };
+            }
+
+            function setClientMode(mode = 'new') {
+                if (!clientModeEl) return;
+                const isExisting = mode === 'existing';
+                clientModeEl.value = isExisting ? 'existing' : 'new';
+
+                if (existingClientRow) existingClientRow.style.display = isExisting ? '' : 'none';
+                if (newClientRow) newClientRow.style.display = isExisting ? 'none' : '';
+                if (btnExisting) btnExisting.style.display = isExisting ? 'none' : 'inline-flex';
+                if (btnNewClient) btnNewClient.style.display = isExisting ? 'inline-flex' : 'none';
+
+                nameInputs.forEach((input) => {
+                    if (!input) return;
+                    input.classList.toggle('readonly-input', isExisting);
+                    if (isExisting) input.setAttribute('readonly', 'readonly');
+                    else input.removeAttribute('readonly');
+                });
+
+                if (isExisting) {
+                    manualClientCache = {
+                        first: firstNameInput?.value || '',
+                        middle: middleNameInput?.value || '',
+                        last: lastNameInput?.value || '',
+                        declarationName: declarationNameInput?.value || '',
+                        declarationAddress: declarationAddressInput?.value || '',
+                        contact: contactInput?.value || ''
+                    };
+                    applyClientPickValues(false);
+                } else {
+                    setClientPickError('');
+                    if (clientPick) clientPick.value = '';
+                    populateNameInputs(manualClientCache.first || '', manualClientCache.middle || '', manualClientCache.last || '', {
+                        silent: true
+                    });
+                    setDeclarationFields(manualClientCache.declarationName || '', manualClientCache.declarationAddress || '', {
+                        silent: true
+                    });
+                    setContactValue(manualClientCache.contact || '', {
+                        silent: true
+                    });
+                    chosenClientName = null;
+                    chosenClientId = null;
+                }
+            }
+
+            btnExisting?.addEventListener('click', () => setClientMode('existing'));
+            btnNewClient?.addEventListener('click', () => setClientMode('new'));
+            clientPick?.addEventListener('change', () => {
+                if ((clientModeEl?.value || 'new') === 'existing') {
+                    applyClientPickValues(true);
+                } else {
+                    setClientPickError('');
+                }
+            });
+            setClientMode(clientModeEl?.value || 'new');
+
+            function setType(type, opts = {}) {
+                const skipWfpChange = !!opts.skipWfpChange;
                 const isNew = type === 'new';
                 btnNew?.classList.toggle('active', isNew);
                 btnRenewal?.classList.toggle('active', !isNew);
 
                 show(document.getElementById('general-new'), isNew);
                 show(document.getElementById('general-renewal'), !isNew);
+                const showClientToggle = isNew && hasClientOptions;
+                if (clientModeToggle) clientModeToggle.style.display = showClientToggle ? 'flex' : 'none';
+                if (clientModeHint) clientModeHint.style.display = showClientToggle ? 'block' : 'none';
+                if (!showClientToggle) {
+                    setClientMode('new');
+                }
+                if (wfpPicker) wfpPicker.style.display = isNew ? 'none' : 'block';
                 show(document.getElementById('declaration-new'), isNew);
                 show(document.getElementById('declaration-renewal'), !isNew);
                 show(document.getElementById('new-requirements'), isNew);
                 show(document.getElementById('renewal-requirements'), !isNew);
+                if (!isNew) {
+                    if (!skipWfpChange) {
+                        wfpSelect?.dispatchEvent(new Event('change'));
+                    }
+                } else {
+                    if (wfpSelect) wfpSelect.value = '';
+                    clearRenewalFilePreviews();
+                    updateWfpDetailsCard(null);
+                }
             }
             btnNew?.addEventListener('click', () => setType('new'));
             btnRenewal?.addEventListener('click', () => setType('renewal'));
@@ -2471,32 +3427,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
 
             /* ===================== Dynamic tables ===================== */
-            const machTbody = document.querySelector('#machinery-table tbody');
             document.getElementById('add-machinery-row')?.addEventListener('click', () => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-        <td><input type="text" class="table-input"></td>
-        <td><input type="text" class="table-input"></td>
-        <td><input type="text" class="table-input"></td>
-        <td><input type="number" class="table-input" min="1"></td>
-        <td><button type="button" class="remove-row-btn">Remove</button></td>`;
-                machTbody.appendChild(tr);
-                tr.querySelector('.remove-row-btn')?.addEventListener('click', () => tr.remove());
+                if (!machTbody) return;
+                machTbody.appendChild(createMachineryRow());
             });
             machTbody?.querySelectorAll('.remove-row-btn').forEach((b) =>
                 b.addEventListener('click', () => b.closest('tr')?.remove())
             );
 
-            const supplyTbody = document.querySelector('#supply-table tbody');
             document.getElementById('add-supply-row')?.addEventListener('click', () => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-        <td><input type="text" class="table-input"></td>
-        <td><input type="text" class="table-input"></td>
-        <td><input type="text" class="table-input"></td>
-        <td><button type="button" class="remove-row-btn">Remove</button></td>`;
-                supplyTbody.appendChild(tr);
-                tr.querySelector('.remove-row-btn')?.addEventListener('click', () => tr.remove());
+                if (!supplyTbody) return;
+                supplyTbody.appendChild(createSupplyRow());
             });
             supplyTbody?.querySelectorAll('.remove-row-btn').forEach((b) =>
                 b.addEventListener('click', () => b.closest('tr')?.remove())
@@ -2508,6 +3449,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (input?.classList?.contains('file-input')) {
                     const nameSpan = input.parentElement?.querySelector('.file-name');
                     if (nameSpan) nameSpan.textContent = input.files?.[0]?.name || 'No file chosen';
+                    if (input.id) {
+                        delete existingFileCache[input.id];
+                        delete existingFileFetches[input.id];
+                        delete existingFileTargets[input.id];
+                    }
                 }
             });
 
@@ -3073,16 +4019,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     for_payment: 'Payment Required',
                     pending_new: 'Pending Application',
                     pending_renewal: 'Pending Application',
-                    unexpired_permit: 'Unexpired Permit Found'
+                    unexpired_permit: 'Unexpired Permit Found',
+                    need_approved_new: 'Action Required',
+                    need_released_new: 'Action Required'
                 };
+
+                // default single Close button
+                let buttons = [{
+                    text: 'Close',
+                    class: 'btn btn-primary',
+                    onClick: () => closeValidation()
+                }];
+
+                // For the special need_released_new block, offer Request new + Close
+                if (code === 'need_released_new') {
+                    buttons = [{
+                            text: 'Request new',
+                            class: 'btn btn-outline',
+                            onClick: () => {
+                                closeValidation();
+                                try {
+                                    requestNewFromRenewal();
+                                } catch (e) {
+                                    console.error(e);
+                                }
+                            }
+                        },
+                        {
+                            text: 'Close',
+                            class: 'btn btn-primary',
+                            onClick: () => closeValidation()
+                        }
+                    ];
+                }
+
                 openValidation({
                     title: titles[code] || 'Notice',
                     html: message || 'Please resolve this before continuing.',
-                    buttons: [{
-                        text: 'Close',
-                        class: 'btn btn-primary',
-                        onClick: () => closeValidation()
-                    }]
+                    buttons: buttons
                 });
             }
 
@@ -3122,13 +4096,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     behavior: 'smooth'
                 });
             }
-
-            let chosenClientId = null;
-            let chosenClientName = null;
-            let confirmNewClient = false;
-            let precheckCache = null;
-            let suggestedClient = null;
-            let existingClientNames = null;
 
             window.__FORCE_NEW_CLIENT__ = false;
             window.__USE_EXISTING_CLIENT_ID__ = null;
@@ -3206,9 +4173,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const first = type === 'renewal' ? v('r-first-name') : v('new-first-name');
                 const middle = type === 'renewal' ? v('r-middle-name') : v('new-middle-name');
                 const last = type === 'renewal' ? v('r-last-name') : v('new-last-name');
+                const clientMode = (clientModeEl?.value || 'new').toLowerCase();
+                const usingExistingPick = type === 'new' && clientMode === 'existing';
 
                 if (!first || !last) {
                     toast('First and last name are required.');
+                    return;
+                }
+
+                if (usingExistingPick && !(clientPick?.value)) {
+                    setClientPickError('Please select an existing client.');
+                    toast('Please select an existing client.');
+                    return;
+                }
+
+                if (usingExistingPick && clientPick?.value) {
+                    setClientPickError('');
+                    chosenClientId = clientPick.value;
+                    chosenClientName = {
+                        first,
+                        middle,
+                        last
+                    };
+                    existingClientNames = {
+                        first,
+                        middle,
+                        last
+                    };
+                    window.__FORCE_NEW_CLIENT__ = false;
+                    confirmNewClient = false;
+                    precheckCache = null;
+                    window.__USE_EXISTING_CLIENT_ID__ = String(chosenClientId);
+                    await finalSubmit();
                     return;
                 }
 
@@ -3250,13 +4246,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 text: 'Submit as new',
                                 class: 'btn btn-outline',
                                 onClick: async () => {
-                                    closeClientDecision();
+                                    // prevent bypass: when filing a renewal, ensure the detected client
+                                    // has a released NEW wood permit; otherwise show validation modal
                                     chosenClientId = null;
                                     chosenClientName = null;
                                     existingClientNames = null;
                                     confirmNewClient = true;
                                     window.__FORCE_NEW_CLIENT__ = true;
                                     window.__USE_EXISTING_CLIENT_ID__ = null;
+                                    try {
+                                        if (type === 'renewal') {
+                                            const flagsLocal = (flags || {});
+                                            if (!flagsLocal.has_released_new) {
+                                                closeClientDecision();
+                                                showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wood permit record.');
+                                                return;
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                        closeClientDecision();
+                                        showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wood permit record.');
+                                        return;
+                                    }
+
+                                    closeClientDecision();
                                     await finalSubmit();
                                 }
                             }, {
@@ -3293,6 +4307,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             return;
                                         }
                                     } else {
+                                        // RENEWAL: require a released NEW wood permit before allowing renewal
+                                        if (!flags.has_released_new) {
+                                            showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wood permit record.');
+                                            return;
+                                        }
+
                                         if (flags.has_pending_new || flags.has_pending_renewal) {
                                             showBlock('pending_renewal', 'You already have a pending Wood Processing Plant application. Please wait for the update first.');
                                             return;
@@ -3334,11 +4354,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     text: 'Continue renewal',
                                     class: 'btn btn-primary',
                                     onClick: async () => {
+                                        // Do not allow continuing a renewal when no released NEW wood permit exists
                                         closeClientDecision();
-                                        confirmNewClient = true;
-                                        window.__FORCE_NEW_CLIENT__ = true;
-                                        window.__USE_EXISTING_CLIENT_ID__ = null;
-                                        await finalSubmit();
+                                        showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wood permit record.');
                                     }
                                 }]
                             });
@@ -3441,6 +4459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         (fullApplicantName || 'Applicant').replace(/\s+/g, '_') + '.doc';
 
                     // 2) Collect fields & files for backend save
+                    await waitForExistingFiles();
                     const fd = new FormData();
                     const type = activePermitType();
                     fd.append('permit_type', type);
@@ -3510,6 +4529,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $$('input[type="file"]').forEach((fi) => {
                         if (fi.files?.[0]) fd.append(fi.id, fi.files[0]);
                     });
+                    Object.entries(existingFileCache).forEach(([fieldId, file]) => {
+                        if (!file) return;
+                        const input = document.getElementById(fieldId);
+                        if (input?.files?.length) return;
+                        fd.append(fieldId, file);
+                    });
 
                     // 3) Submit to backend
                     const res = await fetch(SAVE_URL, {
@@ -3524,14 +4549,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         const text = await res.text();
                         throw new Error(`HTTP ${res.status} – ${text.slice(0, 200)}`);
                     }
-                    if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                    if (!res.ok || !json.ok) {
+                        // If backend returned a structured block (e.g., need_released_new), show the modal
+                        if (json && json.block) {
+                            hideLoading();
+                            showBlock(json.block, json.message || 'Action required');
+                            throw new Error('BLOCKED:' + (json.block || ''));
+                        }
+                        throw new Error(json.error || `HTTP ${res.status}`);
+                    }
 
                     toast("Application submitted. We'll notify you once reviewed.");
                     clearPrecheckState();
                     resetAllFields();
                 } catch (e) {
                     console.error(e);
-                    toast(e?.message || 'Submission failed. Please try again.');
+                    const msg = String(e?.message || '');
+                    if (/^BLOCKED:/.test(msg)) {
+                        // already displayed validation modal via showBlock; no toast needed
+                    } else {
+                        toast(e?.message || 'Submission failed. Please try again.');
+                    }
                 } finally {
                     hideLoading();
                     submitApplicationBtn.disabled = false;
@@ -3769,6 +4807,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 afterEl.style.boxShadow = '';
                 afterEl.style.outline = '';
             }
+            /* ------------------ FILE VALIDATION (NEW) ------------------ */
+            // Treats every VISIBLE file input inside the active requirements as required.
+            function isDisplayed(el) {
+                if (!el) return false;
+                const cs = getComputedStyle(el);
+                return cs.display !== 'none' && cs.visibility !== 'hidden';
+            }
+
+            function ensureFileErrorContainer(fileInput) {
+                const container = fileInput.closest('.file-input-container') || fileInput.parentElement;
+                if (!container) return null;
+                let holder = container.querySelector('.field-error');
+                if (!holder) {
+                    holder = document.createElement('div');
+                    holder.className = 'field-error';
+                    holder.style.cssText = 'color:#d32f2f;margin-top:6px;font-size:.92rem;display:none;';
+                    container.appendChild(holder);
+                }
+                return holder;
+            }
+
+            function setFileError(fileInput, msg) {
+                const holder = ensureFileErrorContainer(fileInput);
+                if (!holder) return;
+                holder.textContent = msg || '';
+                holder.style.display = msg ? 'block' : 'none';
+            }
+
+            // Detects CR auto-attached previews that were rendered as links in the holder.
+            function hasAutoAttachedPreview(fileInput) {
+                const id = fileInput.id || '';
+                // our holders follow "uploaded-files-<suffix>", where <suffix> = file id after "file-"
+                const suffix = id.startsWith('file-') ? id.slice(5) : id;
+                const holder = document.getElementById('uploaded-files-' + suffix);
+                return !!(holder && holder.children && holder.children.length > 0);
+            }
+
+            function fileInputsForType(type) {
+                const rootId = (type === 'renewal') ? 'renewal-requirements' : 'new-requirements';
+                const root = document.getElementById(rootId);
+                if (!root || !isDisplayed(root)) return [];
+                return Array.from(root.querySelectorAll('input[type="file"]'));
+            }
+
+            // Main file validator
+            function validateFiles(activeType) {
+                let ok = true;
+                const files = fileInputsForType(activeType);
+                files.forEach(input => {
+                    // Skip if its requirement row is currently hidden
+                    const reqItem = input.closest('.requirement-item') || input.closest('.file-upload') || input.parentElement;
+                    if (reqItem && !isDisplayed(reqItem)) {
+                        setFileError(input, ''); // clear any stale error
+                        return;
+                    }
+
+                    const chosen = (input.files && input.files.length > 0);
+                    const auto = hasAutoAttachedPreview(input);
+                    const loaded = !!(input.dataset && input.dataset.loadedUrl);
+
+                    const good = chosen || auto || loaded;
+                    setFileError(input, good ? '' : 'This file is required.');
+                    if (!good) ok = false;
+                });
+                return ok;
+            }
+
+            /* live validation for files */
+            function attachFileLiveValidation() {
+                const all = Array.from(document.querySelectorAll('#new-requirements input[type="file"], #renewal-requirements input[type="file"]'));
+                all.forEach(el => {
+                    el.addEventListener('change', () => validateFiles(activeType()));
+                });
+                // Re-check when switching tabs (buttons are present in DOM)
+                document.querySelectorAll('.permit-type-btn').forEach(btn => {
+                    btn.addEventListener('click', () => setTimeout(() => validateFiles(activeType()), 0));
+                });
+            }
+
 
             /* ------------------ find active permit type ------------------ */
             const activeType = () =>
@@ -4149,6 +5266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ok = false;
                     }
                 });
+                if (!validateFiles(type)) ok = false;
 
                 return ok;
             }
@@ -4236,6 +5354,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // init
             addLiveValidation();
+            attachFileLiveValidation();
             interceptSubmit();
         })();
     </script>

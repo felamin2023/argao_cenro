@@ -73,14 +73,14 @@ if (isset($_GET['ajax'])) {
             ');
             $u->execute([':to' => 'cenro']);
             echo json_encode(['success' => true]);
-            exit;
+            exit();
         }
 
         if ($_GET['ajax'] === 'mark_read') {
             $nid = $_GET['notif_id'] ?? '';
             if (!$nid) {
                 echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
-                exit;
+                exit();
             }
             $u = $pdo->prepare('
                 update public.notifications
@@ -89,7 +89,7 @@ if (isset($_GET['ajax'])) {
             ');
             $u->execute([':nid' => $nid, ':to' => 'cenro']);
             echo json_encode(['success' => true]);
-            exit;
+            exit();
         }
 
         echo json_encode(['success' => false, 'error' => 'Unknown action']);
@@ -97,7 +97,7 @@ if (isset($_GET['ajax'])) {
         error_log('[SUPERPROFILE NOTIFS AJAX] ' . $e->getMessage());
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
-    exit;
+    exit();
 }
 
 /* Load latest notifications for CENRO bell dropdown */
@@ -128,23 +128,53 @@ try {
     $unreadCount = 0;
 }
 
-/* (Optional) helper if you ever print time server-side */
-function time_elapsed_string($datetime, $full = false)
+/* ======= Manila-aware time helpers (same as superhome.php) ======= */
+// Treat naive DB timestamps as UTC, then show elapsed time in Asia/Manila.
+function _to_manila_dt(string $src): DateTimeImmutable
 {
-    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
-    $diff = $now->diff($ago);
-    $weeks = (int)floor($diff->d / 7);
-    $days  = $diff->d % 7;
+    $src = trim($src);
+    $hasTz = (bool)preg_match('/[zZ]|[+\-]\d{2}:\d{2}$/', $src); // already has TZ?
+    $base  = new DateTimeImmutable($src, $hasTz ? null : new DateTimeZone('UTC'));
+    return $base->setTimezone(new DateTimeZone('Asia/Manila'));
+}
 
-    $map = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+function time_elapsed_string(string $datetime, bool $full = false): string
+{
+    $now = new DateTimeImmutable('now', new DateTimeZone('Asia/Manila'));
+    $ago = _to_manila_dt($datetime);
+
+    $diff = $now->diff($ago);
+
+    // Use total days for weeks calculation
+    $daysTotal = is_int($diff->days) ? $diff->days : (int)$diff->d;
+    $weeks     = intdiv($daysTotal, 7);
+    $daysLeft  = $daysTotal - $weeks * 7;
+
+    $units = [
+        'y' => ['v' => $diff->y,        'label' => 'year'],
+        'm' => ['v' => $diff->m,        'label' => 'month'],
+        'w' => ['v' => $weeks,          'label' => 'week'],
+        'd' => ['v' => $daysLeft,       'label' => 'day'],
+        'h' => ['v' => $diff->h,        'label' => 'hour'],
+        'i' => ['v' => $diff->i,        'label' => 'minute'],
+        's' => ['v' => $diff->s,        'label' => 'second'],
+    ];
+
     $parts = [];
-    foreach ($map as $k => $label) {
-        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
-        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    foreach ($units as $u) {
+        if ($u['v'] > 0) {
+            $parts[] = $u['v'] . ' ' . $u['label'] . ($u['v'] > 1 ? 's' : '');
+        }
     }
     if (!$full) $parts = array_slice($parts, 0, 1);
+
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+// Optional: absolute Manila time for tooltip
+function format_manila_abs(string $datetime): string
+{
+    return _to_manila_dt($datetime)->format('M j, Y g:i A');
 }
 
 /* ---- Load profile fields for display (unchanged) ---- */
@@ -180,7 +210,6 @@ try {
     $first_name = $last_name = $age = $email = $role = $department = '';
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -190,7 +219,6 @@ try {
     <title>Profile</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/denr/superadmin/css/superprofile.css">
-
 </head>
 <style>
     :root {
@@ -385,6 +413,12 @@ try {
         align-items: center;
         justify-content: center;
     }
+
+    /* 🔴 error highlighting for invalid inputs */
+    .input-error {
+        outline: 2px solid #ff4d4f;
+        border-color: #ff4d4f !important;
+    }
 </style>
 
 <body>
@@ -412,8 +446,6 @@ try {
                 </div>
             </div>
 
-
-
             <!-- Notifications -->
             <div class="as-item">
                 <div class="as-icon">
@@ -438,15 +470,12 @@ try {
                                 </div>
                             </div>
                             <?php else: foreach ($notifs as $n):
-                                $unread  = empty($n['is_read']);
-                                $ts      = !empty($n['created_at']) ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $fromVal = (string)($n['from'] ?? '');
+                                $unread   = empty($n['is_read']);
+                                $created  = isset($n['created_at']) ? (string)$n['created_at'] : '';
+                                $fromVal  = (string)($n['from'] ?? '');
                                 $reqproId = $n['reqpro_id'] ?? '';
 
-                                // ✅ Title rules:
-                                // - if from === "Register request"  -> "Registration"
-                                // - if from looks like a UUID       -> "Profile update"
-                                // - else                            -> "Notification"
+                                // Title rules
                                 $title = (function ($fv) {
                                     $fv = trim((string)$fv);
                                     if (preg_match('/^register request$/i', $fv)) return 'Registration';
@@ -460,6 +489,14 @@ try {
                                     $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
                                     return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
                                 })($n['message'] ?? '');
+
+                                // Relative/absolute time (Asia/Manila)
+                                $relTime  = $created !== '' ? time_elapsed_string($created) : 'just now';
+                                $absTitle = $created !== '' ? format_manila_abs($created)
+                                    : (new DateTimeImmutable('now', new DateTimeZone('Asia/Manila')))->format('M j, Y g:i A');
+                                $ts = $created !== ''
+                                    ? _to_manila_dt($created)->getTimestamp()
+                                    : (new DateTimeImmutable('now', new DateTimeZone('Asia/Manila')))->getTimestamp();
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"
@@ -470,18 +507,20 @@ try {
                                         <div class="as-notif-content">
                                             <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
-                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                            <div class="as-notif-time"
+                                                data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>"
+                                                title="<?= htmlspecialchars($absTitle, ENT_QUOTES) ?>">
+                                                <?= htmlspecialchars($relTime, ENT_QUOTES) ?>
+                                            </div>
                                         </div>
                                     </a>
                                 </div>
                         <?php endforeach;
                         endif; ?>
-
-
                     </div>
 
                     <div class="as-notif-footer">
-                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
+                        <a href="supernotif.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
@@ -508,7 +547,7 @@ try {
 
     <div class="profile-container">
         <div class="profile-header">
-            <h1 class="profile-title">Admin Profile</h1>
+            <h1 class="profile-title">Superadmin Profile</h1>
             <p class="profile-subtitle">View and manage your account information</p>
         </div>
 
@@ -598,8 +637,16 @@ try {
                 e.preventDefault();
                 const formData = new FormData(this);
 
-                // IMPORTANT: point to the real handler path shown in your repo
-                fetch('backend/admins/profile/update_profile.php', {
+                // clear previous error highlights
+                ['first_name', 'last_name', 'age', 'password', 'confirm_password'].forEach(n => {
+                    const el = document.querySelector(`[name="${n}"]`);
+                    if (el) {
+                        el.classList.remove('input-error');
+                        el.removeAttribute('title');
+                    }
+                });
+
+                fetch('backend/admin/update_profile.php', {
                         method: 'POST',
                         body: formData
                     })
@@ -625,7 +672,30 @@ try {
                                 }, 1500);
                             }, 1500);
                         } else {
-                            alert('Update failed: ' + ((data && data.error) ? data.error : 'Unknown error'));
+                            // 🔍 Show precise validation errors from backend
+                            const errs = (data && data.errors) ? data.errors : null;
+
+                            if (errs && typeof errs === 'object') {
+                                const fields = {
+                                    first_name: document.querySelector('[name="first_name"]'),
+                                    last_name: document.querySelector('[name="last_name"]'),
+                                    age: document.querySelector('[name="age"]'),
+                                    password: document.querySelector('[name="password"]'),
+                                    confirm_password: document.querySelector('[name="confirm_password"]')
+                                };
+
+                                const messages = [];
+                                for (const [k, msg] of Object.entries(errs)) {
+                                    messages.push(`• ${msg}`);
+                                    if (fields[k]) {
+                                        fields[k].classList.add('input-error');
+                                        fields[k].setAttribute('title', msg);
+                                    }
+                                }
+                                alert('Please fix the following:\n\n' + messages.join('\n'));
+                            } else {
+                                alert('Update failed: ' + ((data && data.error) ? data.error : 'Unknown error'));
+                            }
                         }
                     })
                     .catch(() => alert('An error occurred while updating profile.'));
@@ -681,24 +751,10 @@ try {
                 }
             });
 
-            if (window.innerWidth <= 992) {
-                dropdowns.forEach(dropdown => {
-                    const toggle = dropdown.querySelector('.nav-icon');
-                    const menu = dropdown.querySelector('.dropdown-menu');
-                    toggle.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) otherMenu.style.display = 'none';
-                        });
-                        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
-                    });
-                });
-            }
-
-            const markAllRead = document.querySelector('.mark-all-read');
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
+            // (Legacy support if you still have a .mark-all-read somewhere)
+            const markAllReadLegacy = document.querySelector('.mark-all-read');
+            if (markAllReadLegacy) {
+                markAllReadLegacy.addEventListener('click', function(e) {
                     e.preventDefault();
                     document.querySelectorAll('.notification-item.unread').forEach(item => {
                         item.classList.remove('unread');
@@ -735,6 +791,7 @@ try {
             });
         });
     </script>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // Mark all (uses the PHP ?ajax=mark_all_read handler above)
@@ -743,12 +800,11 @@ try {
                 markAll.addEventListener('click', (e) => {
                     e.preventDefault();
                     fetch('?ajax=mark_all_read', {
-                            method: 'POST',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        })
-                        .finally(() => location.reload());
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).finally(() => location.reload());
                 });
             }
 
@@ -787,7 +843,6 @@ try {
             });
         });
     </script>
-
 </body>
 
 </html>

@@ -513,18 +513,39 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             exit;
         }
 
-        // Requested seeds text
-        $reqText = '—';
+        // Requested seeds text (include seeds sharing the same batch_key)
+        $reqText = '-';
+        $items = [];
         if (!empty($row['seedl_req_id'])) {
-            $sti = $pdo->prepare("
+            $batchKeyStmt = $pdo->prepare("
+                SELECT batch_key
+                FROM public.seedling_requests
+                WHERE seedl_req_id = :sid
+                LIMIT 1
+            ");
+            $batchKeyStmt->execute([':sid' => $row['seedl_req_id']]);
+            $batchKey = trim((string)$batchKeyStmt->fetchColumn() ?: '');
+
+            $seedSql = "
                 SELECT s.seedling_name, COALESCE(sr.quantity,0) AS qty
                 FROM public.seedling_requests sr
                 JOIN public.seedlings s ON s.seedlings_id = sr.seedlings_id
-                WHERE sr.seedl_req_id = :sid
-                ORDER BY s.seedling_name
-            ");
-            $sti->execute([':sid' => $row['seedl_req_id']]);
+                WHERE ";
+            if ($batchKey !== '') {
+                $seedSql .= "(sr.batch_key = :batch_key OR sr.seedl_req_id = :sid)";
+            } else {
+                $seedSql .= "sr.seedl_req_id = :sid";
+            }
+            $seedSql .= " ORDER BY s.seedling_name";
+
+            $sti = $pdo->prepare($seedSql);
+            $params = [':sid' => $row['seedl_req_id']];
+            if ($batchKey !== '') {
+                $params[':batch_key'] = $batchKey;
+            }
+            $sti->execute($params);
             $items = $sti->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
             if ($items) {
                 $parts = [];
                 foreach ($items as $it) {
@@ -554,6 +575,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             }
         }
 
+        $docUrl = null;
+        $docStmt = $pdo->prepare("
+            SELECT approved_document
+            FROM public.approved_docs
+            WHERE approval_id = :aid
+              AND approved_document IS NOT NULL
+              AND approved_document <> ''
+            ORDER BY approved_id DESC
+            LIMIT 1
+        ");
+        $docStmt->execute([':aid' => $approvalId]);
+        $docUrl = trim((string)$docStmt->fetchColumn() ?: '');
+
         echo json_encode([
             'ok' => true,
             'meta' => [
@@ -562,9 +596,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                 'permit_type'       => $row['permit_type'] ?? '',
                 'status'            => $row['approval_status'] ?? '',
                 'submitted_at'      => $row['submitted_at'] ?? null,
-                'requested_seeds'   => $reqText,   // 👈 added
+                'requested_seeds'   => $reqText,
             ],
-            'files' => $files
+            'files' => $files,
+            'document_url' => $docUrl !== '' ? $docUrl : null,
+            'seeds' => array_map(function ($it) {
+                return [
+                    'name' => $it['seedling_name'] ?? '',
+                    'qty'  => (int)($it['qty'] ?? 0),
+                ];
+            }, $items),
         ]);
     } catch (Throwable $e) {
         error_log('[SEEDLING-DETAILS AJAX] ' . $e->getMessage());
@@ -2138,6 +2179,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
             /* View button -> open modal + fetch details + mark notifs read */
             let currentApprovalId = null;
+            let detailDocUrl = '';
             document.getElementById('statusTableBody')?.addEventListener('click', async (e) => {
                 const btn = e.target.closest('[data-action="view"]');
                 if (!btn) return;
@@ -2186,6 +2228,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 } catch (_) {}
 
                 // Fetch details
+                detailDocUrl = '';
                 const res = await fetch(`<?php echo basename(__FILE__); ?>?ajax=details&approval_id=${encodeURIComponent(currentApprovalId)}`, {
                     headers: {
                         'Accept': 'application/json'
@@ -2202,6 +2245,8 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     alert('Failed to load details.');
                     return;
                 }
+
+                detailDocUrl = res.document_url || '';
 
                 // LEFT Request Info
                 const meta = res.meta || {};
@@ -2252,8 +2297,18 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     filesEmpty.classList.remove('hidden');
                 }
 
-                // Actions (only for pending)
+                // Actions (pending = approve/reject, released/approved = download)
                 modalActions.innerHTML = '';
+
+                // 1) pick a download URL: prefer document_url, then any file that has a URL
+                let downloadHref = res.document_url || detailDocUrl || '';
+                if (!downloadHref && Array.isArray(res.files) && res.files.length) {
+                    const fileWithUrl = res.files.find(f => f && f.url);
+                    if (fileWithUrl) {
+                        downloadHref = fileWithUrl.url;
+                    }
+                }
+
                 if (st === 'pending') {
                     const approveBtn = document.createElement('button');
                     approveBtn.className = 'btn success';
@@ -2268,9 +2323,13 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     modalActions.appendChild(approveBtn);
                     modalActions.appendChild(rejectBtn);
                     modalActions.classList.remove('hidden');
+
                 } else {
                     modalActions.classList.add('hidden');
                 }
+
+
+
 
                 hideModalSkeleton();
             });
@@ -2429,7 +2488,5 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
 
 </body>
-
-</html>
 
 </html>

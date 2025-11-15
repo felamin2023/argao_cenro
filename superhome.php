@@ -152,24 +152,54 @@ try {
 
 
 // =================== Helper ===================
-function time_elapsed_string($datetime, $full = false)
+// Treat naive DB timestamps as UTC, then show elapsed time in Asia/Manila.
+function _to_manila_dt(string $src): DateTimeImmutable
 {
-    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    $src = trim($src);
+    $hasTz = (bool)preg_match('/[zZ]|[+\-]\d{2}:\d{2}$/', $src); // already has TZ?
+    $base  = new DateTimeImmutable($src, $hasTz ? null : new DateTimeZone('UTC'));
+    return $base->setTimezone(new DateTimeZone('Asia/Manila'));
+}
+
+function time_elapsed_string(string $datetime, bool $full = false): string
+{
+    $now = new DateTimeImmutable('now', new DateTimeZone('Asia/Manila'));
+    $ago = _to_manila_dt($datetime);
+
     $diff = $now->diff($ago);
 
-    $weeks = (int)floor($diff->d / 7);
-    $days  = $diff->d % 7;
+    // Use total days for weeks calculation
+    $daysTotal = is_int($diff->days) ? $diff->days : (int)$diff->d;
+    $weeks     = intdiv($daysTotal, 7);
+    $daysLeft  = $daysTotal - $weeks * 7;
 
-    $map = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $units = [
+        'y' => ['v' => $diff->y,        'label' => 'year'],
+        'm' => ['v' => $diff->m,        'label' => 'month'],
+        'w' => ['v' => $weeks,          'label' => 'week'],
+        'd' => ['v' => $daysLeft,       'label' => 'day'],
+        'h' => ['v' => $diff->h,        'label' => 'hour'],
+        'i' => ['v' => $diff->i,        'label' => 'minute'],
+        's' => ['v' => $diff->s,        'label' => 'second'],
+    ];
+
     $parts = [];
-    foreach ($map as $k => $label) {
-        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
-        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    foreach ($units as $u) {
+        if ($u['v'] > 0) {
+            $parts[] = $u['v'] . ' ' . $u['label'] . ($u['v'] > 1 ? 's' : '');
+        }
     }
     if (!$full) $parts = array_slice($parts, 0, 1);
+
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
+
+// Optional: nice absolute Manila time for tooltips
+function format_manila_abs(string $datetime): string
+{
+    return _to_manila_dt($datetime)->format('M j, Y g:i A');
+}
+
 
 // =================== Admin table: fetch with PDO/Postgres ===================
 $searchValue = isset($_GET['search']) ? trim((string)$_GET['search']) : '';
@@ -420,6 +450,12 @@ $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
             align-items: center;
             justify-content: center;
         }
+
+        .edit-form-maindiv div div input,
+        .edit-form-maindiv div div select {
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
     </style>
 </head>
 
@@ -485,9 +521,9 @@ $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
                                 </div>
                             </div>
                             <?php else: foreach ($notifs as $n):
-                                $unread  = empty($n['is_read']);
-                                $ts      = !empty($n['created_at']) ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $fromVal = (string)($n['from'] ?? '');
+                                $unread   = empty($n['is_read']);
+                                $created  = isset($n['created_at']) ? (string)$n['created_at'] : '';
+                                $fromVal  = (string)($n['from'] ?? '');
                                 $reqproId = $n['reqpro_id'] ?? '';
 
                                 // ✅ Title rules:
@@ -507,6 +543,15 @@ $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
                                     $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
                                     return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
                                 })($n['message'] ?? '');
+
+                                // 🕒 Relative/absolute time (Asia/Manila), based on notifications.created_at
+                                // Requires the helper functions: _to_manila_dt(), time_elapsed_string(), format_manila_abs()
+                                $relTime  = $created !== '' ? time_elapsed_string($created) : 'just now';
+                                $absTitle = $created !== '' ? format_manila_abs($created)
+                                    : format_manila_abs((new DateTimeImmutable('now'))->format('Y-m-d H:i:s'));
+                                $ts = $created !== ''
+                                    ? _to_manila_dt($created)->getTimestamp()
+                                    : (new DateTimeImmutable('now', new DateTimeZone('Asia/Manila')))->getTimestamp();
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"
@@ -517,18 +562,21 @@ $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
                                         <div class="as-notif-content">
                                             <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
-                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                            <div class="as-notif-time"
+                                                data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>"
+                                                title="<?= htmlspecialchars($absTitle, ENT_QUOTES) ?>">
+                                                <?= htmlspecialchars($relTime, ENT_QUOTES) ?>
+                                            </div>
                                         </div>
                                     </a>
                                 </div>
                         <?php endforeach;
                         endif; ?>
-
-
                     </div>
 
+
                     <div class="as-notif-footer">
-                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
+                        <a href="supernotif.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>

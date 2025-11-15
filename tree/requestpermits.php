@@ -1718,6 +1718,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             }
         }
 
+        $approvedDocUrl = '';
+        $docStmt = $pdo->prepare("
+            SELECT approved_document
+            FROM public.approved_docs
+            WHERE approval_id = :aid
+              AND approved_document IS NOT NULL
+              AND approved_document <> ''
+            ORDER BY approved_id DESC
+            LIMIT 1
+        ");
+        $docStmt->execute([':aid' => $approvalId]);
+        $approvedDocUrl = (string)($docStmt->fetchColumn() ?: '');
+
         echo json_encode([
             'ok' => true,
             'meta' => [
@@ -1728,7 +1741,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                 'submitted_at' => $row['submitted_at'] ?? null,
             ],
             'application' => $appFields,
-            'files'       => $files
+            'files'       => $files,
+            'document_url' => $approvedDocUrl
         ]);
     } catch (Throwable $e) {
         error_log('[TREE-DETAILS AJAX] ' . $e->getMessage());
@@ -2065,9 +2079,19 @@ try {
                COALESCE(NULLIF(btrim(a.permit_type),''),'none')        AS permit_type,
                COALESCE(NULLIF(btrim(a.approval_status),''),'pending') AS approval_status,
                a.submitted_at,
-               c.first_name
+               c.first_name,
+               ad.approved_document                                  AS document_url
         FROM public.approval a
         LEFT JOIN public.client c ON c.client_id = a.client_id
+        LEFT JOIN LATERAL (
+            SELECT approved_document
+            FROM public.approved_docs
+            WHERE approval_id = a.approval_id
+              AND approved_document IS NOT NULL
+              AND approved_document <> ''
+            ORDER BY approved_id DESC
+            LIMIT 1
+        ) ad ON TRUE
         WHERE LOWER(COALESCE(a.request_type,'')) IN ('treecut','lumber','wood','chainsaw')
         ORDER BY a.submitted_at DESC NULLS LAST, a.approval_id DESC
         LIMIT 200
@@ -3107,7 +3131,14 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                                 <td><span class="pill neutral"><?= h(strtolower((string)$r['permit_type'])) ?></span></td>
                                 <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
-                                <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
+                                <td>
+                                    <button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button>
+                                    <?php if ($st === 'released' && !empty($r['document_url'])): ?>
+                                        <a class="btn small ghost" data-download-link="true" href="<?= h((string)$r['document_url']) ?>" target="_blank" rel="noopener">
+                                            <i class="fas fa-download"></i> Download
+                                        </a>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -3486,6 +3517,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             /* -------------------------- View row → load & render -------------------------- */
             let currentApprovalId = null;
             let currentRequestType = '';
+            let detailDocUrl = '';
 
             // 🔧 Robust delegated handler for various "view" buttons anywhere on the page
             document.addEventListener('click', async (e) => {
@@ -3715,6 +3747,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     });
                 }
 
+                detailDocUrl = res?.document_url || '';
                 hideModalSkeleton();
                 renderActions(st); // pending -> approve/reject; for payment -> release
             });
@@ -3725,53 +3758,132 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             const approveWrap = approveConfirmEl; // alias used by ensure* helpers
 
             function renderActions(statusLower) {
-                if (!modalActions) return;
-                modalActions.innerHTML = '';
-                modalActions.classList.remove('hidden');
 
-                // PENDING → Approve / Reject
+                if (!modalActions) return;
+
+                modalActions.innerHTML = '';
+
+                let hasActions = false;
+
+
+
+                // PENDING - Approve / Reject
+
                 if (statusLower === 'pending') {
+
                     const approveBtn = document.createElement('button');
+
                     approveBtn.className = 'btn success';
-                    approveBtn.innerHTML = '<i class="fas fa-check"></i> Approve';
+
+                    approveBtn.innerHTML = "<i class='fas fa-check'></i> Approve";
                     approveBtn.addEventListener('click', () => {
+
                         if (!approveConfirmEl) return;
+
                         approveConfirmEl.dataset.mode = 'approve';
+
                         const title = approveConfirmEl.querySelector('.confirm-title');
+
                         if (title) title.textContent = 'Mark this request as FOR PAYMENT?';
+
                         const p = approveConfirmEl.querySelector('.confirm-panel p');
-                        if (p) p.textContent = 'This will set the status to “For payment” and notify the client.';
+
+                        if (p) p.textContent = 'This will set the status to "For payment" and notify the client.';
+
                         clearConfirmForm();
+
                         approveConfirmEl.querySelector('#approveConfirmBtn')?.classList.remove('primary-alt');
+
                         approveConfirmEl.querySelector('#approveConfirmBtn')?.classList.add('primary');
+
                         const btn = approveConfirmEl.querySelector('#approveConfirmBtn');
+
                         if (btn) btn.textContent = 'Confirm';
+
                         approveConfirmEl.classList.add('show');
+
                     });
+
+
 
                     const rejectBtn = document.createElement('button');
+
                     rejectBtn.className = 'btn danger';
-                    rejectBtn.innerHTML = '<i class="fas fa-times"></i> Reject';
+
+                    rejectBtn.innerHTML = "<i class='fas fa-times'></i> Reject";
                     rejectBtn.addEventListener('click', () => {
+
                         const rr = document.getElementById('rejectReason');
+
                         if (rr) rr.value = '';
+
                         rejectConfirmEl?.classList.add('show');
+
                     });
 
+
+
                     modalActions.appendChild(approveBtn);
+
                     modalActions.appendChild(rejectBtn);
-                    return;
+
+                    hasActions = true;
+
+                } else if (statusLower === 'for payment') {
+
+                    const releaseBtn = document.createElement('button');
+
+                    releaseBtn.className = 'btn success';
+
+                    releaseBtn.innerHTML = "<i class='fas fa-box-open'></i> Release";
+                    releaseBtn.addEventListener('click', () => openReleaseModal());
+
+                    modalActions.appendChild(releaseBtn);
+
+                    hasActions = true;
+
+                } else if (statusLower === 'released' && detailDocUrl) {
+
+                    const downloadBtn = document.createElement('a');
+
+                    downloadBtn.className = 'btn ghost';
+
+                    downloadBtn.href = detailDocUrl;
+
+                    downloadBtn.target = '_blank';
+
+                    downloadBtn.rel = 'noopener';
+
+                    downloadBtn.innerHTML = "<i class='fas fa-download'></i> Download";
+                    modalActions.appendChild(downloadBtn);
+
+                    hasActions = true;
+
                 }
 
-                // FOR PAYMENT → Release (open the modal with dynamic inputs)
-                if (statusLower === 'for payment') {
-                    const releaseBtn = document.createElement('button');
-                    releaseBtn.className = 'btn success';
-                    releaseBtn.innerHTML = '<i class="fas fa-box-open"></i> Release';
-                    releaseBtn.addEventListener('click', () => openReleaseModal());
-                    modalActions.appendChild(releaseBtn);
-                    return;
+
+
+                modalActions.classList.toggle('hidden', !hasActions);
+
+            }
+
+            function ensureRowDownload(row, docUrl) {
+                if (!row || !docUrl) return;
+                row.dataset.docUrl = docUrl;
+                const actionCell = row.querySelector('td:last-child');
+                if (!actionCell) return;
+                let downloadLink = actionCell.querySelector('a[data-download-link]');
+                if (!downloadLink) {
+                    downloadLink = document.createElement('a');
+                    downloadLink.className = 'btn small ghost';
+                    downloadLink.dataset.downloadLink = 'true';
+                    downloadLink.innerHTML = "<i class='fas fa-download'></i> Download";
+                    actionCell.appendChild(downloadLink);
                 }
+                downloadLink.href = docUrl;
+                downloadLink.target = '_blank';
+                downloadLink.rel = 'noopener';
+                downloadLink.hidden = false;
             }
 
             // Close confirm modals (cancel/backdrop)
@@ -4405,7 +4517,9 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         }
                     }
 
-                    if (modalActions) modalActions.innerHTML = '';
+                    detailDocUrl = res?.document_url || '';
+                    renderActions('released');
+                    ensureRowDownload(row, detailDocUrl);
                     showToast('Permit released', 'success');
 
                     // If your backend returns the file url: if (res.document_url) window.open(res.document_url, '_blank');

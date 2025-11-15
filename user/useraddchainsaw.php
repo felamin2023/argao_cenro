@@ -77,6 +77,176 @@ try {
     $unreadCount = 0;
 }
 
+$clientRows = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT client_id, user_id, first_name, middle_name, last_name,
+               sitio_street, barangay, municipality, city, contact_number
+        FROM public.client
+        ORDER BY (user_id = :uid) DESC, last_name ASC, first_name ASC
+        LIMIT 500
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id']]);
+    $clientRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[CHAINSAW-CLIENTS] ' . $e->getMessage());
+    $clientRows = [];
+}
+
+$permitOptions = [];
+$permitRecords = [];
+$renewalQuickOptions = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT
+            ad.no                  AS permit_no,
+            ad.date_issued         AS doc_date_issued,
+            ad.expiry_date         AS doc_expiry_date,
+            a.approval_id,
+            a.client_id,
+            c.first_name           AS client_first,
+            c.middle_name          AS client_middle,
+            c.last_name            AS client_last,
+            c.sitio_street,
+            c.barangay,
+            c.municipality         AS client_municipality,
+            c.city                 AS client_city,
+            c.contact_number       AS client_contact,
+            af.contact_number      AS af_contact_number,
+            af.present_address,
+            af.province            AS af_province,
+            af.location,
+            af.purpose_of_use,
+            af.brand,
+            af.model,
+            af.date_of_acquisition,
+            af.serial_number_chainsaw,
+            af.horsepower,
+            af.maximum_length_of_guide_bar,
+            af.permit_number       AS stored_permit_number,
+            af.expiry_date         AS af_expiry_date,
+            req.chainsaw_cert_terms,
+            req.chainsaw_cert_sticker,
+            req.chainsaw_staff_work,
+            req.chainsaw_permit_to_sell,
+            req.chainsaw_business_permit,
+            req.chainsaw_old_registration
+        FROM public.approved_docs ad
+        JOIN public.approval a   ON a.approval_id = ad.approval_id
+        LEFT JOIN public.client   c   ON c.client_id   = a.client_id
+        LEFT JOIN public.application_form af ON af.application_id = a.application_id
+        LEFT JOIN public.requirements req    ON req.requirement_id = a.requirement_id
+        WHERE NULLIF(btrim(ad.no), '') IS NOT NULL
+        ORDER BY COALESCE(ad.date_issued, a.submitted_at) DESC NULLS LAST
+        LIMIT 200
+    ");
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    foreach ($rows as $row) {
+        $permitNo = trim((string)($row['permit_no'] ?? ''));
+        if ($permitNo === '') continue;
+
+        $approvalId = $row['approval_id'] ?? null;
+        $issuedLabel = '';
+        if (!empty($row['doc_date_issued'])) {
+            try {
+                $issuedLabel = (new DateTime((string)$row['doc_date_issued']))->format('M j, Y');
+            } catch (Throwable $e) {
+                $issuedLabel = '';
+            }
+        }
+        $permitOptions[] = [
+            'no'          => $permitNo,
+            'label'       => $issuedLabel ? ($permitNo . ' - ' . $issuedLabel) : $permitNo,
+            'approval_id' => $approvalId ? (string)$approvalId : null
+        ];
+
+        if (!isset($renewalQuickOptions[$permitNo])) {
+            $renewalQuickOptions[$permitNo] = [
+                'no' => $permitNo,
+                'approval_id' => $approvalId ? (string)$approvalId : ''
+            ];
+        }
+
+        $files = array_filter([
+            'chainsaw_cert_terms'       => $row['chainsaw_cert_terms'] ?? null,
+            'chainsaw_cert_sticker'     => $row['chainsaw_cert_sticker'] ?? null,
+            'chainsaw_staff_work'       => $row['chainsaw_staff_work'] ?? null,
+            'chainsaw_permit_to_sell'   => $row['chainsaw_permit_to_sell'] ?? null,
+            'chainsaw_business_permit'  => $row['chainsaw_business_permit'] ?? null,
+            'chainsaw_old_registration' => $row['chainsaw_old_registration'] ?? null,
+        ], static fn($v) => !empty($v));
+
+        $permitRecords[] = [
+            'approval_id' => $approvalId,
+            'permit_no'    => $permitNo,
+            'client_id'    => $row['client_id'],
+            'issued_date'  => $row['doc_date_issued'] ?? null,
+            'expiry_date'  => $row['doc_expiry_date'] ?? ($row['af_expiry_date'] ?? null),
+            'client'       => [
+                'first'  => $row['client_first'] ?? '',
+                'middle' => $row['client_middle'] ?? '',
+                'last'   => $row['client_last'] ?? '',
+            ],
+            'address'      => [
+                'street'      => $row['sitio_street'] ?? '',
+                'barangay'    => $row['barangay'] ?? '',
+                'municipality' => $row['client_municipality'] ?? $row['client_city'] ?? '',
+                'province'    => $row['client_province'] ?? $row['af_province'] ?? '',
+                'full'        => $row['present_address'] ?? ''
+            ],
+            'contact_number' => $row['af_contact_number'] ?? $row['client_contact'] ?? '',
+            'purpose'        => $row['purpose_of_use'] ?? '',
+            'brand'          => $row['brand'] ?? '',
+            'model'          => $row['model'] ?? '',
+            'date_of_acquisition' => $row['date_of_acquisition'] ?? '',
+            'serial_number'  => $row['serial_number_chainsaw'] ?? '',
+            'horsepower'     => $row['horsepower'] ?? '',
+            'guide_bar'      => $row['maximum_length_of_guide_bar'] ?? '',
+            'files'          => $files,
+        ];
+    }
+    $renewalQuickOptions = array_values($renewalQuickOptions);
+} catch (Throwable $e) {
+    error_log('[CHAINSAW-PERMITS] ' . $e->getMessage());
+    $permitOptions = [];
+    $permitRecords = [];
+    $renewalQuickOptions = [];
+}
+
+if (!$renewalQuickOptions) {
+    try {
+        $stmt = $pdo->query("
+            SELECT approval_id, no, date_issued
+            FROM public.approved_docs
+            WHERE NULLIF(btrim(no), '') IS NOT NULL
+            ORDER BY date_issued DESC NULLS LAST, approval_id DESC
+            LIMIT 200
+        ");
+        $fallbackRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($fallbackRows as $row) {
+            $permitNo = trim((string)($row['no'] ?? ''));
+            if ($permitNo === '') continue;
+            $issuedLabel = '';
+            if (!empty($row['date_issued'])) {
+                try {
+                    $issuedLabel = (new DateTime((string)$row['date_issued']))->format('M j, Y');
+                } catch (Throwable $e) {
+                    $issuedLabel = '';
+                }
+            }
+            $renewalQuickOptions[] = [
+                'no' => $permitNo,
+                'approval_id' => (string)($row['approval_id'] ?? ''),
+                'label' => $issuedLabel ? ($permitNo . ' - ' . $issuedLabel) : $permitNo,
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log('[CHAINSAW-PERMITS-FALLBACK] ' . $e->getMessage());
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -985,7 +1155,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .permit-type-selector {
             display: flex;
             justify-content: flex-start;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 20px;
             margin-bottom: 20px;
+        }
+
+        .permit-type-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
         }
 
         .permit-type-btn {
@@ -1008,6 +1188,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .permit-type-btn:hover {
             background-color: #2b6625;
             color: white;
+        }
+
+        .renewal-quick-select {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            margin-left: auto;
+        }
+
+        .renewal-quick-select .renewal-quick-select__label {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            color: #2b6625;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .renewal-quick-select__label small {
+            font-weight: 400;
+            font-size: 0.75rem;
+            color: #6c757d;
+        }
+
+        .renewal-quick-select select {
+            height: 40px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 0 12px;
+            min-width: 220px;
+        }
+
+        .client-mode-toggle {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .client-mode-toggle .btn {
+            min-width: 140px;
+        }
+
+        .renewal-permit-picker {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .renewal-permit-picker select {
+            height: 40px;
+            width: 240px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 0 10px;
+        }
+
+        .renewal-cr-files {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border: 1px dashed #c8d3c5;
+            border-radius: 6px;
+            background: #f8fbf7;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .renewal-cr-files__title {
+            font-size: .85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #2b6625;
+        }
+
+        .renewal-cr-files__list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .renewal-cr-files__pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #d5e2d1;
+            background: #fff;
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: .85rem;
+            color: #2b6625;
+            text-decoration: none;
+            transition: background .2s ease, border-color .2s ease;
+        }
+
+        .renewal-cr-files__pill:hover {
+            background: #e8f3e6;
+            border-color: #9ec394;
+        }
+
+        .renewal-cr-files__pill i {
+            font-size: .75rem;
+        }
+
+        .renewal-cr-files__empty {
+            font-size: .85rem;
+            color: #6c757d;
+        }
+
+        .field-error {
+            color: #c53030;
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+
+        .readonly-input {
+            background-color: #f7f7f7;
         }
 
         /* Add new styles for name fields */
@@ -1524,8 +1823,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="form-body">
                 <div class="permit-type-selector">
-                    <button class="permit-type-btn active" data-type="new" type="button">New Chainsaw Permit</button>
-                    <button class="permit-type-btn" data-type="renewal" type="button">Chainsaw Renewal</button>
+                    <div class="permit-type-buttons">
+                        <button class="permit-type-btn active" data-type="new" type="button">New Chainsaw Permit</button>
+                        <button class="permit-type-btn" data-type="renewal" type="button">Chainsaw Renewal</button>
+                        <?php $hasRenewalQuickOptions = !empty($renewalQuickOptions); ?>
+                        <div class="renewal-quick-select" id="renewalQuickSelectWrap" style="display:flex; text-align: center; gap:6px;min-width:220px; border: 1px dashed #c8d3c5; border-radius: 6px; background: #f8fbf7; padding:  5px;">
+                            <div class="renewal-quick-select__label">
+                                <span>Permit No.</span>
+                                <!-- <small>Enter your full name to autofill the form</small> -->
+                            </div>
+                            <select id="renewalQuickSelect" aria-label="Select released chainsaw permit" <?= $hasRenewalQuickOptions ? '' : 'disabled' ?>>
+                                <?php if ($hasRenewalQuickOptions): ?>
+                                    <option value="">-- Select Permit No. --</option>
+                                    <?php foreach ($renewalQuickOptions as $opt): ?>
+                                        <?php $permitNo = (string)($opt['no'] ?? ''); ?>
+                                        <?php if ($permitNo === '') continue; ?>
+                                        <option
+                                            value="<?= htmlspecialchars($permitNo, ENT_QUOTES) ?>"
+                                            data-approval-id="<?= htmlspecialchars((string)($opt['approval_id'] ?? ''), ENT_QUOTES) ?>">
+                                            <?= htmlspecialchars((string)($opt['label'] ?? $permitNo), ENT_QUOTES) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <option value="">No released permits yet</option>
+                                <?php endif; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="client-mode-toggle" id="clientModeToggle">
+                        <button type="button" class="btn btn-outline" id="btnExisting">
+                            <i class="fas fa-user-check"></i>&nbsp;Existing client
+                        </button>
+                        <button type="button" class="btn btn-outline" id="btnNew" style="display:none;">
+                            <i class="fas fa-user-plus"></i>&nbsp;New client
+                        </button>
+                    </div>
                 </div>
 
                 <!-- NEW: APPLICANT INFO -->
@@ -1533,99 +1865,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-section">
                         <h2>I. APPLICANT INFORMATION</h2>
 
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="first-name" class="required">First Name:</label>
-                                <input type="text" id="first-name" name="first_name" />
-                            </div>
-                            <div class="form-group">
-                                <label for="middle-name">Middle Name:</label>
-                                <input type="text" id="middle-name" name="middle_name" />
-                            </div>
-                            <div class="form-group">
-                                <label for="last-name" class="required">Last Name:</label>
-                                <input type="text" id="last-name" name="last_name" />
-                            </div>
-                        </div>
+                        <input type="hidden" id="clientMode" value="new">
 
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="street" class="required">Street Name/Sitio:</label>
-                                <input type="text" id="street" name="sitio_street" />
-                            </div>
-                            <div class="form-group">
-                                <label for="barangay" class="required">Barangay:</label>
-                                <input list="barangayList" id="barangay" name="barangay" />
-                                <datalist id="barangayList">
-                                    <option value="Guadalupe" />
-                                    <option value="Lahug" />
-                                    <option value="Mabolo" />
-                                    <option value="Labangon" />
-                                    <option value="Talamban" />
-                                </datalist>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="municipality" class="required">Municipality:</label>
-                                <select id="municipality" name="municipality">
-                                    <option value="">Select Municipality (Cebu)</option>
-                                    <option>Alcantara</option>
-                                    <option>Alcoy</option>
-                                    <option>Alegria</option>
-                                    <option>Aloguinsan</option>
-                                    <option>Argao</option>
-                                    <option>Asturias</option>
-                                    <option>Badian</option>
-                                    <option>Balamban</option>
-                                    <option>Bantayan</option>
-                                    <option>Barili</option>
-                                    <option>Boljoon</option>
-                                    <option>Borbon</option>
-                                    <option>Carmen</option>
-                                    <option>Catmon</option>
-                                    <option>Compostela</option>
-                                    <option>Consolacion</option>
-                                    <option>Cordova</option>
-                                    <option>Daanbantayan</option>
-                                    <option>Dalaguete</option>
-                                    <option>Dumanjug</option>
-                                    <option>Ginatilan</option>
-                                    <option>Liloan</option>
-                                    <option>Madridejos</option>
-                                    <option>Malabuyoc</option>
-                                    <option>Medellin</option>
-                                    <option>Minglanilla</option>
-                                    <option>Moalboal</option>
-                                    <option>Oslob</option>
-                                    <option>Pilar</option>
-                                    <option>Pinamungajan</option>
-                                    <option>Poro</option>
-                                    <option>Ronda</option>
-                                    <option>Samboan</option>
-                                    <option>San Fernando</option>
-                                    <option>San Francisco</option>
-                                    <option>San Remigio</option>
-                                    <option>Santa Fe</option>
-                                    <option>Santander</option>
-                                    <option>Sibonga</option>
-                                    <option>Sogod</option>
-                                    <option>Tabogon</option>
-                                    <option>Tabuelan</option>
-                                    <option>Tuburan</option>
-                                    <option>Tudela</option>
+                        <div id="existingClientRow" class="form-group" style="display:none;">
+                            <label for="clientPick" style="font-weight:600;margin-bottom:6px;display:block;">Select client</label>
+                            <?php if ($clientRows): ?>
+                                <select id="clientPick" style="height:42px;width:100%;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                    <option value="">-- Select a client --</option>
+                                    <?php
+                                    $myId = (string)($_SESSION['user_id'] ?? '');
+                                    $renderOption = static function (array $c): string {
+                                        $full = trim(trim((string)($c['first_name'] ?? '')) . ' ' . trim((string)($c['middle_name'] ?? '')) . ' ' . trim((string)($c['last_name'] ?? '')));
+                                        $full = trim(preg_replace('/\s+/', ' ', $full));
+                                        $full = $full ?: 'Unnamed client';
+                                        $addrParts = [];
+                                        if (!empty($c['sitio_street'])) $addrParts[] = $c['sitio_street'];
+                                        if (!empty($c['barangay'])) $addrParts[] = 'Brgy. ' . $c['barangay'];
+                                        $cityOrMuni = $c['municipality'] ?: ($c['city'] ?? '');
+                                        if ($cityOrMuni) $addrParts[] = $cityOrMuni;
+                                        $addressValue = $addrParts ? implode(', ', $addrParts) : '';
+                                        $label = $full . ($addressValue ? ' - ' . $addressValue : '');
+                                        $attrs = sprintf(
+                                            ' value="%s" data-first="%s" data-middle="%s" data-last="%s" data-street="%s" data-barangay="%s" data-municipality="%s" data-city="%s" data-province="%s" data-contact="%s"',
+                                            htmlspecialchars((string)($c['client_id'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['first_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['middle_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['last_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['sitio_street'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['barangay'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['municipality'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['city'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['province'] ?? 'Cebu'), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['contact_number'] ?? ''), ENT_QUOTES)
+                                        );
+                                        return '<option' . $attrs . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                    };
+                                    $hasMine = false;
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') === $myId) {
+                                            $hasMine = true;
+                                            break;
+                                        }
+                                    }
+                                    if ($hasMine) {
+                                        echo '<optgroup label="Your clients">';
+                                        foreach ($clientRows as $row) {
+                                            if ((string)($row['user_id'] ?? '') !== $myId) continue;
+                                            echo $renderOption($row);
+                                        }
+                                        echo '</optgroup>';
+                                    }
+                                    $hasOthers = false;
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') === $myId) continue;
+                                        $hasOthers = true;
+                                        break;
+                                    }
+                                    if ($hasOthers) {
+                                        echo '<optgroup label="All clients (others)">';
+                                        foreach ($clientRows as $row) {
+                                            if ((string)($row['user_id'] ?? '') === $myId) continue;
+                                            echo $renderOption($row);
+                                        }
+                                        echo '</optgroup>';
+                                    }
+                                    ?>
                                 </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="province" class="required">Province:</label>
-                                <input type="text" id="province" name="province" />
-                            </div>
+                            <?php else: ?>
+                                <div style="padding:10px 12px;border:1px dashed #aaa;border-radius:4px;color:#555;background:#fafafa;">
+                                    No existing clients have been recorded yet.
+                                </div>
+                            <?php endif; ?>
+                            <div id="clientPickError" class="field-error" style="display:none;"></div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="contact-number" class="required">Contact Number:</label>
-                            <input type="text" id="contact-number" name="contact_number" />
+                        <div id="newClientRow">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="first-name" class="required">First Name:</label>
+                                    <input type="text" id="first-name" name="first_name" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="middle-name">Middle Name:</label>
+                                    <input type="text" id="middle-name" name="middle_name" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="last-name" class="required">Last Name:</label>
+                                    <input type="text" id="last-name" name="last_name" />
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="street" class="required">Street Name/Sitio:</label>
+                                    <input type="text" id="street" name="sitio_street" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="barangay" class="required">Barangay:</label>
+                                    <input list="barangayList" id="barangay" name="barangay" />
+                                    <datalist id="barangayList">
+                                        <option value="Guadalupe" />
+                                        <option value="Lahug" />
+                                        <option value="Mabolo" />
+                                        <option value="Labangon" />
+                                        <option value="Talamban" />
+                                    </datalist>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="municipality" class="required">Municipality:</label>
+                                    <select id="municipality" name="municipality">
+                                        <option value="">Select Municipality (Cebu)</option>
+                                        <option>Alcantara</option>
+                                        <option>Alcoy</option>
+                                        <option>Alegria</option>
+                                        <option>Aloguinsan</option>
+                                        <option>Argao</option>
+                                        <option>Asturias</option>
+                                        <option>Badian</option>
+                                        <option>Balamban</option>
+                                        <option>Bantayan</option>
+                                        <option>Barili</option>
+                                        <option>Boljoon</option>
+                                        <option>Borbon</option>
+                                        <option>Carmen</option>
+                                        <option>Catmon</option>
+                                        <option>Compostela</option>
+                                        <option>Consolacion</option>
+                                        <option>Cordova</option>
+                                        <option>Daanbantayan</option>
+                                        <option>Dalaguete</option>
+                                        <option>Dumanjug</option>
+                                        <option>Ginatilan</option>
+                                        <option>Liloan</option>
+                                        <option>Madridejos</option>
+                                        <option>Malabuyoc</option>
+                                        <option>Medellin</option>
+                                        <option>Minglanilla</option>
+                                        <option>Moalboal</option>
+                                        <option>Oslob</option>
+                                        <option>Pilar</option>
+                                        <option>Pinamungajan</option>
+                                        <option>Poro</option>
+                                        <option>Ronda</option>
+                                        <option>Samboan</option>
+                                        <option>San Fernando</option>
+                                        <option>San Francisco</option>
+                                        <option>San Remigio</option>
+                                        <option>Santa Fe</option>
+                                        <option>Santander</option>
+                                        <option>Sibonga</option>
+                                        <option>Sogod</option>
+                                        <option>Tabogon</option>
+                                        <option>Tabuelan</option>
+                                        <option>Tuburan</option>
+                                        <option>Tudela</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="province" class="required">Province:</label>
+                                    <input type="text" id="province" name="province" />
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="contact-number" class="required">Contact Number:</label>
+                                <input type="text" id="contact-number" name="contact_number" />
+                            </div>
                         </div>
                     </div>
 
@@ -1732,6 +2140,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-group">
                                 <label for="permit-number-r" class="required">Permit Number:</label>
                                 <input type="text" id="permit-number-r" />
+                                <?php if ($permitOptions): ?>
+                                    <div class="renewal-permit-picker" id="renewalPermitPicker">
+                                        <label for="renewalPermitSelect" style="font-weight:600;margin:0;">Select existing permit</label>
+                                        <select id="renewalPermitSelect">
+                                            <option value="">-- Select Permit No. --</option>
+                                            <?php foreach ($permitOptions as $opt): ?>
+                                                <option
+                                                    value="<?= htmlspecialchars((string)($opt['no'] ?? ''), ENT_QUOTES) ?>"
+                                                    data-approval-id="<?= htmlspecialchars((string)($opt['approval_id'] ?? ''), ENT_QUOTES) ?>">
+                                                    <?= htmlspecialchars((string)($opt['label'] ?? ($opt['no'] ?? '')), ENT_QUOTES) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                <?php else: ?>
+                                    <small style="display:block;margin-top:6px;color:#6c757d;">No released permits found yet.</small>
+                                <?php endif; ?>
+                                <!-- <div id="renewalPermitFiles" class="renewal-cr-files" style="display:none;">
+                                    <div class="renewal-cr-files__title">Available Files</div>
+                                    <div class="renewal-cr-files__list" id="renewalPermitFilesList">
+                                        <div class="renewal-cr-files__empty">Select a permit number to view uploads.</div>
+                                    </div>
+                                </div> -->
                             </div>
 
                             <div class="form-group">
@@ -2029,6 +2460,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     <script>
+        window.__CHAINSAW_PERMITS__ = <?= json_encode($permitRecords ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    </script>
+    <script>
         (function() {
             const SIG_WIDTH = 300,
                 SIG_HEIGHT = 110;
@@ -2268,7 +2702,383 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             let chosenClientName = null; // {first, middle, last} from existing client
             let confirmNewClient = false;
 
+            const clientModeEl = document.getElementById("clientMode");
+            const btnExistingToggle = document.getElementById("btnExisting");
+            const btnNewToggle = document.getElementById("btnNew");
+            const clientModeToggle = document.getElementById("clientModeToggle");
+            const existingClientRow = document.getElementById("existingClientRow");
+            const clientPick = document.getElementById("clientPick");
+            const clientPickError = document.getElementById("clientPickError");
+            const firstNameInput = document.getElementById("first-name");
+            const middleNameInput = document.getElementById("middle-name");
+            const lastNameInput = document.getElementById("last-name");
+            const streetInput = document.getElementById("street");
+            const barangayInput = document.getElementById("barangay");
+            const municipalitySelect = document.getElementById("municipality");
+            const provinceInput = document.getElementById("province");
+            const contactNumberInput = document.getElementById("contact-number");
 
+            if (clientModeToggle && !clientPick) {
+                clientModeToggle.style.display = "none";
+                if (existingClientRow) existingClientRow.style.display = "none";
+            }
+
+            const captureApplicantValues = () => ({
+                first: firstNameInput?.value || "",
+                middle: middleNameInput?.value || "",
+                last: lastNameInput?.value || "",
+                street: streetInput?.value || "",
+                barangay: barangayInput?.value || "",
+                municipality: municipalitySelect?.value || "",
+                province: provinceInput?.value || "",
+                contact: contactNumberInput?.value || ""
+            });
+
+            const setValueAndDispatch = (el, value) => {
+                if (!el) return;
+                el.value = value ?? "";
+                el.dispatchEvent(new Event("input", {
+                    bubbles: true
+                }));
+                el.dispatchEvent(new Event("change", {
+                    bubbles: true
+                }));
+            };
+
+            const restoreApplicantValues = (vals) => {
+                if (!vals) return;
+                setValueAndDispatch(firstNameInput, vals.first || "");
+                setValueAndDispatch(middleNameInput, vals.middle || "");
+                setValueAndDispatch(lastNameInput, vals.last || "");
+                setValueAndDispatch(streetInput, vals.street || "");
+                setValueAndDispatch(barangayInput, vals.barangay || "");
+                if (municipalitySelect) {
+                    municipalitySelect.value = vals.municipality || "";
+                    municipalitySelect.dispatchEvent(new Event("change", {
+                        bubbles: true
+                    }));
+                }
+                setValueAndDispatch(provinceInput, vals.province || "");
+                setValueAndDispatch(contactNumberInput, vals.contact || "");
+            };
+
+            let manualApplicantValues = captureApplicantValues();
+
+            const setClientPickError = (msg) => {
+                if (!clientPickError) return;
+                if (msg) {
+                    clientPickError.textContent = msg;
+                    clientPickError.style.display = "block";
+                } else {
+                    clientPickError.textContent = "";
+                    clientPickError.style.display = "none";
+                }
+            };
+
+            function applyClientPickValues(showError = false) {
+                if (!clientPick || !clientPick.value) {
+                    if (showError) setClientPickError("Please select an existing client.");
+                    chosenClientId = null;
+                    chosenClientName = null;
+                    return;
+                }
+                const opt = clientPick.options[clientPick.selectedIndex];
+                if (!opt) return;
+                const ds = opt.dataset || {};
+                setClientPickError("");
+                setValueAndDispatch(firstNameInput, ds.first || "");
+                setValueAndDispatch(middleNameInput, ds.middle || "");
+                setValueAndDispatch(lastNameInput, ds.last || "");
+                setValueAndDispatch(streetInput, ds.street || "");
+                setValueAndDispatch(barangayInput, ds.barangay || "");
+                const muni = ds.municipality || ds.city || "";
+                if (municipalitySelect && muni) {
+                    municipalitySelect.value = muni;
+                    municipalitySelect.dispatchEvent(new Event("change", {
+                        bubbles: true
+                    }));
+                }
+                setValueAndDispatch(provinceInput, ds.province || "");
+                setValueAndDispatch(contactNumberInput, ds.contact || "");
+                const declarationInput = document.getElementById("declaration-name");
+                if (declarationInput) {
+                    const fullName = [ds.first, ds.middle, ds.last].filter(Boolean).join(" ").trim();
+                    if (fullName) declarationInput.value = fullName;
+                }
+                chosenClientId = clientPick.value;
+                chosenClientName = {
+                    first: ds.first || "",
+                    middle: ds.middle || "",
+                    last: ds.last || ""
+                };
+                confirmNewClient = false;
+            }
+
+            function setClientMode(mode) {
+                if (!clientModeEl) return;
+                const isExisting = mode === "existing";
+                clientModeEl.value = isExisting ? "existing" : "new";
+                if (existingClientRow) existingClientRow.style.display = isExisting ? "" : "none";
+                if (btnExistingToggle) btnExistingToggle.style.display = isExisting ? "none" : "inline-flex";
+                if (btnNewToggle) btnNewToggle.style.display = isExisting ? "inline-flex" : "none";
+
+                if (isExisting) {
+                    manualApplicantValues = captureApplicantValues();
+                    if (clientPick && clientPick.value) {
+                        applyClientPickValues(false);
+                    } else {
+                        setClientPickError("");
+                    }
+                } else {
+                    if (clientPick) clientPick.value = "";
+                    setClientPickError("");
+                    restoreApplicantValues(manualApplicantValues);
+                    chosenClientId = null;
+                    chosenClientName = null;
+                }
+            }
+
+            btnExistingToggle?.addEventListener("click", () => setClientMode("existing"));
+            btnNewToggle?.addEventListener("click", () => setClientMode("new"));
+            clientPick?.addEventListener("change", () => applyClientPickValues(true));
+            setClientMode(clientModeEl ? clientModeEl.value : "new");
+
+            const permitRecordsRaw = Array.isArray(window.__CHAINSAW_PERMITS__) ? window.__CHAINSAW_PERMITS__ : [];
+            const permitRecordByNo = Object.create(null);
+            permitRecordsRaw.forEach((rec) => {
+                if (rec && rec.permit_no) permitRecordByNo[rec.permit_no] = rec;
+            });
+
+            const renewalPermitSelect = document.getElementById("renewalPermitSelect");
+            const renewalPermitPicker = document.getElementById("renewalPermitPicker");
+            const renewalQuickSelect = document.getElementById("renewalQuickSelect");
+            const renewalQuickSelectWrap = document.getElementById("renewalQuickSelectWrap");
+            const renewalPermitFilesWrap = document.getElementById("renewalPermitFiles");
+            const renewalPermitFilesList = document.getElementById("renewalPermitFilesList");
+
+            const remoteFileCache = Object.create(null);
+            const remoteFileFetches = Object.create(null);
+            const remoteFileFallback = Object.create(null);
+            const chainsawFileFieldMap = {
+                chainsaw_cert_terms: 'file-cert-terms',
+                chainsaw_cert_sticker: 'file-cert-sticker',
+                chainsaw_staff_work: 'file-memo',
+                chainsaw_permit_to_sell: 'file-sell-permit',
+                chainsaw_business_permit: 'file-business-permit',
+                chainsaw_old_registration: 'file-old-reg',
+            };
+
+            const isSameOriginUrl = (url) => {
+                try {
+                    return new URL(url, window.location.href).origin === window.location.origin;
+                } catch {
+                    return false;
+                }
+            };
+
+            function clearFileInput(id) {
+                const input = document.getElementById(id);
+                if (!input) return;
+                input.value = "";
+                if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
+                if (remoteFileFallback[id]) delete remoteFileFallback[id];
+                const nameEl = input.parentElement?.querySelector(".file-name");
+                if (nameEl) nameEl.textContent = "No file chosen";
+            }
+
+            function filenameFromUrl(url) {
+                try {
+                    const clean = url.split("?")[0];
+                    const parts = clean.split("/");
+                    const last = parts[parts.length - 1] || "file";
+                    return decodeURIComponent(last);
+                } catch {
+                    return "file";
+                }
+            }
+
+            function setInputFileFromRemote(input, file, url) {
+                const nameEl = input.parentElement?.querySelector(".file-name");
+                if (typeof DataTransfer !== "undefined") {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                } else if (input.id) {
+                    remoteFileFallback[input.id] = file;
+                }
+                if (input.dataset) input.dataset.loadedUrl = url || "";
+                if (nameEl) nameEl.textContent = file.name;
+            }
+
+            function attachRemoteFile(inputId, url) {
+                const input = document.getElementById(inputId);
+                if (!input) return;
+                if (!url) {
+                    clearFileInput(inputId);
+                    return;
+                }
+                const key = `${inputId}|${url}`;
+                const applyFile = (file) => setInputFileFromRemote(input, file, url);
+                if (remoteFileCache[key]) {
+                    applyFile(remoteFileCache[key]);
+                    return;
+                }
+                if (!remoteFileFetches[key]) {
+                    const fetchOpts = isSameOriginUrl(url) ? {
+                        credentials: 'include'
+                    } : {
+                        mode: 'cors',
+                        credentials: 'omit'
+                    };
+                    remoteFileFetches[key] = fetch(url, fetchOpts)
+                        .then(res => {
+                            if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+                            return res.blob();
+                        })
+                        .then(blob => {
+                            const file = new File([blob], filenameFromUrl(url), {
+                                type: blob.type || 'application/octet-stream'
+                            });
+                            remoteFileCache[key] = file;
+                            return file;
+                        })
+                        .catch(err => {
+                            console.error('Remote file load failed:', err, url);
+                            toast('Auto-attach failed for a requirement file. Open the pill link and re-upload manually.');
+                            throw err;
+                        })
+                        .finally(() => {
+                            delete remoteFileFetches[key];
+                        });
+                }
+                remoteFileFetches[key]
+                    .then(applyFile)
+                    .catch(() => {});
+            }
+
+            function resetPermitFilesView(message = 'Select a permit number to view uploads.', show = false) {
+                if (!renewalPermitFilesList) return;
+                renewalPermitFilesList.innerHTML = `<div class="renewal-cr-files__empty">${message}</div>`;
+                if (renewalPermitFilesWrap) renewalPermitFilesWrap.style.display = show ? "flex" : "none";
+            }
+
+            function renderPermitFiles(record) {
+                if (!renewalPermitFilesWrap || !renewalPermitFilesList) return;
+                const entries = record && record.files ? Object.entries(record.files).filter(([, url]) => !!url) : [];
+                if (!entries.length) {
+                    renewalPermitFilesList.innerHTML = `<div class="renewal-cr-files__empty">No previously uploaded files for this record.</div>`;
+                    renewalPermitFilesWrap.style.display = "flex";
+                    return;
+                }
+                renewalPermitFilesList.innerHTML = '';
+                entries.forEach(([key, url]) => {
+                    const pill = document.createElement('a');
+                    pill.href = url;
+                    pill.target = '_blank';
+                    pill.rel = 'noopener noreferrer';
+                    pill.className = 'renewal-cr-files__pill';
+                    const label = ({
+                        chainsaw_cert_terms: 'Terms & Conditions',
+                        chainsaw_cert_sticker: 'Registration sticker',
+                        chainsaw_staff_work: 'Staff work',
+                        chainsaw_permit_to_sell: 'Permit to sell',
+                        chainsaw_business_permit: 'Business permit',
+                        chainsaw_old_registration: 'Old registration'
+                    } [key]) || key.replace(/_/g, ' ');
+                    pill.innerHTML = `<span>${label}</span><i class="fas fa-external-link-alt"></i>`;
+                    renewalPermitFilesList.appendChild(pill);
+                });
+                renewalPermitFilesWrap.style.display = "flex";
+            }
+
+            function syncPermitFiles(record) {
+                const files = record?.files || {};
+                Object.entries(chainsawFileFieldMap).forEach(([key, inputId]) => {
+                    const input = document.getElementById(inputId);
+                    if (!input) return;
+                    clearFileInput(inputId);
+                    const url = files[key];
+                    if (url) attachRemoteFile(inputId, url);
+                });
+            }
+
+            function applyPermitRecord(record) {
+                const client = record?.client || {};
+                setValueAndDispatch(document.getElementById("first-name-r"), client.first || "");
+                setValueAndDispatch(document.getElementById("middle-name-r"), client.middle || "");
+                setValueAndDispatch(document.getElementById("last-name-r"), client.last || "");
+                const addr = record?.address || {};
+                const addrLine = addr.full || [addr.street, addr.barangay, addr.municipality, addr.province].filter(Boolean).join(", ");
+                setValueAndDispatch(document.getElementById("address-r"), addrLine || "");
+                setValueAndDispatch(document.getElementById("street-r"), addr.street || "");
+                setValueAndDispatch(document.getElementById("barangay-r"), addr.barangay || "");
+                setValueAndDispatch(document.getElementById("municipality-r"), addr.municipality || "");
+                setValueAndDispatch(document.getElementById("province-r"), addr.province || "");
+                setValueAndDispatch(document.getElementById("contact-number-r"), record?.contact_number || "");
+                setValueAndDispatch(document.getElementById("permit-number-r"), record?.permit_no || record?.stored_permit_number || "");
+                setValueAndDispatch(document.getElementById("issuance-date-r"), (record?.issued_date || '').slice(0, 10));
+                setValueAndDispatch(document.getElementById("expiry-date-r"), (record?.expiry_date || '').slice(0, 10));
+                setValueAndDispatch(document.getElementById("purpose-r"), record?.purpose || "");
+                setValueAndDispatch(document.getElementById("brand-r"), record?.brand || "");
+                setValueAndDispatch(document.getElementById("model-r"), record?.model || "");
+                setValueAndDispatch(document.getElementById("acquisition-date-r"), (record?.date_of_acquisition || '').slice(0, 10));
+                setValueAndDispatch(document.getElementById("serial-number-r"), record?.serial_number || "");
+                setValueAndDispatch(document.getElementById("horsepower-r"), record?.horsepower || "");
+                setValueAndDispatch(document.getElementById("guide-bar-length-r"), record?.guide_bar || "");
+                const declInput = document.getElementById("declaration-name");
+                const fullNameValue = [client.first, client.middle, client.last].filter(Boolean).join(" ").trim();
+                if (declInput) {
+                    setValueAndDispatch(declInput, fullNameValue || "");
+                }
+                renderPermitFiles(record);
+                syncPermitFiles(record);
+                if (record?.client_id) {
+                    chosenClientId = record.client_id;
+                    chosenClientName = {
+                        first: client.first || "",
+                        middle: client.middle || "",
+                        last: client.last || ""
+                    };
+                }
+            }
+
+            function handlePermitSelect(value) {
+                if (!value) {
+                    resetPermitFilesView();
+                    syncPermitFiles(null);
+                    return;
+                }
+                const record = permitRecordByNo[value];
+                if (!record) {
+                    toast('No saved details found for that permit number.');
+                    resetPermitFilesView('No uploads found for that permit number.', true);
+                    syncPermitFiles(null);
+                    return;
+                }
+                applyPermitRecord(record);
+            }
+
+            resetPermitFilesView();
+            renewalPermitSelect?.addEventListener("change", (e) => {
+                const value = e.target.value || "";
+                if (renewalQuickSelect && renewalQuickSelect.value !== value) {
+                    renewalQuickSelect.value = value;
+                }
+                handlePermitSelect(value);
+            });
+            renewalQuickSelect?.addEventListener("change", (e) => {
+                const value = e.target.value || "";
+                if (renewalPermitSelect) {
+                    if (renewalPermitSelect.value !== value) {
+                        renewalPermitSelect.value = value;
+                    }
+                    renewalPermitSelect.dispatchEvent(new Event("change", {
+                        bubbles: true
+                    }));
+                } else {
+                    handlePermitSelect(value);
+                }
+            });
             const btns = document.querySelectorAll(".permit-type-btn");
             const list = document.getElementById("requirementsList");
 
@@ -2290,6 +3100,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             function applyFilter(type) {
                 btns.forEach((b) => b.classList.toggle("active", b.dataset.type === type));
                 showPermitGroup(type);
+                if (clientModeToggle) clientModeToggle.style.display = type === "new" ? "" : "none";
+                if (renewalPermitPicker) renewalPermitPicker.style.display = type === "renewal" ? "" : "none";
+                if (renewalQuickSelectWrap) {
+                    renewalQuickSelectWrap.style.display = type === "renewal" ? "flex" : "none";
+                }
+                if (type !== "renewal") {
+                    if (renewalPermitSelect) renewalPermitSelect.value = "";
+                    if (renewalQuickSelect) renewalQuickSelect.value = "";
+                    handlePermitSelect("");
+                }
 
                 // filter items and sub-requirements
                 if (list) {
@@ -2312,6 +3132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.addEventListener("change", (e) => {
                 const input = e.target;
                 if (input.classList && input.classList.contains("file-input")) {
+                    if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
+                    if (remoteFileFallback[input.id]) delete remoteFileFallback[input.id];
                     const nameSpan = input.parentElement.querySelector(".file-name");
                     nameSpan.textContent = input.files && input.files[0] ? input.files[0].name : "No file chosen";
                 }
@@ -2467,6 +3289,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     fi.value = "";
                     const nameSpan = fi.parentElement?.querySelector(".file-name");
                     if (nameSpan) nameSpan.textContent = "No file chosen";
+                    if (fi.dataset && fi.dataset.loadedUrl) delete fi.dataset.loadedUrl;
+                    if (remoteFileFallback[fi.id]) delete remoteFileFallback[fi.id];
                 });
                 hasDrawn = false;
                 const sigImg = document.getElementById("signature-image");
@@ -2476,6 +3300,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if (canvas) resizeCanvas();
                 applyFilter("new");
+                if (clientPick) clientPick.value = "";
+                setClientMode("new");
+                manualApplicantValues = captureApplicantValues();
+                if (renewalPermitSelect) renewalPermitSelect.value = "";
+                handlePermitSelect("");
             }
 
             // elements
@@ -2607,6 +3436,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // PRECHECK before confirm (sync with backend decisions)
             btnSubmit?.addEventListener("click", async () => {
                 try {
+
                     const type = activePermitType();
 
                     // 1) First pass precheck
@@ -2792,7 +3622,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     resetForm();
                                 } catch (e) {
                                     console.error(e);
-                                    toast(e?.message || "Submission failed. Please try again.");
+                                    if (!e || !e.isBlocked) {
+                                        toast(e?.message || "Submission failed. Please try again.");
+                                    }
                                 } finally {
                                     loading.style.display = "none";
                                 }
@@ -2802,7 +3634,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     const handleRenewalBlock = async (json) => {
-                        if (!json || !json.block) return false;
+                        if (!json) return false;
+
+                        // server-declared block codes
                         if (json.block === "for_payment") {
                             await openModal({
                                 title: 'Payment Due',
@@ -2831,19 +3665,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             });
                             return true;
                         }
+
+                        // Special-case: missing released NEW permit (either signalled by precheck block or by flags)
+                        const flags = json.flags || {};
+                        const missingReleased = (json.block === 'need_released_new');
+                        if (missingReleased) {
+                            const act = await openModal({
+                                title: 'Action Required',
+                                html: escHtml(json.message || 'To file a renewal, the client must already have a released NEW chainsaw permit record.'),
+                                buttons: [{
+                                    text: 'Request new',
+                                    variant: 'outline',
+                                    value: 'request_new'
+                                }, {
+                                    text: 'Close',
+                                    variant: 'primary',
+                                    value: 'close'
+                                }]
+                            });
+                            if (act === 'request_new') {
+                                applyFilter('new');
+                                autofillNewFromRenewal();
+                                window.scrollTo({
+                                    top: 0,
+                                    behavior: 'smooth'
+                                });
+                            }
+                            return true;
+                        }
+
                         return false;
                     };
 
-                    if (await handleRenewalBlock(base)) return;
-
+                    // 1) Ask the user first
                     const picked = await confirmDetectedClientForRenewal(base);
                     if (picked === null) return; // user cancelled or switched to NEW
 
+                    // 2) Record the choice
                     let json = base;
                     chosenClientId = null;
                     chosenClientName = null;
+                    confirmNewClient = false;
 
-                    if (picked !== RENEWAL_TYPED) {
+                    if (picked === RENEWAL_TYPED) {
+                        // user wants to proceed with the typed details (i.e., don't force the matched client)
+                        confirmNewClient = true;
+                    } else {
+                        // user explicitly chose an existing client -> re-precheck for THAT client, then gate
                         chosenClientId = picked;
                         json = await precheckWith("renewal", picked);
                         chosenClientName = {
@@ -2851,8 +3719,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             middle: json.existing_client_middle || '',
                             last: json.existing_client_last || ''
                         };
+
+                        // Now it’s appropriate to apply hard blocks for the chosen client
                         if (await handleRenewalBlock(json)) return;
                     }
+
 
                     // Confirm submit
                     if (typeof confirmModal !== "undefined" && confirmModal) {
@@ -2879,7 +3750,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 resetForm();
                             } catch (e) {
                                 console.error(e);
-                                toast(e?.message || "Submission failed. Please try again.");
+                                if (!e || !e.isBlocked) {
+                                    toast(e?.message || "Submission failed. Please try again.");
+                                }
                             } finally {
                                 loading.style.display = "none";
                             }
@@ -2932,7 +3805,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     resetForm();
                 } catch (e) {
                     console.error(e);
-                    toast(e?.message || "Submission failed. Please try again.");
+                    if (!e || !e.isBlocked) {
+                        toast(e?.message || "Submission failed. Please try again.");
+                    }
                 } finally {
                     loading.style.display = "none";
                 }
@@ -3099,7 +3974,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // Attach files (Application letter intentionally NOT present)
-                const pick = (id) => document.getElementById(id)?.files?.[0] || null;
+                const pick = (id) => {
+                    const input = document.getElementById(id);
+                    if (!input) return remoteFileFallback[id] || null;
+                    return input.files?.[0] || remoteFileFallback[id] || null;
+                };
 
                 if (type === "new") {
                     const files = {
@@ -3146,6 +4025,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const text = await res.text();
                     throw new Error(`HTTP ${res.status} – ${text.slice(0, 200)}`);
                 }
+
+                // If the server responds with a structured block (e.g. need_released_new), show the modal and surface a handled error
+                if (json && json.block === 'need_released_new') {
+                    const act = await openModal({
+                        title: 'Action Required',
+                        html: escHtml(json.message || 'To file a renewal, the client must already have a released NEW chainsaw permit record.'),
+                        buttons: [{
+                            text: 'Request new',
+                            variant: 'outline',
+                            value: 'request_new'
+                        }, {
+                            text: 'Close',
+                            variant: 'primary',
+                            value: 'close'
+                        }]
+                    });
+                    if (act === 'request_new') {
+                        applyFilter('new');
+                        autofillNewFromRenewal();
+                        window.scrollTo({
+                            top: 0,
+                            behavior: 'smooth'
+                        });
+                    }
+                    const err = new Error(json.message || 'Blocked');
+                    err.isBlocked = true;
+                    throw err;
+                }
+
                 if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
             }
 
@@ -3323,8 +4231,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const v = el?.value?.trim() || "";
                 clrErr(el);
                 if (blank(v)) return setErr(el, "Required.");
-                const opts = qa("#barangayList option").map((o) => o.value.trim().toLowerCase());
-                if (opts.length && !opts.includes(v.toLowerCase())) return setErr(el, "Use list.");
                 return true;
             };
             const vMunicipNew = (sel) => {
@@ -3415,7 +4321,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const v = el?.value?.trim() || "";
                 clrErr(el);
                 if (blank(v)) return setErr(el, "Required.");
-                if (v.length < 6) return setErr(el, "Too short.");
                 return true;
             };
             const vIssExp = (iss, exp) => {
@@ -3611,10 +4516,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // file quick checks
                 qa("input[type='file']").forEach((inp) => {
                     inp.addEventListener("change", async () => {
-                        if (!inp.files || !inp.files[0]) return;
-                        const id = inp.id,
-                            f = inp.files[0];
+                        const id = inp.id;
                         clrErr(inp);
+                        const f = inp.files?.[0];
+                        if (!f) {
+                            const msg = id === "file-cert-sticker" || id === "file-geo" ? "Upload image." : "Upload file.";
+                            setErr(inp, msg);
+                            return;
+                        }
                         const over = (sz, mb) => sz > mb * 1024 * 1024 ? setErr(inp, `Max ${mb}MB.`) : true;
                         if (id === "file-cert-terms" || id === "file-memo") {
                             if (!okType(f, "pdf,doc,docx")) setErr(inp, "PDF/DOC/DOCX only.");

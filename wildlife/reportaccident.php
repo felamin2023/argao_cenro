@@ -133,7 +133,7 @@ try {
     $unreadWildlife = 0;
 }
 
-session_start();
+// session_start();
 
 // Must be logged in AND an Admin
 if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'admin') {

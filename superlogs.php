@@ -16,7 +16,7 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 
 require_once __DIR__ . '/backend/connection.php'; // must expose $pdo (PDO instance)
 
-$current_page = basename(__FILE__); // avoid undefined notice in the header markup
+$current_page = basename(__FILE__);
 $user_id = (string)$_SESSION['user_id'];
 
 // Verify department (CENRO)
@@ -43,11 +43,11 @@ try {
     exit();
 }
 
-// =================== Notifications AJAX (same as superhome) ===================
+// =================== Notifications AJAX ===================
 $notifs = [];
 $unreadCount = 0;
 
-if (isset($_GET['ajax'])) {
+if (isset($_GET['ajax']) && $_GET['ajax'] !== 'logs') {
     header('Content-Type: application/json; charset=utf-8');
     if (empty($_SESSION['user_id'])) {
         echo json_encode(['success' => false, 'error' => 'Unauthorized']);
@@ -57,9 +57,9 @@ if (isset($_GET['ajax'])) {
     try {
         if ($_GET['ajax'] === 'mark_all_read') {
             $u = $pdo->prepare('
-                update public.notifications
-                set is_read = true
-                where lower("to") = :to and (is_read is null or is_read = false)
+                UPDATE public.notifications
+                SET is_read = true
+                WHERE lower("to") = :to AND (is_read IS NULL OR is_read = false)
             ');
             $u->execute([':to' => 'cenro']);
             echo json_encode(['success' => true]);
@@ -70,12 +70,12 @@ if (isset($_GET['ajax'])) {
             $nid = $_GET['notif_id'] ?? '';
             if (!$nid) {
                 echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
-                exit;
+                exit();
             }
             $u = $pdo->prepare('
-                update public.notifications
-                set is_read = true
-                where notif_id = :nid and lower("to") = :to
+                UPDATE public.notifications
+                SET is_read = true
+                WHERE notif_id = :nid AND lower("to") = :to
             ');
             $u->execute([':nid' => $nid, ':to' => 'cenro']);
             echo json_encode(['success' => true]);
@@ -93,7 +93,7 @@ if (isset($_GET['ajax'])) {
 // =================== Load notifications for CENRO ===================
 try {
     $ns = $pdo->prepare('
-        select
+        SELECT
             notif_id,
             "from",
             "to",
@@ -101,10 +101,10 @@ try {
             is_read,
             created_at,
             reqpro_id
-        from public.notifications
-        where lower("to") = :to
-        order by created_at desc
-        limit 30
+        FROM public.notifications
+        WHERE lower("to") = :to
+        ORDER BY created_at DESC
+        LIMIT 30
     ');
     $ns->execute([':to' => 'cenro']);
     $notifs = $ns->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -119,15 +119,26 @@ try {
     $unreadCount = 0;
 }
 
-// Optional helper (same as superhome)
-function time_elapsed_string($datetime, $full = false)
+// ========= Helper: time-ago in Asia/Manila =========
+function time_elapsed_string($dbValue, $full = false): string
 {
-    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
-    $diff = $now->diff($ago);
+    $tz = new DateTimeZone('Asia/Manila');
+    try {
+        $dt = new DateTimeImmutable((string)$dbValue);
+        if (!$dt->getTimezone()) {
+            $dt = new DateTimeImmutable((string)$dbValue, new DateTimeZone('UTC'));
+        }
+    } catch (Throwable $e) {
+        return 'just now';
+    }
 
-    $weeks = (int)floor($diff->d / 7);
-    $days  = $diff->d % 7;
+    $now = new DateTimeImmutable('now', $tz);
+    $ago = $dt->setTimezone($tz);
+    if ($ago > $now) return 'just now';
+
+    $diff = $now->diff($ago);
+    $weeks = intdiv($diff->d, 7);
+    $days  = $diff->d - ($weeks * 7);
 
     $map = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
     $parts = [];
@@ -139,22 +150,124 @@ function time_elapsed_string($datetime, $full = false)
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
 
-// =================== Load admin activity logs ===================
-$logRows = [];
-try {
-    $ls = $pdo->prepare('
-        SELECT l.id, l.admin_user_id, l.admin_department, l.action, l.details, l.created_at,
-               u.first_name, u.last_name
+// =================== AJAX: fetch logs (HTML fragment) ===================
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'logs') {
+    $q = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+    $actionFilter = isset($_GET['action']) ? trim((string)$_GET['action']) : '';
+
+    $where = [];
+    $params = [];
+
+    if ($q !== '') {
+        $where[] = "( (COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')) ILIKE :q
+                     OR l.action ILIKE :q
+                     OR l.details ILIKE :q )";
+        $params[':q'] = '%' . $q . '%';
+    }
+    if ($actionFilter !== '' && strtolower($actionFilter) !== 'all') {
+        $where[] = "l.action = :action";
+        $params[':action'] = $actionFilter;
+    }
+
+    $sql = '
+        SELECT l.id,
+               l.admin_user_id,
+               l.admin_department,
+               l.action,
+               l.details,
+               l.created_at,
+               u.first_name,
+               u.last_name
         FROM public.admin_activity_logs l
         LEFT JOIN public.users u ON u.user_id = l.admin_user_id
-        ORDER BY l.created_at DESC
-        LIMIT 100
-    ');
-    $ls->execute();
+    ';
+    if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
+    $sql .= ' ORDER BY l.created_at DESC LIMIT 100';
+
+    try {
+        $ls = $pdo->prepare($sql);
+        $ls->execute($params);
+        $rows = $ls->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        error_log('[SUPERLOGS AJAX logs] ' . $e->getMessage());
+        $rows = [];
+    }
+
+    // Return HTML fragment for <tbody>
+    ob_start();
+    if (!$rows) {
+        echo '<tr><td colspan="5">No activity logs found.</td></tr>';
+    } else {
+        foreach ($rows as $lr) {
+            $adminName = trim((string)($lr['first_name'] ?? '')) ?: (string)($lr['admin_user_id'] ?? '');
+            $action = htmlspecialchars((string)($lr['action'] ?? ''), ENT_QUOTES);
+            $details = htmlspecialchars((string)($lr['details'] ?? ''), ENT_QUOTES);
+            $ts = htmlspecialchars((string)($lr['created_at'] ?? ''), ENT_QUOTES);
+            echo '<tr>';
+            echo '<td>' . htmlspecialchars($adminName, ENT_QUOTES) . '</td>';
+            echo '<td><span class="log-action">' . $action . '</span></td>';
+            echo '<td>' . $details . '</td>';
+            echo '<td>' . $ts . '</td>';
+            echo '</tr>';
+        }
+    }
+    $html = ob_get_clean();
+    header('Content-Type: text/html; charset=utf-8');
+    echo $html;
+    exit;
+}
+
+// =================== Initial page render (supports direct link with GET) ===================
+$q = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+$actionFilter = isset($_GET['action']) ? trim((string)$_GET['action']) : '';
+
+$where = [];
+$params = [];
+
+if ($q !== '') {
+    $where[] = "( (COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')) ILIKE :q
+                 OR l.action ILIKE :q
+                 OR l.details ILIKE :q )";
+    $params[':q'] = '%' . $q . '%';
+}
+if ($actionFilter !== '' && strtolower($actionFilter) !== 'all') {
+    $where[] = "l.action = :action";
+    $params[':action'] = $actionFilter;
+}
+
+$sql = '
+    SELECT l.id,
+           l.admin_user_id,
+           l.admin_department,
+           l.action,
+           l.details,
+           l.created_at,
+           u.first_name,
+           u.last_name
+    FROM public.admin_activity_logs l
+    LEFT JOIN public.users u ON u.user_id = l.admin_user_id
+';
+if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
+$sql .= ' ORDER BY l.created_at DESC LIMIT 100';
+
+$logRows = [];
+try {
+    $ls = $pdo->prepare($sql);
+    $ls->execute($params);
     $logRows = $ls->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
     error_log('[SUPERLOGS LOAD] ' . $e->getMessage());
     $logRows = [];
+}
+
+// ✅ Always populate actions from the TABLE (distinct), not from displayed rows
+$allActions = [];
+try {
+    $as = $pdo->query("SELECT DISTINCT action FROM public.admin_activity_logs WHERE action IS NOT NULL AND action <> '' ORDER BY action ASC");
+    $allActions = $as->fetchAll(PDO::FETCH_COLUMN) ?: [];
+} catch (Throwable $e) {
+    error_log('[SUPERLOGS ACTIONS] ' . $e->getMessage());
+    $allActions = [];
 }
 ?>
 <!DOCTYPE html>
@@ -179,7 +292,6 @@ try {
             --as-trans: all .2s ease;
         }
 
-        /* bell icon container */
         .as-item {
             position: relative;
         }
@@ -208,7 +320,6 @@ try {
             font-size: 1.3rem;
         }
 
-        /* dropdown shell */
         .as-dropdown-menu {
             position: absolute;
             top: calc(100% + 10px);
@@ -232,7 +343,6 @@ try {
             transform: translateY(0);
         }
 
-        /* notifications panel */
         .as-notifications {
             min-width: 350px;
             max-height: 500px;
@@ -268,7 +378,6 @@ try {
             transform: scale(1.05);
         }
 
-        /* 🔽 the scrolling list wrapper (this holds the records) */
         .notifcontainer {
             height: 380px;
             overflow-y: auto;
@@ -290,10 +399,6 @@ try {
             background: rgba(43, 102, 37, .05);
         }
 
-        .as-notif-item:hover {
-            background: #f9f9f9;
-        }
-
         .as-notif-link {
             display: flex;
             align-items: flex-start;
@@ -301,11 +406,6 @@ try {
             text-decoration: none;
             color: inherit;
             width: 100%;
-        }
-
-        .as-notif-icon {
-            color: var(--as-primary);
-            font-size: 1.2rem;
         }
 
         .as-notif-title {
@@ -324,6 +424,80 @@ try {
             color: #999;
             font-size: .8rem;
             margin-top: 4px;
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-filter {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 10px;
+        }
+
+        .search-input {
+            padding: 10px 12px 10px 32px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            min-width: 260px;
+        }
+
+        .filter-dropdown select {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .logs-table th,
+        .logs-table td {
+            border-bottom: 1px solid #eee;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .log-action {
+            background: #eef7ee;
+            color: #2b6625;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: .85rem;
         }
 
         .as-notif-footer {
@@ -345,22 +519,6 @@ try {
         .as-view-all:hover {
             text-decoration: underline;
         }
-
-        .as-badge {
-            position: absolute;
-            top: 2px;
-            right: 8px;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: #ff4757;
-            color: #fff;
-            font-size: 12px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
     </style>
 </head>
 
@@ -373,39 +531,18 @@ try {
             </a>
         </div>
 
-        <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
-            <i class="fas fa-bars"></i>
-        </button>
+        <button class="mobile-toggle"><i class="fas fa-bars"></i></button>
 
-
-        <!-- Navigation on the right -->
         <div class="nav-container">
-            <!-- Dashboard Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon active">
-                    <i class="fas fa-bars"></i>
-                </div>
+                <div class="nav-icon active"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-
                     <a href="superlogs.php" class="dropdown-item active-page">
                         <i class="fas fa-user-shield" style="color: white;"></i>
                         <span>Admin Logs</span>
                     </a>
-
-
                 </div>
             </div>
-
-
-            <!-- Messages Icon -->
-            <!-- <div class="nav-item">
-                <div class="nav-icon">
-                    <a href="supermessage.php">
-                        <i class="fas fa-envelope" style="color: black;"></i>
-                    </a>
-                </div>
-            </div> -->
 
             <!-- Notifications -->
             <div class="as-item">
@@ -431,15 +568,17 @@ try {
                                 </div>
                             </div>
                             <?php else: foreach ($notifs as $n):
-                                $unread  = empty($n['is_read']);
-                                $ts      = !empty($n['created_at']) ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $fromVal = (string)($n['from'] ?? '');
+                                $unread   = empty($n['is_read']);
+                                try {
+                                    $tsObj = new DateTime((string)($n['created_at'] ?? 'now'));
+                                } catch (Throwable $e) {
+                                    $tsObj = new DateTime('now');
+                                }
+                                $ts = $tsObj->getTimestamp();
+
+                                $fromVal  = (string)($n['from'] ?? '');
                                 $reqproId = $n['reqpro_id'] ?? '';
 
-                                // ✅ Title rules:
-                                // - if from === "Register request"  -> "Registration"
-                                // - if from looks like a UUID       -> "Profile update"
-                                // - else                            -> "Notification"
                                 $title = (function ($fv) {
                                     $fv = trim((string)$fv);
                                     if (preg_match('/^register request$/i', $fv)) return 'Registration';
@@ -453,6 +592,8 @@ try {
                                     $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
                                     return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
                                 })($n['message'] ?? '');
+
+                                $timeAgo = time_elapsed_string($n['created_at']);
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"
@@ -463,23 +604,23 @@ try {
                                         <div class="as-notif-content">
                                             <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
-                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">
+                                                <?= htmlspecialchars($timeAgo, ENT_QUOTES) ?>
+                                            </div>
                                         </div>
                                     </a>
                                 </div>
                         <?php endforeach;
                         endif; ?>
-
-
                     </div>
 
                     <div class="as-notif-footer">
-                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
+                        <a href="supernotif.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
 
-            <!-- Profile Dropdown -->
+            <!-- Profile -->
             <div class="nav-item dropdown">
                 <div class="nav-icon <?php echo $current_page === 'treeprofile.php' ? 'active' : ''; ?>">
                     <i class="fas fa-user-circle"></i>
@@ -502,19 +643,29 @@ try {
     <div class="main-content">
         <div class="page-header">
             <h1 class="page-title">Admin Activity Logs</h1>
-            <div class="search-filter">
+
+            <!-- 🔎 Live search (no buttons) -->
+            <div class="search-filter" id="liveFilterBar">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
-                    <input type="text" placeholder="Search logs...">
+                    <input
+                        id="logSearchInput"
+                        class="search-input"
+                        type="text"
+                        placeholder="Search logs by name/action/details…"
+                        value="<?= htmlspecialchars($q, ENT_QUOTES) ?>"
+                        autocomplete="off" />
                 </div>
+
                 <div class="filter-dropdown">
-                    <select>
-                        <option>All Actions</option>
-                        <option>Logins</option>
-                        <option>Logouts</option>
-                        <option>User Creation</option>
-                        <option>Data Updates</option>
-                        <option>Data Deletion</option>
+                    <select name="action" id="actionSelect">
+                        <option value="all" <?= ($actionFilter === '' || strtolower($actionFilter) === 'all') ? 'selected' : '' ?>>All Actions</option>
+                        <?php foreach ($allActions as $a): ?>
+                            <option value="<?= htmlspecialchars($a, ENT_QUOTES) ?>"
+                                <?= ($actionFilter === $a) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($a, ENT_QUOTES) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
             </div>
@@ -530,22 +681,22 @@ try {
                         <th>Timestamp</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="logsTbody">
                     <?php if (empty($logRows)): ?>
                         <tr>
                             <td colspan="5">No activity logs found.</td>
                         </tr>
                         <?php else: foreach ($logRows as $lr):
                             $adminName = trim((string)($lr['first_name'] ?? '')) ?: (string)($lr['admin_user_id'] ?? '');
-                            $action = htmlspecialchars((string)($lr['action'] ?? ''), ENT_QUOTES);
-                            $details = htmlspecialchars((string)($lr['details'] ?? ''), ENT_QUOTES);
-                            $ts = htmlspecialchars((string)($lr['created_at'] ?? ''), ENT_QUOTES);
+                            $action = (string)($lr['action'] ?? '');
+                            $details = (string)($lr['details'] ?? '');
+                            $ts = (string)($lr['created_at'] ?? '');
                         ?>
                             <tr>
                                 <td><?= htmlspecialchars($adminName, ENT_QUOTES) ?></td>
-                                <td><span class="log-action"><?= $action ?></span></td>
-                                <td><?= $details ?></td>
-                                <td><?= $ts ?></td>
+                                <td><span class="log-action"><?= htmlspecialchars($action, ENT_QUOTES) ?></span></td>
+                                <td><?= htmlspecialchars($details, ENT_QUOTES) ?></td>
+                                <td><?= htmlspecialchars($ts, ENT_QUOTES) ?></td>
                             </tr>
                     <?php endforeach;
                     endif; ?>
@@ -553,13 +704,13 @@ try {
             </table>
         </div>
 
-        <div class="pagination">
-            <button><i class="fas fa-angle-left"></i></button>
-            <button class="active">1</button>
-            <button>2</button>
-            <button>3</button>
-            <button><i class="fas fa-angle-right"></i></button>
-        </div>
+        <!-- <div class="pagination">
+            <button type="button"><i class="fas fa-angle-left"></i></button>
+            <button type="button" class="active">1</button>
+            <button type="button">2</button>
+            <button type="button">3</button>
+            <button type="button"><i class="fas fa-angle-right"></i></button>
+        </div> -->
     </div>
 
     <script>
@@ -567,120 +718,131 @@ try {
             // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
+            if (mobileToggle) mobileToggle.addEventListener('click', () => navContainer.classList.toggle('active'));
 
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    navContainer.classList.toggle('active');
-                });
-            }
-
-            // Improved dropdown functionality
+            // Dropdown show/hide
             const dropdowns = document.querySelectorAll('.dropdown');
-
             dropdowns.forEach(dropdown => {
-                const toggle = dropdown.querySelector('.nav-icon');
                 const menu = dropdown.querySelector('.dropdown-menu');
 
-                // Show menu on hover
                 dropdown.addEventListener('mouseenter', () => {
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') ?
-                        'translateX(-50%) translateY(0)' :
-                        'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
                 });
 
-                // Hide menu when leaving both button and menu
                 dropdown.addEventListener('mouseleave', (e) => {
-                    // Check if we're leaving the entire dropdown area
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ?
-                            'translateX(-50%) translateY(10px)' :
-                            'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
                     }
                 });
 
-                // Additional check for menu mouseleave
                 menu.addEventListener('mouseleave', (e) => {
                     if (!dropdown.contains(e.relatedTarget)) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ?
-                            'translateX(-50%) translateY(10px)' :
-                            'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
                     }
                 });
             });
 
-            // Close dropdowns when clicking outside (for mobile)
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-menu').forEach(menu => {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ?
-                            'translateX(-50%) translateY(10px)' :
-                            'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
                     });
                 }
             });
 
-            // Mobile dropdown toggle
-            if (window.innerWidth <= 992) {
-                dropdowns.forEach(dropdown => {
-                    const toggle = dropdown.querySelector('.nav-icon');
-                    const menu = dropdown.querySelector('.dropdown-menu');
+            // ===== Live logs filtering (no buttons) =====
+            const input = document.getElementById('logSearchInput');
+            const actionSelect = document.getElementById('actionSelect');
+            const tbody = document.getElementById('logsTbody');
 
-                    toggle.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-
-                        // Close other dropdowns
-                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) {
-                                otherMenu.style.display = 'none';
-                            }
-                        });
-
-                        // Toggle current dropdown
-                        if (menu.style.display === 'block') {
-                            menu.style.display = 'none';
-                        } else {
-                            menu.style.display = 'block';
+            function fetchLogs() {
+                const q = (input?.value || '').trim();
+                const action = actionSelect?.value || 'all';
+                const url = `?ajax=logs&q=${encodeURIComponent(q)}&action=${encodeURIComponent(action)}`;
+                fetch(url, {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
                         }
-                    });
-                });
+                    })
+                    .then(r => r.text())
+                    .then(html => {
+                        tbody.innerHTML = html;
+                    })
+                    .catch(() => {});
             }
 
-            // Mark all notifications as read
-            const markAllRead = document.querySelector('.mark-all-read');
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                        item.classList.remove('unread');
-                    });
-                    document.querySelector('.badge').style.display = 'none';
+            // Debounce typing
+            let t = null;
+
+            function onType() {
+                clearTimeout(t);
+                t = setTimeout(fetchLogs, 300);
+            }
+
+            if (input) {
+                input.addEventListener('input', onType);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') e.preventDefault();
                 });
+            }
+            if (actionSelect) {
+                actionSelect.addEventListener('change', fetchLogs);
             }
         });
     </script>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Mark all (uses the PHP ?ajax=mark_all_read handler above)
+            // Live "time ago" updater for notification dropdown
+            function fmtAgoFromSeconds(diff) {
+                if (diff < 1) return 'just now';
+                const units = [
+                    [365 * 24 * 3600, 'year'],
+                    [30 * 24 * 3600, 'month'],
+                    [7 * 24 * 3600, 'week'],
+                    [24 * 3600, 'day'],
+                    [3600, 'hour'],
+                    [60, 'minute'],
+                    [1, 'second']
+                ];
+                for (const [sec, label] of units) {
+                    const v = Math.floor(diff / sec);
+                    if (v >= 1) return `${v} ${label}${v > 1 ? 's' : ''} ago`;
+                }
+                return 'just now';
+            }
+
+            function refreshTimes() {
+                const now = Math.floor(Date.now() / 1000);
+                document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                    const ts = parseInt(el.getAttribute('data-ts') || '0', 10);
+                    if (!Number.isFinite(ts) || ts <= 0) return;
+                    const diff = now - ts;
+                    el.textContent = fmtAgoFromSeconds(diff < 0 ? 0 : diff);
+                });
+            }
+
+            refreshTimes();
+            setInterval(refreshTimes, 60 * 1000);
+
             const markAll = document.getElementById('asMarkAllRead');
             if (markAll) {
                 markAll.addEventListener('click', (e) => {
                     e.preventDefault();
                     fetch('?ajax=mark_all_read', {
-                            method: 'POST',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        })
-                        .finally(() => location.reload());
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).finally(() => location.reload());
                 });
             }
 
@@ -698,7 +860,6 @@ try {
                 const fromVal = (link.dataset.from || '').trim();
                 const reqproId = (link.dataset.reqproId || '').trim();
 
-                // mark read (server checks "to" = cenro)
                 fetch('?ajax=mark_read&notif_id=' + encodeURIComponent(notifId), {
                     method: 'POST',
                     headers: {
@@ -706,7 +867,6 @@ try {
                     }
                 }).catch(() => {});
 
-                // route
                 let url = 'superhome.php';
                 if (/^register request$/i.test(fromVal)) {
                     url = 'superhome.php';

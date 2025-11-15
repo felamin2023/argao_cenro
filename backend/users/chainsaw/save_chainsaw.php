@@ -115,6 +115,26 @@ try {
     $horsepower          = trim($_POST['horsepower']           ?? '');
     $max_guide           = trim($_POST['maximum_length_of_guide_bar'] ?? '');
 
+    $commonRequiredFiles = [
+        'chainsaw_cert_terms'   => 'Certificate of Chainsaw Registration (terms)',
+        'chainsaw_cert_sticker' => 'Certificate of Chainsaw Registration (sticker)',
+        'chainsaw_staff_work'   => 'Staff work certificate',
+        'geo_photos'            => 'GPS photo(s)',
+    ];
+    $typeRequiredFiles = $permit_type === 'new'
+        ? [
+            'chainsaw_permit_to_sell'  => 'Permit to Sell certificate',
+            'chainsaw_business_permit' => 'Business permit',
+        ]
+        : [
+            'chainsaw_old_registration' => 'Old chainsaw registration',
+        ];
+    foreach ($commonRequiredFiles + $typeRequiredFiles as $input => $label) {
+        if (empty($_FILES[$input]['tmp_name']) || !is_uploaded_file($_FILES[$input]['tmp_name'])) {
+            throw new Exception("Missing required upload: {$label}.");
+        }
+    }
+
     // NEW: optional override/force flags coming from precheck flow
     $override_client_id = trim((string)($_POST['use_existing_client_id'] ?? ''));
     $force_new_client = false;
@@ -156,10 +176,19 @@ try {
         $chk = $pdo->prepare("SELECT client_id FROM public.client WHERE client_id::text = :cid LIMIT 1");
         $chk->execute([':cid' => $override_client_id]);
         $client_id = $chk->fetchColumn() ?: null;
+
         if (!$client_id) {
-            throw new Exception('Selected client does not exist.');
+            if ($permit_type === 'new') {
+                // Be permissive for NEW: ignore the bad id and proceed to create a brand-new client.
+                $client_id = null;
+                $force_new_client = true;
+            } else {
+                // For RENEWAL, still block because you must pick a real existing client.
+                throw new Exception('Selected client does not exist.');
+            }
         }
     }
+
 
     // 2) Otherwise, search for an exact match by name
     $existing_client_id = null;
@@ -276,6 +305,26 @@ try {
             // You can include the date in the message if you want:
             // $nextExpiry ? " (expires on {$nextExpiry})" : ""
             throw new Exception('You still have an unexpired chainsaw permit. Please wait until it expires before requesting a renewal.');
+        }
+        // SERVER-SIDE GUARD: require an existing RELEASED NEW chainsaw approval to file a renewal
+        $chk = $pdo->prepare("SELECT 1 FROM public.approval
+        WHERE client_id = :cid
+          AND lower(request_type) = 'chainsaw'
+          AND lower(approval_status) = 'released'
+          AND lower(permit_type) = 'new'
+        LIMIT 1");
+        $chk->execute([':cid' => $client_id]);
+        $hasReleasedNew = (bool)$chk->fetchColumn();
+        if (!$hasReleasedNew) {
+            // rollback any partial work and return a structured block response the frontend can use
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            http_response_code(400);
+            echo json_encode([
+                'ok' => false,
+                'block' => 'need_released_new',
+                'message' => 'To file a renewal, the client must already have a released NEW chainsaw permit record.'
+            ]);
+            exit;
         }
     } else { // NEW
         if (!empty($hasPendingNew)) {

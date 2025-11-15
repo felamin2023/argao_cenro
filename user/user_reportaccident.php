@@ -381,7 +381,7 @@ try {
 </head>
 
 <body>
-    <!-- Loading overlay (replaced with your loader) -->
+    <!-- Loading overlay (kept) -->
     <div id="loadingIndicator" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:9998">
         <div class="card" style="background:#fff;padding:18px 22px;border-radius:10px;display:flex;gap:10px;align-items:center;">
             <span class="loader" style="width:var(--loader-size);height:var(--loader-size);border:2px solid #ddd;border-top-color:#2b6625;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite;"></span>
@@ -395,24 +395,45 @@ try {
 
         @keyframes spin {
             from {
-                transform: rotate(0deg);
+                transform: rotate(0)
             }
 
             to {
-                transform: rotate(360deg);
+                transform: rotate(360deg)
             }
+        }
+
+        /* Small helpers for the new location row */
+        .loc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        @media (min-width: 900px) {
+            .loc-grid {
+                grid-template-columns: 1.2fr 1fr 1fr 0.8fr;
+            }
+        }
+
+        .hint {
+            font-size: .85rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .hidden {
+            display: none !important;
         }
     </style>
 
-
-    <!-- ✅ Standard Green Header (active = Report Incident) -->
+    <!-- Header (kept) -->
     <header class="as-header">
         <div class="as-logo">
             <a href="user_home.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
 
         <div class="as-nav">
-            <!-- App menu -->
             <div class="as-item">
                 <div class="as-icon"><i class="fas fa-bars"></i></div>
                 <div class="as-dropdown-menu as-center">
@@ -429,7 +450,7 @@ try {
                 </div>
             </div>
 
-            <!-- Notifications -->
+            <!-- Notifications (kept) -->
             <div class="as-item">
                 <div class="as-icon">
                     <i class="fas fa-bell"></i>
@@ -485,7 +506,7 @@ try {
                 </div>
             </div>
 
-            <!-- Profile -->
+            <!-- Profile (kept) -->
             <div class="as-item">
                 <div class="as-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="as-dropdown-menu">
@@ -496,7 +517,7 @@ try {
         </div>
     </header>
 
-    <!-- Toast -->
+    <!-- Toast (kept) -->
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%);
     background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999;
     box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;">
@@ -513,13 +534,6 @@ try {
                         <label for="who">WHO</label>
                         <input type="text" id="who" name="who" required>
                     </div>
-                    <div class="form-group">
-                        <label for="where">WHERE</label>
-                        <input type="text" id="where" name="where" required>
-                    </div>
-                </div>
-
-                <div class="form-row">
                     <div class="form-group one-third">
                         <label for="contact">CONTACT NO:</label>
                         <input type="text" id="contact" name="contact" required>
@@ -528,13 +542,54 @@ try {
                         <label for="when">WHEN</label>
                         <input type="datetime-local" id="when" name="when" required>
                     </div>
-                    <div class="form-group one-third">
-                        <label for="why">WHY</label>
-                        <input type="text" id="why" name="why" required>
+
+                    <!-- 🔁 WHERE now split into Cebu-only structured fields
+                         We still submit a single text via hidden #where -->
+
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>WHERE (Cebu)</label>
+
+                        <!-- hidden final value (what backend expects) -->
+                        <input type="hidden" id="where" name="where" required>
+
+                        <div class="loc-grid">
+                            <!-- Sitio/Street (optional but recommended) -->
+                            <div>
+                                <label for="loc_sitio" style="font-weight:600">Sitio / Street</label>
+                                <input type="text" id="loc_sitio" placeholder="e.g., Sitio Kawayan, Purok 2">
+                                <div class="hint">Optional but helps responders</div>
+                            </div>
+
+                            <!-- Barangay (select or fallback input) -->
+                            <div>
+                                <label for="loc_barangay_select" style="font-weight:600">Barangay<span style="color:#d93025">*</span></label>
+                                <select id="loc_barangay_select" class="loc-control"></select>
+                                <input type="text" id="loc_barangay_input" class="hidden" placeholder="Type barangay">
+                                <div class="hint">Auto-filled when we know the list</div>
+                            </div>
+
+                            <!-- Municipality / City -->
+                            <div>
+                                <label for="loc_muni" style="font-weight:600">Municipality / City<span style="color:#d93025">*</span></label>
+                                <select id="loc_muni" required></select>
+                                <!-- <div class="hint">Cebu province only</div> -->
+                            </div>
+
+                            <!-- Province fixed -->
+                            <div>
+                                <label for="loc_prov" style="font-weight:600">Province</label>
+                                <input type="text" id="loc_prov" value="Cebu" readonly>
+                            </div>
+                        </div>
+
+                        <div class="hint" id="locCombinedPreview" style="margin-top:6px"></div>
                     </div>
                 </div>
 
-                <!-- Photos -->
+
+                <!-- Photos (kept) -->
                 <div class="form-row">
                     <div class="form-group full-width">
                         <label>UPLOAD PHOTOS (Max 5):</label>
@@ -560,11 +615,16 @@ try {
                 <div class="form-row">
                     <div class="form-group full-width">
                         <label for="what">WHAT</label>
-                        <textarea id="what" name="what" style="height: 100px; text-align: start;" required></textarea>
+                        <textarea id="what" name="what" style="height: 100px; resize: none; text-align: start;" required></textarea>
                     </div>
+                    <div class="form-group one-third">
+                        <label for="why">WHY</label>
+                        <textarea type="text" id="why" style="height: 130px; resize: none;" name="why" required></textarea>
+                    </div>
+
                     <div class="form-group full-width">
                         <label for="description">MORE DESCRIPTION OF INCIDENT:</label>
-                        <textarea id="description" name="description" style="height: 130px;" required></textarea>
+                        <textarea id="description" name="description" style="height: 130px; resize: none;" required></textarea>
                     </div>
                 </div>
 
@@ -579,7 +639,7 @@ try {
             </form>
         </div>
 
-        <!-- Records (optional list; keep if you load $reports) -->
+        <!-- Records (kept) -->
         <div class="records-container" id="recordsContainer">
             <h3 class="records-title">INCIDENT REPORTS</h3>
             <table class="records-table">
@@ -608,12 +668,11 @@ try {
                     <?php endforeach;
                     endif; ?>
                 </tbody>
-
             </table>
         </div>
     </div>
 
-    <!-- Header JS: time-ago, mark read, click routing -->
+    <!-- Header JS (kept) -->
     <script>
         (function() {
             function timeAgo(seconds) {
@@ -689,7 +748,7 @@ try {
         })();
     </script>
 
-    <!-- Page JS (your original logic kept) -->
+    <!-- Page JS -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.getElementById("incidentForm");
@@ -698,23 +757,116 @@ try {
             const cancelBtn = document.getElementById("cancelSubmit");
             const notification = document.getElementById("profile-notification");
 
+            /* ======== NEW: Cebu-only location logic ======== */
+            const PROVINCE = 'Cebu';
+            const muniEl = document.getElementById('loc_muni');
+            const brgySel = document.getElementById('loc_barangay_select');
+            const brgyInp = document.getElementById('loc_barangay_input');
+            const sitioEl = document.getElementById('loc_sitio');
+            const provEl = document.getElementById('loc_prov');
+            const whereHidden = document.getElementById('where');
+            const preview = document.getElementById('locCombinedPreview');
+
+            // Complete list of Cebu cities/municipalities
+            const MUNICIPALITIES = [
+                'Alcantara', 'Alcoy', 'Alegria', 'Aloguinsan', 'Argao', 'Asturias', 'Badian', 'Balamban', 'Bantayan', 'Barili',
+                'Boljoon', 'Borbon', 'Carcar City', 'Carmen', 'Catmon', 'Cebu City', 'Compostela', 'Consolacion', 'Cordova', 'Daanbantayan',
+                'Dalaguete', 'Danao City', 'Dumanjug', 'Ginatilan', 'Lapu-Lapu City', 'Liloan', 'Madridejos', 'Malabuyoc', 'Mandaue City', 'Medellin',
+                'Minglanilla', 'Moalboal', 'Naga City', 'Oslob', 'Pilar', 'Pinamungahan', 'Poro', 'Ronda', 'Samboan', 'San Fernando',
+                'San Francisco', 'San Remigio', 'Santa Fe', 'Santander', 'Sibonga', 'Sogod', 'Tabogon', 'Tabuelan', 'Talisay City', 'Toledo City',
+                'Tuburan', 'Tudela', 'Bogo City'
+            ];
+
+            // Small built-in samples; full list will be loaded if JSON exists
+            let BARANGAYS_BY_MUNI = {
+                'Argao': ['Langtad', 'Tulic', 'Talo-ot', 'Canbanua', 'Poblacion', 'Balaas'],
+                'Cebu City': ['Lahug', 'Guadalupe', 'Mabolo', 'Basak San Nicolas', 'Ermita', 'Sambag I', 'Zapatera'],
+                'Lapu-Lapu City': ['Gun-ob', 'Pajo', 'Pusok', 'Mactan', 'Bankal', 'Basak'],
+                'Mandaue City': ['Banilad', 'Basak', 'Ibabao-Estancia', 'Tipolo', 'Cambaro']
+            };
+
+            // Try to load a full barangay map if available (optional)
+            (async () => {
+                try {
+                    const res = await fetch('/denr/data/cebu-barangays.json', {
+                        credentials: 'same-origin'
+                    });
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json && typeof json === 'object') BARANGAYS_BY_MUNI = json;
+                    }
+                } catch (_) {}
+                initMunicipalities();
+                refreshBarangays();
+                composeWhere();
+            })();
+
+            function initMunicipalities() {
+                muniEl.innerHTML = '<option value="">-- Select Municipality/City --</option>' +
+                    MUNICIPALITIES.map(m => `<option value="${m}">${m}</option>`).join('');
+            }
+
+            function refreshBarangays() {
+                const muni = muniEl.value.trim();
+                const list = BARANGAYS_BY_MUNI[muni];
+
+                if (Array.isArray(list) && list.length) {
+                    // Use select
+                    brgySel.classList.remove('hidden');
+                    brgyInp.classList.add('hidden');
+                    brgySel.innerHTML = '<option value="">-- Select Barangay --</option>' +
+                        list.map(b => `<option value="${b}">${b}</option>`).join('');
+                } else {
+                    // Fallback to free text input
+                    brgySel.classList.add('hidden');
+                    brgyInp.classList.remove('hidden');
+                    brgySel.innerHTML = '';
+                    brgyInp.value = '';
+                    brgyInp.placeholder = muni ? `Type barangay in ${muni}` : 'Type barangay';
+                }
+            }
+
+            function currentBarangay() {
+                if (!brgySel.classList.contains('hidden')) return brgySel.value.trim();
+                return brgyInp.value.trim();
+            }
+
+            function composeWhere() {
+                const sitio = sitioEl.value.trim();
+                const brgy = currentBarangay();
+                const muni = muniEl.value.trim();
+                const parts = [];
+                if (sitio) parts.push(sitio);
+                if (brgy) parts.push('Brgy. ' + brgy);
+                if (muni) parts.push(muni);
+                parts.push(PROVINCE);
+
+                const text = parts.join(', ');
+                whereHidden.value = text;
+                // preview.textContent = text ? `Saving as: ${text}` : '';
+            }
+
+            muniEl.addEventListener('change', () => {
+                refreshBarangays();
+                composeWhere();
+                clearLocErrors();
+            });
+            brgySel.addEventListener('change', () => {
+                composeWhere();
+                clearLocErrors();
+            });
+            brgyInp.addEventListener('input', () => {
+                composeWhere();
+                clearLocErrors();
+            });
+            sitioEl.addEventListener('input', composeWhere);
+
+            /* ======== Photos (kept) ======== */
             const photoInput = document.getElementById('photos');
             const addPhotoBtn = document.getElementById('addPhotoBtn');
             const photoPreview = document.getElementById('photoPreview');
             const maxPhotos = 5;
             let selectedFiles = [];
-
-            const loadingEl = document.getElementById('loadingIndicator');
-            const loadingMsg = document.getElementById('loadingMessage');
-            const showLoading = (msg = 'Working...') => {
-                if (!loadingEl) return;
-                if (loadingMsg) loadingMsg.textContent = msg;
-                loadingEl.style.display = 'flex';
-            };
-            const hideLoading = () => {
-                if (loadingEl) loadingEl.style.display = 'none';
-            };
-
 
             addPhotoBtn.addEventListener('click', () => photoInput.click());
             photoInput.addEventListener('change', function() {
@@ -752,12 +904,10 @@ try {
                 });
             }
 
+            /* ======== Submit flow (kept) ======== */
             form.addEventListener("submit", function(e) {
                 e.preventDefault();
-                if (selectedFiles.length === 0) {
-                    alert('Please upload at least one photo');
-                    return;
-                }
+                if (!validateAll()) return;
                 confirmationModal.classList.remove("hidden-modal");
             });
             cancelBtn?.addEventListener("click", () => confirmationModal.classList.add("hidden-modal"));
@@ -778,24 +928,9 @@ try {
             document.getElementById("confirmSubmit")?.addEventListener("click", async function() {
                 confirmationModal.classList.add("hidden-modal");
                 const fd = new FormData(form);
+                // Replace file list with selectedFiles
                 fd.delete('photos[]');
                 selectedFiles.forEach(f => fd.append('photos[]', f));
-
-                console.log('[CLIENT] inputs:', {
-                    who: form.who.value?.trim(),
-                    what: form.what.value?.trim(),
-                    where: form.where.value?.trim(),
-                    when: form.when.value?.trim(),
-                    why: form.why.value?.trim(),
-                    contact: form.contact.value?.trim(),
-                    categories: form.categories.value?.trim(),
-                    description: form.description.value?.trim(),
-                    files: selectedFiles.map(f => ({
-                        name: f.name,
-                        size: f.size,
-                        type: f.type
-                    }))
-                });
 
                 showLoading('Submitting report...');
                 try {
@@ -828,20 +963,146 @@ try {
                 recordsContainer.style.display = show ? 'block' : 'none';
                 this.textContent = show ? 'HIDE RECORDS' : 'VIEW RECORDS';
             });
+
+            /* ======== Loading overlay helpers (kept) ======== */
+            const loadingEl = document.getElementById('loadingIndicator');
+            const loadingMsg = document.getElementById('loadingMessage');
+
+            function showLoading(msg = 'Working...') {
+                if (loadingMsg) loadingMsg.textContent = msg;
+                if (loadingEl) loadingEl.style.display = 'flex';
+            }
+
+            function hideLoading() {
+                if (loadingEl) loadingEl.style.display = 'none';
+            }
+
+            /* ======== Validation (updated for new WHERE) ======== */
+            const errClass = 'fv-error';
+            const setErr = (el, msg) => {
+                clearErr(el);
+                const d = document.createElement('div');
+                d.className = errClass;
+                d.style.color = '#d93025';
+                d.style.fontSize = '.9rem';
+                d.style.marginTop = '6px';
+                d.textContent = msg;
+                el.insertAdjacentElement('afterend', d);
+                return false;
+            };
+            const clearErr = (el) => {
+                if (!el) return;
+                const sib = el.nextElementSibling;
+                if (sib && sib.classList.contains(errClass)) sib.remove();
+            };
+
+            function clearLocErrors() {
+                clearErr(muniEl);
+                if (brgySel.classList.contains('hidden')) clearErr(brgyInp);
+                else clearErr(brgySel);
+            }
+
+            function vWho() {
+                const el = document.getElementById('who');
+                clearErr(el);
+                const v = (el.value || '').trim();
+                if (v.length < 2) return setErr(el, 'Too short.');
+                if (!/^[A-Za-z][A-Za-z\s'’.()-]*$/.test(v)) return setErr(el, 'Letters only.');
+                return true;
+            }
+
+            function vContact() {
+                const el = document.getElementById('contact');
+                clearErr(el);
+                const v = (el.value || '').trim();
+                if (!/^(\+639|639|09)\d{9}$/.test(v.replace(/[^\d+0-9]/g, ''))) return setErr(el, 'Use 09/639 format.');
+                return true;
+            }
+
+            function vWhen() {
+                const el = document.getElementById('when');
+                clearErr(el);
+                if (!el.value) return setErr(el, 'Required.');
+                const d = new Date(el.value);
+                if (isNaN(+d)) return setErr(el, 'Invalid.');
+                if (d > new Date()) return setErr(el, 'No future time.');
+                return true;
+            }
+
+            function vWhy() {
+                const el = document.getElementById('why');
+                clearErr(el);
+                const v = (el.value || '').trim();
+                if (v.length < 5) return setErr(el, 'Min 5 chars.');
+                return true;
+            }
+
+            function vCat() {
+                const el = document.getElementById('categories');
+                clearErr(el);
+                if (!el.value) return setErr(el, 'Select one.');
+                return true;
+            }
+
+            function vWhat() {
+                const el = document.getElementById('what');
+                clearErr(el);
+                const v = (el.value || '').trim();
+                if (v.length < 20) return setErr(el, 'Min 20 chars.');
+                return true;
+            }
+
+            function vDesc() {
+                const el = document.getElementById('description');
+                clearErr(el);
+                const v = (el.value || '').trim();
+                if (v.length < 30) return setErr(el, 'Min 30 chars.');
+                return true;
+            }
+
+            function vLocation() {
+                composeWhere();
+                // Municipality required
+                if (!muniEl.value.trim()) return setErr(muniEl, 'Select municipality/city.');
+                // Barangay required
+                const usingSelect = !brgySel.classList.contains('hidden');
+                if (usingSelect) {
+                    if (!brgySel.value.trim()) return setErr(brgySel, 'Select barangay.');
+                } else {
+                    if (!brgyInp.value.trim()) return setErr(brgyInp, 'Enter barangay.');
+                    if (brgyInp.value.trim().length < 3) return setErr(brgyInp, 'Too short.');
+                }
+                // Hidden where must exist
+                if (!whereHidden.value.trim()) return setErr(muniEl, 'Please complete the location.');
+                return true;
+            }
+
+            function vPhotos() {
+                const tiles = document.querySelectorAll('.photo-preview-wrapper').length;
+                const anchor = document.getElementById('addPhotoBtn');
+                clearErr(anchor);
+                if (tiles < 1) return setErr(anchor, 'Need 1+ photo.');
+                if (tiles > 5) return setErr(anchor, 'Max 5 photos.');
+                return true;
+            }
+
+            function validateAll() {
+                document.querySelectorAll('.' + errClass).forEach(n => n.remove());
+                let ok = true;
+                ok &= vWho();
+                ok &= vLocation();
+                ok &= vContact();
+                ok &= vWhen();
+                ok &= vWhy();
+                ok &= vCat();
+                ok &= vWhat();
+                ok &= vDesc();
+                ok &= vPhotos();
+                return !!ok;
+            }
         });
     </script>
 
-    <!-- Confirmation modal (unchanged) -->
-    <div id="confirmationModal" class="hidden-modal">
-        <div class="modal-content">
-            <h3>Confirm Incident Report</h3>
-            <p>Are you sure you want to submit this incident report?</p>
-            <div style="margin-top:20px;">
-                <button id="confirmSubmit" style="background:#28a745; color:#fff; padding:8px 16px; border:none; border-radius:4px; margin-right:10px; cursor:pointer;">Yes, Submit</button>
-                <button id="cancelSubmit" style="background:#dc3545; color:#fff; padding:8px 16px; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
-            </div>
-        </div>
-    </div>
     <script>
         /*! incident-validate.js — minimal red messages, no borders */
         (() => {
@@ -1093,6 +1354,19 @@ try {
             });
         })();
     </script>
+
+    <!-- Confirmation modal (kept) -->
+    <div id="confirmationModal" class="hidden-modal">
+        <div class="modal-content">
+            <h3>Confirm Incident Report</h3>
+            <p>Are you sure you want to submit this incident report?</p>
+            <div style="margin-top:20px;">
+                <button id="confirmSubmit" style="background:#28a745; color:#fff; padding:8px 16px; border:none; border-radius:4px; margin-right:10px; cursor:pointer;">Yes, Submit</button>
+                <button id="cancelSubmit" style="background:#dc3545; color:#fff; padding:8px 16px; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
 </body>
+
 
 </html>

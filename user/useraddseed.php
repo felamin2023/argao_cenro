@@ -124,6 +124,20 @@ try {
     header('Location: user_login.php');
     exit();
 }
+$clientRows = [];
+try {
+    $q = $pdo->prepare("
+        SELECT client_id, user_id, first_name, middle_name, last_name, barangay, municipality, city
+        FROM public.client
+        ORDER BY (user_id = :uid) DESC, last_name ASC, first_name ASC
+        LIMIT 500
+    ");
+    $q->execute([':uid' => $_SESSION['user_id']]);
+    $clientRows = $q->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[SEED-CLIENTS] ' . $e->getMessage());
+    $clientRows = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1790,7 +1804,6 @@ try {
     <div id="profile-notification" style="display:none; position:fixed; top:5px; left:50%; transform:translateX(-50%); background:#323232; color:#fff; padding:16px 32px; border-radius:8px; font-size:1.1rem; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,0.15); text-align:center; min-width:220px; max-width:90vw;"></div>
 
     <!-- Loading overlay -->
-    <!-- Loading overlay (fixed) -->
     <style>
         @keyframes spin {
             to {
@@ -1808,7 +1821,6 @@ try {
             <div id="loadingText" style="font-weight:600;">Submitting…</div>
         </div>
     </div>
-
 
     <header>
         <div class="logo">
@@ -1887,7 +1899,6 @@ try {
                 </div>
             </div>
 
-
             <div class="nav-item dropdown">
                 <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
@@ -1905,8 +1916,63 @@ try {
             </div>
 
             <div class="form-body">
-                <!-- Names -->
-                <div class="name-fields">
+                <!-- Mode toggle + client picker + names -->
+                <div style="display:flex;gap:8px;align-items: center; margin-bottom:10px; padding: 10px 0px;">
+                    <button type="button" id="btnExisting" class="btn btn-outline">
+                        <i class="fas fa-user-check"></i>&nbsp;Existing client
+                    </button>
+                    <button type="button" id="btnNew" class="btn btn-outline" style="display:none;">
+                        <i class="fas fa-user-plus"></i>&nbsp;New client
+                    </button>
+                    <small style="opacity:.8;margin-left:6px; ">Choose <b>Existing client</b> if client already exists in records.</small>
+                </div>
+
+                <!-- Hidden field to track mode -->
+                <input type="hidden" id="clientMode" value="new">
+
+                <!-- Existing client selection (hidden by default) -->
+                <div id="existingClientRow" class="name-fields" style="display:none;">
+                    <div class="name-field" style="grid-column:1/-1;">
+                        <label for="clientPick" style="font-weight:600;margin-bottom:6px;display:block;">Select client</label>
+                        <select id="clientPick" class="seedling-select" style="height:40px;">
+                            <option value="">— Select a client —</option>
+                            <?php
+                            $hasMine = false;
+                            $hasOthers = false;
+                            foreach ($clientRows as $c) {
+                                $full = trim(($c['first_name'] ?? '') . ' ' . ($c['middle_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
+                                $addr = trim(($c['barangay'] ? ('Brgy. ' . $c['barangay']) : '') . (($c['municipality'] || $c['city']) ? (', ' . ($c['municipality'] ?: $c['city'])) : ''));
+                                $label = $full . ($addr ? " — $addr" : '');
+                                $isMine = ((string)$c['user_id'] === (string)$_SESSION['user_id']);
+                                if ($isMine && !$hasMine) {
+                                    echo '<optgroup label="Your clients">';
+                                    $hasMine = true;
+                                }
+                                if (!$isMine && !$hasOthers) { /* open later */
+                                }
+                                echo '<option value="' . htmlspecialchars((string)$c['client_id'], ENT_QUOTES) . '">' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                if (!$isMine) $hasOthers = true;
+                            }
+                            if ($hasMine) echo '</optgroup>';
+                            if ($hasOthers) {
+                                echo '<optgroup label="All clients (others)">';
+                                foreach ($clientRows as $c) {
+                                    if ((string)$c['user_id'] === (string)$_SESSION['user_id']) continue;
+                                    $full = trim(($c['first_name'] ?? '') . ' ' . ($c['middle_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
+                                    $addr = trim(($c['barangay'] ? ('Brgy. ' . $c['barangay']) : '') . (($c['municipality'] || $c['city']) ? (', ' . ($c['municipality'] ?: $c['city'])) : ''));
+                                    $label = $full . ($addr ? " — $addr" : '');
+                                    echo '<option value="' . htmlspecialchars((string)$c['client_id'], ENT_QUOTES) . '">' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                }
+                                echo '</optgroup>';
+                            }
+                            ?>
+                        </select>
+                        <div id="clientPickError" class="fv-error" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <!-- New client fields (default visible) -->
+                <div id="newClientRow" class="name-fields" style="margin-bottom: 10px; ">
                     <div class="name-field"><input type="text" placeholder="First Name" id="firstName" required></div>
                     <div class="name-field"><input type="text" placeholder="Middle Name" id="middleName"></div>
                     <div class="name-field"><input type="text" placeholder="Last Name" id="lastName" required></div>
@@ -2057,6 +2123,7 @@ try {
         </div>
     </div>
 
+    <!-- Keep the SignaturePad loader if you want (not one of the 2 inline scripts) -->
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.6/dist/signature_pad.umd.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -2133,10 +2200,59 @@ try {
                 }
             });
 
+            /* ==== Client mode toggle (NEW <-> EXISTING) ==== */
+            const btnExisting = document.getElementById('btnExisting');
+            const btnNew = document.getElementById('btnNew');
+            const newClientRow = document.getElementById('newClientRow');
+            const existingRow = document.getElementById('existingClientRow');
+            const clientPick = document.getElementById('clientPick');
+            const clientModeEl = document.getElementById('clientMode');
+            const firstEl = document.getElementById('firstName');
+            const middleEl = document.getElementById('middleName');
+            const lastEl = document.getElementById('lastName');
+
+            function setMode(mode) {
+                const isExisting = (mode === 'existing');
+                clientModeEl.value = isExisting ? 'existing' : 'new';
+
+                // Show/hide
+                existingRow.style.display = isExisting ? 'grid' : 'none';
+                newClientRow.style.display = isExisting ? 'none' : 'grid';
+                btnExisting.style.display = isExisting ? 'none' : 'inline-flex';
+                btnNew.style.display = isExisting ? 'inline-flex' : 'none';
+
+                // Disable/enable name inputs
+                [firstEl, middleEl, lastEl].forEach(el => {
+                    if (el) el.disabled = isExisting;
+                });
+
+                // Clear the opposite side
+                if (isExisting) {
+                    clientPick && (clientPick.value = clientPick.value || '');
+                    [firstEl, middleEl, lastEl].forEach(el => {
+                        if (el) el.value = '';
+                    });
+                } else {
+                    clientPick && (clientPick.value = '');
+                }
+            }
+            btnExisting?.addEventListener('click', () => setMode('existing'));
+            btnNew?.addEventListener('click', () => setMode('new'));
+            // default mode
+            setMode('new');
+
             /* Seedlings catalog */
             const seedlingList = document.getElementById('seedlingList');
             const addSeedlingBtn = document.getElementById('addSeedlingBtn');
             let seedlingsCatalog = [];
+            let submissionBatchKey = null;
+
+            function ensureBatchKey() {
+                if (submissionBatchKey) return submissionBatchKey;
+                submissionBatchKey = `batch_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+                return submissionBatchKey;
+            }
+
             async function loadSeedlings() {
                 try {
                     const res = await fetch('../backend/users/seedlings/list.php', {
@@ -2157,7 +2273,7 @@ try {
 
             function buildSeedlingSelect() {
                 const sel = document.createElement('select');
-                sel.className = 'seedling-name';
+                sel.className = 'seedling-name seedling-select';
                 sel.style.height = '40px';
                 sel.style.width = '100%';
                 sel.innerHTML = '<option value="">Select seedling</option>';
@@ -2180,6 +2296,7 @@ try {
                 row.style.gridTemplateColumns = '2fr 1fr auto';
                 row.style.gap = '8px';
                 row.style.width = '700px';
+
                 const sel = buildSeedlingSelect();
                 const qty = document.createElement('input');
                 qty.type = 'number';
@@ -2248,7 +2365,7 @@ try {
             addSeedlingBtn.addEventListener('click', addSeedlingRow);
             loadSeedlings();
 
-            /* Confirm → POST (duplicate check) */
+            /* Confirm modal + decision modal */
             const confirmModal = document.getElementById('confirmModal');
             document.getElementById('closeConfirmModal').addEventListener('click', () => confirmModal.style.display = 'none');
             document.getElementById('cancelSubmitBtn').addEventListener('click', () => confirmModal.style.display = 'none');
@@ -2257,8 +2374,10 @@ try {
             const clientDecisionText = document.getElementById('clientDecisionText');
             document.getElementById('closeClientDecisionModal').addEventListener('click', () => clientDecisionModal.style.display = 'none');
 
+            /* Gather + POST */
             function gatherPayload() {
                 return {
+                    batch_key: ensureBatchKey(),
                     first_name: document.getElementById('firstName').value.trim(),
                     middle_name: document.getElementById('middleName').value.trim(),
                     last_name: document.getElementById('lastName').value.trim(),
@@ -2306,21 +2425,13 @@ try {
                 }
             }
 
+            /* Open confirm (basic front-end checks; full validation is in 2nd script) */
             document.getElementById('submitApplication').addEventListener('click', (e) => {
                 e.preventDefault();
-                const firstName = document.getElementById('firstName').value.trim();
-                const lastName = document.getElementById('lastName').value.trim();
+                const mode = document.getElementById('clientMode')?.value || 'new';
                 const purpose = document.getElementById('purpose').value.trim();
                 const reqDate = document.getElementById('requestDate').value;
-                if (!firstName || !lastName) return toast('First name and last name are required.', {
-                    type: 'error'
-                });
-                if (!purpose) return toast('Please enter the purpose of your request.', {
-                    type: 'error'
-                });
-                if (!reqDate) return toast('Please choose the date of request.', {
-                    type: 'error'
-                });
+
                 if (sigPad.isEmpty()) return toast('Please provide your signature.', {
                     type: 'error'
                 });
@@ -2334,12 +2445,58 @@ try {
                     type: 'error'
                 });
 
+                if (!purpose) return toast('Please enter the purpose of your request.', {
+                    type: 'error'
+                });
+                if (!reqDate) return toast('Please choose the date of request.', {
+                    type: 'error'
+                });
+
+                // Existing mode: require a pick before even opening confirm?
+                if (mode === 'existing' && !(clientPick?.value)) {
+                    return toast('Please select an existing client.', {
+                        type: 'error'
+                    });
+                }
                 confirmModal.style.display = 'block';
             });
 
+            /* Final confirm → submit by mode */
             let decisionCtx = null;
             document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
                 confirmModal.style.display = 'none';
+                const mode = document.getElementById('clientMode')?.value || 'new';
+
+                // EXISTING MODE: force reuse with selected client
+                if (mode === 'existing') {
+                    const cid = clientPick?.value || '';
+                    if (!cid) {
+                        toast('Please select an existing client.', {
+                            type: 'error'
+                        });
+                        return;
+                    }
+                    try {
+                        await postRequest('reuse', {
+                            existing_client_id: cid
+                        }, 'Submitting with existing client…');
+                        toast('Request submitted (using existing client)', {
+                            type: 'success',
+                            timeout: 4000
+                        });
+                        clientDecisionModal.style.display = 'none';
+                        resetForm();
+                    } catch (err) {
+                        console.error(err);
+                        toast('Submission failed: ' + (err?.message || err), {
+                            type: 'error',
+                            timeout: 7000
+                        });
+                    }
+                    return;
+                }
+
+                // NEW MODE: duplicate-check then decision
                 try {
                     const data = await postRequest('auto', {}, 'Checking for existing client…'); // duplicate check
                     if (data.needs_decision) {
@@ -2367,6 +2524,7 @@ try {
                 }
             });
 
+            // Decision modal buttons (used only when NEW mode found a duplicate)
             document.getElementById('useExistingBtn').addEventListener('click', async () => {
                 try {
                     const cid = decisionCtx?.existing?.client_id;
@@ -2388,7 +2546,6 @@ try {
                     });
                 }
             });
-
             document.getElementById('saveNewBtn').addEventListener('click', async () => {
                 try {
                     await postRequest('new', {}, 'Submitting as new client…');
@@ -2409,6 +2566,9 @@ try {
 
             function resetForm() {
                 try {
+                    // reset mode first
+                    setMode('new');
+
                     document.getElementById('firstName').value = '';
                     document.getElementById('middleName').value = '';
                     document.getElementById('lastName').value = '';
@@ -2422,10 +2582,16 @@ try {
                     sigPad.clear();
                     seedlingList.innerHTML = '';
                     addSeedlingRow();
+                    submissionBatchKey = null;
+
+                    // default date again
+                    const today = new Date();
+                    const requestDate = document.getElementById('requestDate');
+                    requestDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
                 } catch (_) {}
             }
 
-            // Default date = today
+            // Default date = today (on initial load)
             const requestDate = document.getElementById('requestDate');
             if (requestDate && !requestDate.value) {
                 const today = new Date();
@@ -2522,6 +2688,8 @@ try {
                 addRowBtn: $("addSeedlingBtn"),
                 submitBtn: $("submitApplication"),
                 confirmBtn: $("confirmSubmitBtn"),
+                clientPick: $("clientPick"),
+                clientMode: $("clientMode"),
             };
 
             // Single-field validators (short msgs)
@@ -2568,6 +2736,16 @@ try {
                 if (!city && !muni) ok = setErr(el.city, "Pick City or Municipality.");
                 // if (city && muni) ok = setErr(el.city, "Not both.");
                 return !!ok;
+            };
+
+            const vClientPick = () => {
+                const pick = el.clientPick;
+                if (!pick) return true;
+                const mode = (el.clientMode?.value || "new").toLowerCase();
+                clrErr(pick);
+                if (mode !== "existing") return true;
+                if (blank(pick.value)) return setErr(pick, "Select a client.");
+                return true;
             };
 
             // Seedling rows
@@ -2663,9 +2841,17 @@ try {
                 qa(".fv-error").forEach(n => n.remove());
 
                 let ok = true;
-                ok &= vName(el.first, true);
-                ok &= vName(el.middle, false);
-                ok &= vName(el.last, true);
+                const mode = (el.clientMode?.value || "new").toLowerCase();
+                const isExisting = mode === "existing";
+
+                if (isExisting) {
+                    ok &= vClientPick();
+                } else {
+                    ok &= vName(el.first, true);
+                    ok &= vName(el.middle, false);
+                    ok &= vName(el.last, true);
+                }
+
                 ok &= vContact(el.contact);
                 ok &= vPurpose(el.purpose);
                 ok &= vAddress();
@@ -2682,6 +2868,8 @@ try {
                 el.first?.addEventListener("input", () => vName(el.first, true));
                 el.middle?.addEventListener("input", () => vName(el.middle, false));
                 el.last?.addEventListener("input", () => vName(el.last, true));
+                // existing-client picker
+                el.clientPick?.addEventListener("change", vClientPick);
                 // contact
                 el.contact?.addEventListener("input", () => vContact(el.contact));
                 // purpose
@@ -2758,7 +2946,9 @@ try {
             });
         })();
     </script>
+
 </body>
+
 
 
 

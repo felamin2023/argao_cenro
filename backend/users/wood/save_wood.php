@@ -452,6 +452,17 @@ try {
         if ($hasPendingRenewal) {
             throw new Exception('You already have a pending RENEWAL wood application.');
         }
+        // Enforce: a renewal requires that the client already has a released NEW wood permit record
+        if (!$hasReleasedNew) {
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            http_response_code(400);
+            echo json_encode([
+                'ok' => false,
+                'block' => 'need_released_new',
+                'message' => 'To file a renewal, the client must already have a released NEW wood permit record.'
+            ]);
+            exit;
+        }
     } else { // NEW
         if ($hasPendingNew) {
             throw new Exception('You already have a pending NEW wood application.');
@@ -471,48 +482,95 @@ try {
     $requirement_id = (string)$ridStmt->fetchColumn(); // UUID as string
     if (!$requirement_id) throw new Exception('Failed to create requirements record');
 
+    // AFTER (new block)
     $bucket = bucket_name();
-    $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
-    $permitFolder = ($permit_type === 'renewal') ? 'renewal permit' : 'new permit';
-    $prefix = "wood/{$permitFolder}/{$client_id}/{$run}/";
+    $nowStamp = date('Ymd_His');
+    $basePath = "wpp/{$user_uuid}/{$nowStamp}/"; // folder layout for all uploads in this request
 
     $uploaded_map = [];
+    $signature_url = null;
 
-    // Upload the generated application document (from the UI)
+    // 1) Application document (optional)
     if (!empty($_FILES['application_doc']) && is_uploaded_file($_FILES['application_doc']['tmp_name'])) {
-        $file = $_FILES['application_doc'];
-        $ext  = pick_ext($file, '.doc');
+        $file  = $_FILES['application_doc'];
+        $ext   = pick_ext($file, '.doc');
         $fname = 'application' . $ext;
-        $path  = $prefix . $fname;
+        $path  = $basePath . $fname;
         $mime  = $file['type'] ?: 'application/msword';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map['application_doc'] = $url;
     }
 
-    // Upload the signature image (optional)
-    $signature_url = null;
+    // 2) Signature (optional)
     if (!empty($_FILES['signature_file']) && is_uploaded_file($_FILES['signature_file']['tmp_name'])) {
-        $file = $_FILES['signature_file'];
-        $ext  = pick_ext($file, '.png');
+        $file  = $_FILES['signature_file'];
+        $ext   = pick_ext($file, '.png');
         $fname = 'signature' . $ext;
-        $path  = $prefix . $fname;
+        $path  = $basePath . $fname;
         $mime  = $file['type'] ?: 'image/png';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map['signature_file'] = $signature_url = $url;
     }
 
-    // Upload all other requirement files from the UI
+    // 3) Renewal files (r1..r7) — your new changes
+    $renewalFileDefs = [
+        'file-r1' => ['container' => 'uploaded-files-r1', 'label' => 'Previously Approved WPP Permit'],
+        'file-r2' => ['container' => 'uploaded-files-r2', 'label' => 'Certificate of Good Standing'],
+        'file-r3' => ['container' => 'uploaded-files-r3', 'label' => 'CCTV Installation Certificate'],
+        'file-r4' => ['container' => 'uploaded-files-r4', 'label' => 'Monthly Production and Disposition Report'],
+        'file-r5' => ['container' => 'uploaded-files-r5', 'label' => 'Certificate of Registration as Log/Veneer/Lumber Importer'],
+        'file-r6' => ['container' => 'uploaded-files-r6', 'label' => 'Original Copy of Log/Veneer/Lumber Supply Contracts'],
+        'file-r7' => ['container' => 'uploaded-files-r7', 'label' => 'Proof of Importation'],
+    ];
+
+    $renewalFilesJson = []; // shape: [containerId => [ {label, filename, url} ]]
+
+    foreach ($renewalFileDefs as $field => $meta) {
+        if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) continue;
+        $f = $_FILES[$field];
+        if (($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) continue;
+
+        $safeName = slugify_name($f['name'] ?? $field);
+        $ext = pick_ext($f, '.pdf');
+        if (!str_ends_with($safeName, $ext)) {
+            $safeName .= $ext;
+        }
+
+        $storagePath = $basePath . $field . '_' . $safeName;
+        $mime = $f['type'] ?: 'application/octet-stream';
+
+        $publicUrl = supa_upload($bucket, $storagePath, $f['tmp_name'], $mime);
+
+        // keep old behavior for DB column mapping
+        $uploaded_map[$field] = $publicUrl;
+
+        // collect nice JSON for UI rendering
+        $container = $meta['container'];
+        if (!isset($renewalFilesJson[$container])) $renewalFilesJson[$container] = [];
+        $renewalFilesJson[$container][] = [
+            'label'    => $meta['label'],
+            'filename' => $safeName,
+            'url'      => $publicUrl,
+        ];
+    }
+
+    // optional: a flat string if you still want it somewhere else
+    $files_json_string = json_encode(['files' => $renewalFilesJson], JSON_UNESCAPED_SLASHES);
+
+    // 4) Remaining files (everything except app doc, signature, and r1..r7)
+    $skip = array_merge(['application_doc', 'signature_file'], array_keys($renewalFileDefs));
     foreach ($_FILES as $key => $file) {
-        if ($key === 'application_doc' || $key === 'signature_file') continue;
+        if (in_array($key, $skip, true)) continue;
         if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) continue;
 
         $ext   = pick_ext($file, '.bin');
         $fname = slugify_name($key) . $ext;
-        $path  = $prefix . $fname;
+        $path  = $basePath . $fname;
         $mime  = $file['type'] ?: 'application/octet-stream';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map[$key] = $url;
     }
+
 
     /* ---- Map files into requirements columns --------------------- */
 
@@ -539,7 +597,10 @@ try {
         'file-o5' => 'wood_validation_report',
         'file-o7' => 'wood_ctp_ptpr',
 
-        // RENEWAL set
+        // RENEWAL set (added explicit handling for r1–r3)
+        'file-r1' => 'wood_prev_wpp_permit',          // Previously approved WPP permit
+        'file-r2' => 'wood_good_standing_cert',       // Certificate of Good Standing
+        'file-r3' => 'wood_cctv_install_cert',        // CCTV installation certificate
         'file-r4' => 'wood_monthly_reports',
         'file-r5' => 'wood_importer_registration',
         'file-r6' => 'wood_importer_supply_contracts',

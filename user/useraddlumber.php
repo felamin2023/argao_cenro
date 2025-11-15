@@ -105,6 +105,178 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt->close();
 }
+
+$clientRows = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT client_id, user_id, first_name, middle_name, last_name,
+               sitio_street, barangay, municipality, city
+        FROM public.client
+        ORDER BY (user_id = :uid) DESC, last_name ASC, first_name ASC
+        LIMIT 500
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id']]);
+    $clientRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[LUMBER-CLIENTS] ' . $e->getMessage());
+    $clientRows = [];
+}
+
+$crOptions = [];
+$crRecords = [];
+try {
+    $stmt = $pdo->prepare("
+        WITH user_clients AS (
+            SELECT client_id
+            FROM public.client
+            WHERE user_id = :uid
+        )
+        SELECT
+            ad.no                AS cr_no,
+            ad.date_issued       AS doc_date_issued,
+            ad.expiry_date       AS doc_expiry_date,
+            a.approval_id,
+            a.client_id,
+            c.first_name         AS client_first,
+            c.middle_name        AS client_middle,
+            c.last_name          AS client_last,
+            af.company_name,
+            af.present_address,
+            af.location,
+            af.proposed_place_of_operation,
+            af.expected_annual_volume,
+            af.estimated_annual_worth,
+            af.total_number_of_employees,
+            af.total_number_of_dependents,
+            af.intended_market,
+            af.my_experience_as_alumber_dealer,
+            af.declaration_name,
+            af.suppliers_json,
+            af.permit_number,
+            af.expiry_date       AS cr_expiry_date,
+            af.cr_license_no,
+            af.buying_from_other_sources,
+            af.additional_information,
+            af.applicant_age,
+            af.is_government_employee,
+            req.lumber_csw_document,
+            req.geo_photos,
+            req.lumber_supply_contract,
+            req.lumber_mayors_permit,
+            req.lumber_registration_certificate,
+            req.lumber_or_copy,
+            req.lumber_op_copy,
+            req.lumber_business_plan,
+            req.lumber_tax_return,
+            req.lumber_monthly_reports
+        FROM public.approved_docs ad
+        JOIN public.approval a   ON a.approval_id = ad.approval_id
+        JOIN public.client   c   ON c.client_id   = a.client_id
+        LEFT JOIN public.application_form af ON af.application_id = a.application_id
+        LEFT JOIN public.requirements req    ON req.requirement_id = a.requirement_id
+        WHERE a.request_type ILIKE 'lumber'
+          AND a.client_id IN (SELECT client_id FROM user_clients)
+          AND NULLIF(btrim(ad.no), '') IS NOT NULL
+        ORDER BY COALESCE(ad.date_issued, a.submitted_at) DESC NULLS LAST
+        LIMIT 200
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id']]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    foreach ($rows as $row) {
+        $crNo = trim((string)($row['cr_no'] ?? ''));
+        if ($crNo === '') continue;
+
+        $issuedLabel = '';
+        if (!empty($row['doc_date_issued'])) {
+            try {
+                $issuedLabel = (new DateTime((string)$row['doc_date_issued']))->format('M j, Y');
+            } catch (Throwable $e) {
+                $issuedLabel = '';
+            }
+        }
+        $crOptions[] = [
+            'no'    => $crNo,
+            'label' => $issuedLabel ? ($crNo . ' — ' . $issuedLabel) : $crNo
+        ];
+
+        $suppliers = [];
+        if (!empty($row['suppliers_json'])) {
+            $decoded = json_decode($row['suppliers_json'], true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $entry) {
+                    if (!is_array($entry)) continue;
+                    $suppliers[] = [
+                        'name'   => trim((string)($entry['name'] ?? '')),
+                        'volume' => trim((string)($entry['volume'] ?? '')),
+                    ];
+                }
+            }
+        }
+
+        $sawmillPermit = null;
+        if (!empty($row['additional_information'])) {
+            $chunks = preg_split('/\s*;\s*/', (string)$row['additional_information']);
+            foreach ($chunks as $chunk) {
+                if (!$chunk) continue;
+                [$k, $v] = array_map('trim', explode('=', $chunk, 2) + ['', '']);
+                if ($k && strtolower($k) === 'sawmill_permit_no') {
+                    $sawmillPermit = $v;
+                }
+            }
+        }
+
+        $files = array_filter([
+            'lumber_csw_document'        => $row['lumber_csw_document'] ?? null,
+            'geo_photos'                 => $row['geo_photos'] ?? null,
+            'lumber_supply_contract'     => $row['lumber_supply_contract'] ?? null,
+            'lumber_mayors_permit'       => $row['lumber_mayors_permit'] ?? null,
+            'lumber_registration_certificate' => $row['lumber_registration_certificate'] ?? null,
+            'lumber_or_copy'             => $row['lumber_or_copy'] ?? null,
+            'lumber_op_copy'             => $row['lumber_op_copy'] ?? null,
+            'lumber_business_plan'       => $row['lumber_business_plan'] ?? null,
+            'lumber_tax_return'          => $row['lumber_tax_return'] ?? null,
+            'lumber_monthly_reports'     => $row['lumber_monthly_reports'] ?? null,
+        ], static fn($v) => !empty($v));
+
+        $crRecords[] = [
+            'cr_no'                   => $crNo,
+            'approval_id'             => $row['approval_id'],
+            'client_id'               => $row['client_id'],
+            'date_issued'             => $row['doc_date_issued'],
+            'doc_expiry_date'         => $row['doc_expiry_date'],
+            'cr_expiry_date'          => $row['cr_expiry_date'],
+            'company_name'            => $row['company_name'],
+            'present_address'         => $row['present_address'],
+            'location'                => $row['location'],
+            'proposed_place_of_operation' => $row['proposed_place_of_operation'],
+            'expected_annual_volume'  => $row['expected_annual_volume'],
+            'estimated_annual_worth'  => $row['estimated_annual_worth'],
+            'total_number_of_employees'   => $row['total_number_of_employees'],
+            'total_number_of_dependents'  => $row['total_number_of_dependents'],
+            'intended_market'         => $row['intended_market'],
+            'experience'              => $row['my_experience_as_alumber_dealer'],
+            'declaration_name'        => $row['declaration_name'],
+            'applicant_age'           => $row['applicant_age'],
+            'is_government_employee'  => $row['is_government_employee'],
+            'permit_number'           => $row['permit_number'],
+            'cr_license_no'           => $row['cr_license_no'],
+            'buying_from_other_sources' => $row['buying_from_other_sources'],
+            'sawmill_permit_no'       => $sawmillPermit,
+            'suppliers'               => $suppliers,
+            'client' => [
+                'first'  => $row['client_first'],
+                'middle' => $row['client_middle'],
+                'last'   => $row['client_last'],
+            ],
+            'files' => $files,
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('[LUMBER-CR-NOS] ' . $e->getMessage());
+    $crOptions = [];
+    $crRecords = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1010,6 +1182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             justify-content: flex-start;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
         }
 
         .permit-type-btn {
@@ -1032,6 +1207,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .permit-type-btn:hover {
             background-color: #2b6625;
             color: white;
+        }
+
+        .renewal-cr-files {
+            margin-top: 6px;
+            padding: 10px 12px;
+            border: 1px dashed #c8d3c5;
+            border-radius: 6px;
+            background: #f8fbf7;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .renewal-cr-files__title {
+            font-size: .85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #2b6625;
+        }
+
+        .renewal-cr-files__list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .renewal-cr-files__pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #d5e2d1;
+            background: #fff;
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: .85rem;
+            color: #2b6625;
+            text-decoration: none;
+            transition: background .2s ease, border-color .2s ease;
+        }
+
+        .renewal-cr-files__pill:hover {
+            background: #e8f3e6;
+            border-color: #9ec394;
+        }
+
+        .renewal-cr-files__pill i {
+            font-size: .75rem;
+        }
+
+        .renewal-cr-files__empty {
+            font-size: .85rem;
+            color: #6c757d;
         }
 
         /* Add new styles for name fields */
@@ -1066,6 +1293,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .name-field input::placeholder {
             color: #999;
+        }
+
+        .readonly-input {
+            background-color: #f4f4f4 !important;
+            cursor: not-allowed;
         }
 
 
@@ -1626,25 +1858,133 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="form-body">
                 <!-- Permit Type Selector -->
-                <div class="permit-type-selector">
-                    <button type="button" class="permit-type-btn active" data-type="new">New Permit</button>
-                    <button type="button" class="permit-type-btn" data-type="renewal">Renewal</button>
-                </div>
+                <div class="permit-type-selector" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+                    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                        <button type="button" class="permit-type-btn active" data-type="new">New Permit</button>
+                        <button type="button" class="permit-type-btn" data-type="renewal">Renewal</button>
+                    </div>
+                    <div class="client-mode-toggle" id="clientModeToggle" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+                        <button type="button" id="btnExisting" class="btn btn-outline">
+                            <i class="fas fa-user-check"></i>&nbsp;Existing client
+                        </button>
+                        <button type="button" id="btnNew" class="btn btn-outline" style="display:none;">
+                            <i class="fas fa-user-plus"></i>&nbsp;New client
+                        </button>
+                    </div>
+                    <div id="renewalCrPicker" class="renewal-cr-picker" style="display:flex; text-align: center; gap:6px;min-width:220px; border: 1px dashed #c8d3c5; border-radius: 6px; background: #f8fbf7; padding:  5px;">
+                        <label for="renewalCrSelect" style="font-weight:600;margin:0;">C.R. No.</label>
+                        <?php if ($crOptions): ?>
+                            <select id="renewalCrSelect" style="height:40px;width:220px;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                <option value="">-- Select C.R. No. --</option>
+                                <?php foreach ($crOptions as $opt): ?>
+                                    <option value="<?= htmlspecialchars((string)($opt['no'] ?? ''), ENT_QUOTES) ?>">
+                                        <?= htmlspecialchars((string)($opt['label'] ?? ($opt['no'] ?? '')), ENT_QUOTES) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <span style="font-size:.9rem;color:#6c757d;">No released C.R. numbers yet.</span>
+                        <?php endif; ?>
+
+                    </div>
+                </div><small id="clientModeHint" style="display:block;margin-bottom:15px;opacity:.8;">Choose <b>Existing client</b> if the record already exists; otherwise stay on <b>New client</b>.</small>
 
                 <!-- ===================== NEW LUMBER DEALER PERMIT APPLICATION (UI only) ===================== -->
                 <div class="form-section" id="lumber-application-section" style="margin-top:16px;">
                     <!-- Applicant Information -->
                     <div class="form-subsection">
                         <h2>Applicant Information</h2>
-                        <div class="name-fields">
-                            <div class="name-field">
-                                <input type="text" id="first-name" placeholder="First Name" required>
-                            </div>
-                            <div class="name-field">
-                                <input type="text" id="middle-name" placeholder="Middle Name">
-                            </div>
-                            <div class="name-field">
-                                <input type="text" id="last-name" placeholder="Last Name" required>
+                        <input type="hidden" id="clientMode" value="new">
+
+                        <div id="existingClientRow" class="form-group" style="display:none;margin-bottom:16px;">
+                            <label for="clientPick" style="font-weight:600;margin-bottom:6px;display:block;">Select client</label>
+                            <?php if ($clientRows): ?>
+                                <select id="clientPick" style="height:42px;width:100%;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                    <option value="">-- Select a client --</option>
+                                    <?php
+                                    $myId = (string)($_SESSION['user_id'] ?? '');
+                                    $renderOption = static function (array $c): string {
+                                        $full = trim(trim((string)($c['first_name'] ?? '')) . ' ' . trim((string)($c['middle_name'] ?? '')) . ' ' . trim((string)($c['last_name'] ?? '')));
+                                        $full = trim(preg_replace('/\s+/', ' ', $full));
+                                        $full = $full ?: 'Unnamed client';
+                                        $addrParts = [];
+                                        if (!empty($c['sitio_street'])) {
+                                            $addrParts[] = $c['sitio_street'];
+                                        }
+                                        if (!empty($c['barangay'])) {
+                                            $addrParts[] = 'Brgy. ' . $c['barangay'];
+                                        }
+                                        if (!empty($c['municipality']) || !empty($c['city'])) {
+                                            $addrParts[] = $c['municipality'] ?: $c['city'];
+                                        }
+                                        $addressValue = $addrParts ? implode(', ', $addrParts) : '';
+                                        $label = $full . ($addressValue ? ' - ' . $addressValue : '');
+                                        $attrs = sprintf(
+                                            ' value="%s" data-first="%s" data-middle="%s" data-last="%s" data-address="%s"',
+                                            htmlspecialchars((string)($c['client_id'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['first_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['middle_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars((string)($c['last_name'] ?? ''), ENT_QUOTES),
+                                            htmlspecialchars($addressValue, ENT_QUOTES)
+                                        );
+                                        return '<option' . $attrs . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                    };
+                                    $hasMine = false;
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') === $myId) {
+                                            $hasMine = true;
+                                            break;
+                                        }
+                                    }
+                                    if ($hasMine) {
+                                        echo '<optgroup label="Your clients">';
+                                        foreach ($clientRows as $row) {
+                                            if ((string)($row['user_id'] ?? '') !== $myId) {
+                                                continue;
+                                            }
+                                            echo $renderOption($row);
+                                        }
+                                        echo '</optgroup>';
+                                    }
+                                    $hasOthers = false;
+                                    foreach ($clientRows as $row) {
+                                        if ((string)($row['user_id'] ?? '') === $myId) {
+                                            continue;
+                                        }
+                                        $hasOthers = true;
+                                        break;
+                                    }
+                                    if ($hasOthers) {
+                                        echo '<optgroup label="All clients (others)">';
+                                        foreach ($clientRows as $row) {
+                                            if ((string)($row['user_id'] ?? '') === $myId) {
+                                                continue;
+                                            }
+                                            echo $renderOption($row);
+                                        }
+                                        echo '</optgroup>';
+                                    }
+                                    ?>
+                                </select>
+                            <?php else: ?>
+                                <div style="padding:10px 12px;border:1px dashed #aaa;border-radius:4px;color:#555;background:#fafafa;">
+                                    No existing clients have been recorded yet.
+                                </div>
+                            <?php endif; ?>
+                            <div id="clientPickError" class="field-error" style="display:none;"></div>
+                        </div>
+
+                        <div id="newClientRow">
+                            <div class="name-fields">
+                                <div class="name-field">
+                                    <input type="text" id="first-name" placeholder="First Name" required>
+                                </div>
+                                <div class="name-field">
+                                    <input type="text" id="middle-name" placeholder="Middle Name">
+                                </div>
+                                <div class="name-field">
+                                    <input type="text" id="last-name" placeholder="Last Name" required>
+                                </div>
                             </div>
                         </div>
 
@@ -2003,7 +2343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">1</span>
                                 <span class="requirement-number renewal-number" style="display:none">1</span>
-                                Complete Staff Work (CSW) by the inspecting officer - 3 copies from inspecting officer for signature of RPS chief
+                                Complete Staff Work (CSW) by the inspecting officer - from inspecting officer for signature of RPS chief
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2023,7 +2363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">2</span>
                                 <span class="requirement-number renewal-number" style="display:none">2</span>
-                                Geo-tagged pictures of the business establishment (3 copies from inspecting officer for signature of RPS chief)
+                                Geo-tagged pictures of the business establishment ( from inspecting officer for signature of RPS chief)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2043,7 +2383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">3</span>
                                 <span class="requirement-number renewal-number" style="display:none">3</span>
-                                Log/Lumber Supply Contract (approved by RED) - 3 copies
+                                Log/Lumber Supply Contract (approved by RED)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2062,7 +2402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">4</span>
-                                Business Management Plan (3 copies)
+                                Business Management Plan
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2081,7 +2421,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">5</span>
-                                Mayor's Permit - 3 copies
+                                Mayor's Permit
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2104,7 +2444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">6</span>
                                 <span class="requirement-number renewal-number" style="display:none">5</span>
-                                Certificate of Registration by DTI/SEC - 3 copies
+                                Certificate of Registration by DTI/SEC
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2123,7 +2463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number new-number">7</span>
-                                Latest Annual Income Tax Return - 3 copies
+                                Latest Annual Income Tax Return
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2142,7 +2482,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number renewal-number">6</span>
-                                Monthly and Quarterly Reports from the date issued to date (for renewal only) - 3 copies
+                                Monthly and Quarterly Reports from the date issued to date (for renewal only)
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2207,6 +2547,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     <script>
+        window.__CR_RECORDS__ = <?= json_encode($crRecords ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    </script>
+    <script>
         (function() {
             'use strict';
 
@@ -2228,6 +2571,310 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const display = (el, val) => {
                 if (el && el.style) el.style.display = val;
             }; // safe show/hide
+
+            const crRecords = Array.isArray(window.__CR_RECORDS__) ? window.__CR_RECORDS__ : [];
+            const crRecordByNo = Object.create(null);
+            crRecords.forEach((rec) => {
+                if (rec && rec.cr_no) crRecordByNo[rec.cr_no] = rec;
+            });
+            const remoteFileCache = Object.create(null);
+            const remoteFileFetches = Object.create(null);
+            const remoteFileFallback = Object.create(null); // used when DataTransfer API is missing
+            const fileFieldMap = {
+                lumber_csw_document: 'file-1',
+                geo_photos: 'file-2',
+                lumber_supply_contract: 'file-4',
+                lumber_mayors_permit: 'file-6',
+                lumber_registration_certificate: 'file-7',
+                lumber_or_copy: 'file-10a',
+                lumber_op_copy: 'file-10b',
+                lumber_business_plan: 'file-5',
+                lumber_tax_return: 'file-8',
+                lumber_monthly_reports: 'file-9',
+            };
+            const crFileLabels = {
+                lumber_csw_document: 'CSW document',
+                geo_photos: 'Geo-tagged photos',
+                lumber_supply_contract: 'Supply contract',
+                lumber_mayors_permit: "Mayor's permit",
+                lumber_registration_certificate: 'DTI/SEC registration',
+                lumber_or_copy: 'O.R. copy',
+                lumber_op_copy: 'O.P. copy',
+                lumber_business_plan: 'Business plan',
+                lumber_tax_return: 'Income tax return',
+                lumber_monthly_reports: 'Monthly/quarterly reports',
+            };
+            const renewalCrFilesWrap = document.getElementById('renewalCrFiles');
+            const renewalCrFilesList = document.getElementById('renewalCrFilesList');
+
+            const setInputValue = (id, value) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = value ?? '';
+                el.dispatchEvent(new Event('input', {
+                    bubbles: true
+                }));
+            };
+
+            const setRadioGroup = (yesId, noId, value) => {
+                const normalized = (value || '').toLowerCase();
+                const yes = document.getElementById(yesId);
+                const no = document.getElementById(noId);
+                if (normalized === 'yes') {
+                    yes && (yes.checked = true);
+                } else {
+                    no && (no.checked = true);
+                }
+            };
+
+            function clearFileInput(id) {
+                const input = document.getElementById(id);
+                if (!input) return;
+                input.value = '';
+                if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
+                if (remoteFileFallback[id]) delete remoteFileFallback[id];
+                const nameEl = input.parentElement?.querySelector('.file-name');
+                if (nameEl) nameEl.textContent = 'No file chosen';
+            }
+
+            function filenameFromUrl(url) {
+                try {
+                    const clean = url.split('?')[0];
+                    const parts = clean.split('/');
+                    const last = parts[parts.length - 1] || 'file';
+                    return decodeURIComponent(last);
+                } catch {
+                    return 'file';
+                }
+            }
+
+            function setInputFileFromRemote(input, file, url) {
+                const nameEl = input.parentElement?.querySelector('.file-name');
+                if (typeof DataTransfer !== 'undefined') {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                } else {
+                    remoteFileFallback[input.id] = file;
+                }
+                if (input.dataset) input.dataset.loadedUrl = url || '';
+                if (nameEl) nameEl.textContent = file.name;
+            }
+
+            function attachRemoteFile(inputId, url) {
+                const input = document.getElementById(inputId);
+                if (!input) return;
+                if (!url) {
+                    clearFileInput(inputId);
+                    return;
+                }
+                const key = `${inputId}|${url}`;
+                const applyFile = (file) => setInputFileFromRemote(input, file, url);
+                if (remoteFileCache[key]) {
+                    applyFile(remoteFileCache[key]);
+                    return;
+                }
+                if (!remoteFileFetches[key]) {
+                    remoteFileFetches[key] = fetch(url, {
+                            credentials: 'include'
+                        })
+                        .then(res => {
+                            if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+                            return res.blob();
+                        })
+                        .then(blob => {
+                            const file = new File([blob], filenameFromUrl(url), {
+                                type: blob.type || 'application/octet-stream'
+                            });
+                            remoteFileCache[key] = file;
+                            return file;
+                        })
+                        .catch(err => {
+                            console.error('Remote file load failed', err);
+                            throw err;
+                        })
+                        .finally(() => {
+                            delete remoteFileFetches[key];
+                        });
+                }
+                remoteFileFetches[key]
+                    .then(applyFile)
+                    .catch(() => {});
+            }
+
+            function resetCrFilesView(message = 'Select a C.R. number to view uploads.', show = false) {
+                if (!renewalCrFilesList) return;
+                renewalCrFilesList.innerHTML = `<div class="renewal-cr-files__empty">${message}</div>`;
+                if (renewalCrFilesWrap) {
+                    renewalCrFilesWrap.style.display = show ? 'flex' : 'none';
+                }
+            }
+
+            function renderCrFiles(record) {
+                if (!renewalCrFilesWrap || !renewalCrFilesList) return;
+                const entries = record && record.files && typeof record.files === 'object' ?
+                    Object.entries(record.files).filter(([, url]) => !!url) : [];
+                if (!entries.length) {
+                    resetCrFilesView('No previously uploaded files for this record.', true);
+                    return;
+                }
+                renewalCrFilesList.innerHTML = '';
+                entries.forEach(([key, url]) => {
+                    const pill = document.createElement('a');
+                    pill.href = url;
+                    pill.target = '_blank';
+                    pill.rel = 'noopener noreferrer';
+                    pill.className = 'renewal-cr-files__pill';
+                    const label = crFileLabels[key] || key.replace(/_/g, ' ');
+                    pill.innerHTML = `<span>${label}</span><i class="fas fa-external-link-alt"></i>`;
+                    renewalCrFilesList.appendChild(pill);
+                });
+                renewalCrFilesWrap.style.display = 'flex';
+            }
+
+            resetCrFilesView();
+
+            function syncPermitFiles(record) {
+                const files = record?.files || {};
+                Object.entries(fileFieldMap).forEach(([key, inputId]) => {
+                    const input = document.getElementById(inputId);
+                    if (!input) return;
+                    clearFileInput(inputId);
+                    const url = files[key];
+                    if (url) attachRemoteFile(inputId, url);
+                });
+            }
+
+            function populateSuppliersRen(list) {
+                const body = document.querySelector('#suppliers-table-ren tbody');
+                if (!body) return;
+                body.innerHTML = '';
+                if (Array.isArray(list) && list.length) {
+                    list.forEach(item => addSupplierRowRen(item?.name || '', item?.volume || ''));
+                } else {
+                    addSupplierRowRen('', '');
+                }
+            }
+
+            function handleCrSelectChange(value) {
+                if (!value) {
+                    window.__USE_EXISTING_CLIENT_ID__ = null;
+                    syncPermitFiles(null);
+                    resetCrFilesView();
+                    return;
+                }
+                const record = crRecordByNo[value];
+                if (!record) {
+                    toast('No saved details found for that C.R. number.');
+                    syncPermitFiles(null);
+                    resetCrFilesView('No uploads found for that C.R. number.', true);
+                    return;
+                }
+                applyCrRecord(record);
+            }
+
+            function pick(obj, keys) {
+                for (const k of keys) {
+                    const v = (obj && obj[k] !== undefined && obj[k] !== null) ? String(obj[k]).trim() : '';
+                    if (v) return v;
+                }
+                return '';
+            }
+
+            function applyCrRecord(record) {
+                const client = record?.client || {};
+
+                // Names / basic
+                setInputValue('first-name-ren', pick(client, ['first', 'first_name']));
+                setInputValue('middle-name-ren', pick(client, ['middle', 'middle_name']));
+                setInputValue('last-name-ren', pick(client, ['last', 'last_name']));
+
+                setInputValue('business-name-ren', pick(record, ['company_name', 'business_name', 'name_of_business']));
+                setInputValue('business-address-ren', pick(record, ['present_address', 'business_address', 'address']));
+
+                // 🔽 Fixed mappings with robust fallbacks (your empty fields)
+                setInputValue('operation-place-ren', pick(record, [
+                    'proposed_place_of_operation', 'place_of_operation', 'operation_place', 'location', 'place'
+                ]));
+
+                setInputValue('annual-volume-ren', pick(record, [
+                    'expected_annual_volume', 'expected_gross_annual_volume', 'expected_gross_annual_volume_of_business', 'annual_volume'
+                ]));
+
+                // Label says “Value” in your UI; your data might use “worth” or “value”
+                setInputValue('annual-worth-ren', pick(record, [
+                    'estimated_annual_worth', 'annual_worth', 'worth', 'value', 'estimated_value'
+                ]));
+
+                setInputValue('employees-count-ren', pick(record, [
+                    'total_number_of_employees', 'total_employees', 'employees_count', 'number_of_employees'
+                ]));
+
+                setInputValue('dependents-count-ren', pick(record, [
+                    'total_number_of_dependents', 'total_dependents', 'dependents_count', 'number_of_dependents'
+                ]));
+
+                setInputValue('intended-market-ren', pick(record, [
+                    'intended_market', 'selling_products_to', 'markets', 'market'
+                ]));
+
+                setInputValue('experience-ren', pick(record, [
+                    'experience_as_lumber_dealer', 'experience', 'lumber_dealer_experience'
+                ]));
+
+                // Other fields as before (with a few extra fallbacks)
+                const declName = pick(record, ['declaration_name']) || [pick(client, ['first', 'first_name']), pick(client, ['last', 'last_name'])].filter(Boolean).join(' ').trim();
+                setInputValue('declaration-name-ren', declName);
+
+                setInputValue('applicant-age-ren', pick(record, ['applicant_age', 'age']));
+
+                setInputValue('prev-certificate-ren', pick(record, [
+                    'permit_number', 'previous_certificate_no', 'prev_certificate_no', 'cr_no'
+                ]));
+
+                setInputValue('issued-date-ren', pick(record, ['date_issued', 'issued_on']).slice(0, 10));
+                const expiry = pick(record, ['doc_expiry_date', 'cr_expiry_date', 'expiry_date', 'expires_on']);
+                setInputValue('expiry-date-ren', expiry ? expiry.slice(0, 10) : '');
+
+                setInputValue('cr-license-ren', pick(record, ['cr_license_no', 'cr_license', 'license_no']));
+                setInputValue('sawmill-permit-ren', pick(record, ['sawmill_permit_no', 'sawmill_permit', 'permit_no']));
+
+                if (record.is_government_employee !== undefined && record.is_government_employee !== null) {
+                    setRadioGroup('govt-employee-ren-yes', 'govt-employee-ren-no', record.is_government_employee);
+                }
+                if (record.buying_from_other_sources !== undefined && record.buying_from_other_sources !== null) {
+                    setRadioGroup('other-sources-ren-yes', 'other-sources-ren-no', record.buying_from_other_sources);
+                }
+
+                if (Array.isArray(record.suppliers) && record.suppliers.length) {
+                    populateSuppliersRen(record.suppliers);
+                }
+                renderCrFiles(record);
+                syncPermitFiles(record);
+
+                chosenClientId = record.client_id || null;
+                if (record.client_id) {
+                    window.__USE_EXISTING_CLIENT_ID__ = record.client_id;
+                    existingClientNames = {
+                        first: pick(client, ['first', 'first_name']) || '',
+                        middle: pick(client, ['middle', 'middle_name']) || '',
+                        last: pick(client, ['last', 'last_name']) || ''
+                    };
+                }
+
+                window.__FORCE_NEW_CLIENT__ = false;
+                precheckCache = null;
+
+                // Optional: uncomment to inspect what was filled
+                // console.debug('[CR mapped]', {
+                //   opPlace: v('operation-place-ren'),
+                //   annVol:  v('annual-volume-ren'),
+                //   worth:   v('annual-worth-ren'),
+                //   emp:     v('employees-count-ren'),
+                //   deps:    v('dependents-count-ren'),
+                //   exp:     v('experience-ren')
+                // });
+            }
 
             function showLoading(msg = 'Working...') {
                 const overlay = document.getElementById('loadingIndicator');
@@ -2588,6 +3235,152 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const newSection = document.getElementById('lumber-application-section');
             const renSection = document.getElementById('renewal-application-section');
             const permitTypeBtns = $all('.permit-type-btn');
+            const clientModeEl = document.getElementById('clientMode');
+            const btnExisting = document.getElementById('btnExisting');
+            const btnNew = document.getElementById('btnNew');
+            const existingClientRow = document.getElementById('existingClientRow');
+            const newClientRow = document.getElementById('newClientRow');
+            const clientPick = document.getElementById('clientPick');
+            const clientPickError = document.getElementById('clientPickError');
+            const clientModeToggle = document.getElementById('clientModeToggle');
+            const clientModeHint = document.getElementById('clientModeHint');
+            const firstNameInput = document.getElementById('first-name');
+            const middleNameInput = document.getElementById('middle-name');
+            const lastNameInput = document.getElementById('last-name');
+            const declarationNameInput = document.getElementById('declaration-name');
+            const nameInputs = [firstNameInput, middleNameInput, lastNameInput];
+            const renewalCrPicker = document.getElementById("renewalCrPicker");
+            const renewalCrSelect = document.getElementById("renewalCrSelect");
+            let manualClientCache = {
+                first: firstNameInput?.value || '',
+                middle: middleNameInput?.value || '',
+                last: lastNameInput?.value || '',
+                declaration: declarationNameInput?.value || ''
+            };
+
+            function setClientPickError(msg) {
+                if (!clientPickError) return;
+                if (msg) {
+                    clientPickError.textContent = msg;
+                    clientPickError.style.display = 'block';
+                    clientPick?.classList?.add('invalid');
+                    clientPick?.setAttribute('aria-invalid', 'true');
+                } else {
+                    clientPickError.textContent = '';
+                    clientPickError.style.display = 'none';
+                    clientPick?.classList?.remove('invalid');
+                    clientPick?.removeAttribute('aria-invalid');
+                }
+            }
+
+            function populateNameInputs(first, middle, last, opts = {}) {
+                const silent = !!opts.silent;
+                const values = [first, middle, last];
+                nameInputs.forEach((input, idx) => {
+                    if (!input) return;
+                    input.value = values[idx] || '';
+                    if (!silent) {
+                        input.dispatchEvent(new Event('input', {
+                            bubbles: true
+                        }));
+                    }
+                });
+            }
+
+            function applyClientPickValues(showError = false) {
+                if (!clientPick) return;
+                if (!clientPick.value) {
+                    if (showError) {
+                        setClientPickError('Please select an existing client.');
+                    } else {
+                        setClientPickError('');
+                    }
+                    populateNameInputs('', '', '', {
+                        silent: true
+                    });
+                    if (declarationNameInput) {
+                        declarationNameInput.value = '';
+                        declarationNameInput.dispatchEvent(new Event('input', {
+                            bubbles: true
+                        }));
+                    }
+                    return;
+                }
+                const opt = clientPick.options[clientPick.selectedIndex];
+                const first = opt?.dataset?.first || '';
+                const middle = opt?.dataset?.middle || '';
+                const last = opt?.dataset?.last || '';
+                const fullName = [first, middle, last].filter(Boolean).join(' ').trim();
+                populateNameInputs(first, middle, last);
+                if (declarationNameInput) {
+                    declarationNameInput.value = fullName;
+                    declarationNameInput.dispatchEvent(new Event('input', {
+                        bubbles: true
+                    }));
+                }
+                setClientPickError('');
+            }
+
+            function setClientMode(mode = 'new') {
+                if (!clientModeEl) return;
+                const isExisting = mode === 'existing';
+                clientModeEl.value = isExisting ? 'existing' : 'new';
+
+                if (existingClientRow) existingClientRow.style.display = isExisting ? '' : 'none';
+                if (newClientRow) newClientRow.style.display = isExisting ? 'none' : '';
+                if (btnExisting) btnExisting.style.display = isExisting ? 'none' : 'inline-flex';
+                if (btnNew) btnNew.style.display = isExisting ? 'inline-flex' : 'none';
+
+                nameInputs.forEach((input) => {
+                    if (!input) return;
+                    if (isExisting) {
+                        input.setAttribute('readonly', 'readonly');
+                    } else {
+                        input.removeAttribute('readonly');
+                    }
+                    input.classList.toggle('readonly-input', isExisting);
+                });
+
+                if (isExisting) {
+                    manualClientCache = {
+                        first: firstNameInput?.value || '',
+                        middle: middleNameInput?.value || '',
+                        last: lastNameInput?.value || '',
+                        declaration: declarationNameInput?.value || ''
+                    };
+                    applyClientPickValues(false);
+                } else {
+                    setClientPickError('');
+                    if (clientPick) clientPick.value = '';
+                    populateNameInputs(
+                        manualClientCache.first || '',
+                        manualClientCache.middle || '',
+                        manualClientCache.last || '', {
+                            silent: true
+                        }
+                    );
+                    if (declarationNameInput) {
+                        declarationNameInput.value = manualClientCache.declaration || '';
+                        declarationNameInput.dispatchEvent(new Event('input', {
+                            bubbles: true
+                        }));
+                    }
+                }
+            }
+
+            btnExisting?.addEventListener('click', () => setClientMode('existing'));
+            btnNew?.addEventListener('click', () => setClientMode('new'));
+            clientPick?.addEventListener('change', () => {
+                if ((clientModeEl?.value || 'new') === 'existing') {
+                    applyClientPickValues(true);
+                } else {
+                    setClientPickError('');
+                }
+            });
+            setClientMode(clientModeEl?.value || 'new');
+            renewalCrSelect?.addEventListener('change', (e) => {
+                handleCrSelectChange(e.target.value || '');
+            });
 
             function activePermitType() {
                 return (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
@@ -2599,6 +3392,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const isNew = type === 'new';
                 show(newSection, isNew);
                 show(renSection, !isNew);
+                if (clientModeToggle) clientModeToggle.style.display = isNew ? 'flex' : 'none';
+                if (clientModeHint) clientModeHint.style.display = isNew ? 'block' : 'none';
+                if (renewalCrPicker) {
+                    renewalCrPicker.style.display = isNew ? 'none' : 'flex';
+                    if (isNew && renewalCrSelect) {
+                        renewalCrSelect.value = '';
+                        handleCrSelectChange('');
+                    }
+                }
+                if (isNew) {
+                    syncPermitFiles(null);
+                    resetCrFilesView();
+                }
+                if (!isNew) {
+                    setClientMode('new');
+                }
 
                 // NEW-only
                 show(requirement5, isNew);
@@ -2719,6 +3528,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const input = document.getElementById(id);
                 if (!input) return;
                 input.addEventListener('change', () => {
+                    if (remoteFileFallback[id]) delete remoteFileFallback[id];
+                    if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
                     const nameEl = input.parentElement?.querySelector('.file-name');
                     if (nameEl) nameEl.textContent = input.files?.[0]?.name ?? 'No file chosen';
                 });
@@ -3196,14 +4007,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     need_approved_new: 'Action Required',
                     need_released_new: 'Action Required'
                 };
+
+                // Default single Close button
+                let buttons = [{
+                    text: 'Close',
+                    class: 'btn btn-primary',
+                    onClick: () => closeValidation()
+                }];
+
+                // For the special "need_released_new" block, add a Request new button
+                // beside the Close button so users can quickly switch to filing a NEW permit.
+                if (code === 'need_released_new') {
+                    buttons = [{
+                            text: 'Request new',
+                            class: 'btn btn-outline',
+                            onClick: () => {
+                                closeValidation();
+                                // switch UI to new-permit flow and scroll to top
+                                try {
+                                    requestNewFromRenewal();
+                                } catch (e) {
+                                    console.error(e);
+                                }
+                            }
+                        },
+                        {
+                            text: 'Close',
+                            class: 'btn btn-primary',
+                            onClick: () => closeValidation()
+                        }
+                    ];
+                }
+
                 openValidation({
                     title: titles[code] || 'Validation',
                     html: message || 'Please resolve this before continuing.',
-                    buttons: [{
-                        text: 'Close',
-                        class: 'btn btn-primary',
-                        onClick: () => closeValidation()
-                    }]
+                    buttons: buttons
                 });
             }
 
@@ -3290,6 +4129,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const first = type === 'renewal' ? v('first-name-ren') : v('first-name');
                 const middle = type === 'renewal' ? v('middle-name-ren') : v('middle-name');
                 const last = type === 'renewal' ? v('last-name-ren') : v('last-name');
+                const clientMode = (clientModeEl?.value || 'new').toLowerCase();
+                const usingExistingPick = type === 'new' && clientMode === 'existing';
+
+                if (usingExistingPick && !(clientPick?.value)) {
+                    setClientPickError('Please select an existing client.');
+                    toast('Please select an existing client.');
+                    return;
+                }
+
+                if (usingExistingPick && clientPick?.value) {
+                    setClientPickError('');
+                    chosenClientId = clientPick.value;
+                    window.__FORCE_NEW_CLIENT__ = false;
+                    precheckCache = null;
+                    existingClientNames = {
+                        first: firstNameInput?.value || '',
+                        middle: middleNameInput?.value || '',
+                        last: lastNameInput?.value || ''
+                    };
+                    await finalSubmit();
+                    return;
+                }
 
                 showLoading('Checking records...');
                 try {
@@ -3507,6 +4368,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const msg = String(err?.message || '');
                     if (/for payment/i.test(msg)) {
                         showBlock('for_payment', err?.message || 'You still have an unpaid lumber permit on record. Please settle this personally at the office.');
+                    } else if (/^BLOCKED:/.test(msg)) {
+                        // Blocked by server with a shown modal already; no toast needed.
                     } else {
                         toast(err?.message || 'Submission failed. Please try again.');
                     }
@@ -3717,7 +4580,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // Attach uploads from the form
-                const pick = (id) => document.getElementById(id)?.files?.[0] || null;
+                const pick = (id) => {
+                    const input = document.getElementById(id);
+                    if (!input) return remoteFileFallback[id] || null;
+                    return input.files?.[0] || remoteFileFallback[id] || null;
+                };
                 const filesCommon = {
                     lumber_csw_document: pick('file-1'),
                     geo_photos: pick('file-2'),
@@ -3772,6 +4639,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Error(`HTTP ${res.status} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ ${text.slice(0, 200)}`);
                 }
                 if (!res.ok || !json.ok) {
+                    // If server returned a structured block (like need_released_new), show the
+                    // validation modal so UX matches precheck behavior instead of a toast/notification.
+                    if (json && json.block) {
+                        hideLoading();
+                        showBlock(json.block, json.message || 'Action required');
+                        // Stop submission by throwing a sentinel error (already showed modal)
+                        throw new Error('BLOCKED:' + (json.block || ''));
+                    }
                     throw new Error(json?.error || `HTTP ${res.status}`);
                 }
             }
@@ -3825,6 +4700,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 permitTypeBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'new'));
                 setPermitType('new');
+                if (renewalCrSelect) {
+                    renewalCrSelect.value = '';
+                    handleCrSelectChange('');
+                }
+                if (renewalCrPicker) renewalCrPicker.style.display = 'none';
                 clearPrecheckState();
 
                 window.scrollTo({
@@ -3907,6 +4787,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const NAME_RX = /^[A-Za-z' .-]{2,50}$/;
             const MID_RX = /^[A-Za-z' .-]{1,50}$/;
             const GENERIC_ID_RX = /^[A-Za-z0-9\-\/\s]{3,}$/; // for IDs/permits
+
+            // ===== NEW: File validation helpers =====
+            const FILE_IDS = ['file-1', 'file-2', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-9'];
+
+            // What’s required per mode:
+            const REQUIRED_NEW = ['file-1', 'file-2', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8']; // includes Mayor's Permit (file-6)
+            const REQUIRED_RENEWAL = ['file-1', 'file-2', 'file-4', 'file-7', 'file-9']; // includes Monthly/Quarterly (file-9)
+
+            function isDisplayed(el) {
+                if (!el) return false;
+                const cs = getComputedStyle(el);
+                return cs.display !== 'none' && cs.visibility !== 'hidden';
+            }
+
+            function hasFile(input) {
+                if (!input) return false;
+                // valid if: user picked a file OR a CR-loaded remote file is attached (via dataset.loadedUrl)
+                return (input.files && input.files.length > 0) || (input.dataset && input.dataset.loadedUrl);
+            }
+
+            function ensureFileError(container) {
+                if (!container) return null;
+                let holder = container.querySelector('.field-error');
+                if (!holder) {
+                    holder = document.createElement('div');
+                    holder.className = 'field-error';
+                    holder.style.cssText = 'color:#d32f2f;margin-top:6px;font-size:.9rem;display:none;';
+                    container.appendChild(holder);
+                }
+                return holder;
+            }
+
+            function setFileError(container, msg) {
+                const holder = ensureFileError(container);
+                if (!holder) return;
+                holder.textContent = msg || '';
+                holder.style.display = msg ? 'block' : 'none';
+            }
+
+            function validateFiles(isRenewal) {
+                const req = isRenewal ? REQUIRED_RENEWAL : REQUIRED_NEW;
+                let ok = true;
+                req.forEach(id => {
+                    const input = document.getElementById(id);
+                    if (!input) return;
+                    const container = input.closest('.file-input-container') || input.parentElement;
+
+                    // skip if its requirement row is currently hidden by the NEW/RENEWAL toggle
+                    const reqRow = container?.closest('.requirement-item') || container;
+                    if (reqRow && !isDisplayed(reqRow)) return;
+
+                    const good = hasFile(input);
+                    setFileError(container, good ? '' : 'This file is required.');
+                    if (!good) ok = false;
+                });
+                return ok;
+            }
+            // ===== /NEW: File validation helpers =====
+
 
 
             const rules = {
@@ -4005,8 +4944,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 },
                 'prev-certificate-ren': v => {
-                    if (v && !GENERIC_ID_RX.test(v)) return 'Use letters/numbers, slashes or dashes.';
+                    if (!v || !v.trim()) return 'Previous C.R. No. is required.';
                 },
+
                 'issued-date-ren': v => {
                     const exp = $('#expiry-date-ren')?.value;
                     if (v && exp && v > exp) return 'Issued date must be on/before the expiry date.';
@@ -4104,6 +5044,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
 
                 if (!validateSuppliers(isRenewal)) ok = false;
+                if (!validateFiles(isRenewal)) ok = false;
                 return ok;
             }
 
@@ -4179,6 +5120,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $('#add-supplier-row')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table', false), 0));
                 $('#add-supplier-row-ren')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table-ren', true), 0));
+                // NEW: live validation for file inputs
+                FILE_IDS.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.addEventListener('change', () => {
+                        const mode = (typeof activePermitType === 'function' ? activePermitType() : 'new');
+                        const isRenewal = mode === 'renewal';
+                        validateFiles(isRenewal);
+                    });
+                });
+
             }
 
             function interceptSubmitClicks() {

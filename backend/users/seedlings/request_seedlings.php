@@ -132,8 +132,10 @@ $request_date = trim($in['request_date'] ?? '');
 $contact_number = trim($in['contact_number'] ?? '');
 $sig_b64 = b64_from_data_url($in['signature_b64'] ?? '');
 $seedlings = $in['seedlings'] ?? [];
+$isReuseMode = ($mode === 'reuse');
+$batch_key = trim((string)($in['batch_key'] ?? '')) ?: null;
 
-if (!$first || !$last) out(false, 'First and last name are required.');
+if (!$isReuseMode && (!$first || !$last)) out(false, 'First and last name are required.');
 if (!$purpose) out(false, 'Purpose is required.');
 if (!$request_date) out(false, 'Request date is required.');
 if (!$sig_b64) out(false, 'Signature is required.');
@@ -145,21 +147,51 @@ $seedlings = array_values(array_filter(array_map(function ($r) {
 }, $seedlings)));
 if (!count($seedlings)) out(false, 'Add at least one seedling with a valid quantity.');
 
-/* duplicate check */
-$dup = $pdo->prepare('
-    SELECT client_id, first_name, middle_name, last_name,
-           sitio_street, barangay, municipality, city, signature, contact_number
-    FROM public.client
-    WHERE lower(btrim(coalesce(first_name,\'\')))  = lower(:f)
-      AND lower(btrim(coalesce(middle_name,\'\'))) = lower(:m)
-      AND lower(btrim(coalesce(last_name,\'\')))   = lower(:l)
-    ORDER BY id DESC LIMIT 1
-');
-$dup->execute([':f' => $first, ':m' => $middle, ':l' => $last]);
-$existing = $dup->fetch(PDO::FETCH_ASSOC) ?: null;
+/* duplicate-guard fingerprint (prevents accidental double writes) */
+$fingerprintData = [
+    'existing_client_id' => $existingIdIn,
+    'contact_number' => $contact_number,
+    'request_date' => $request_date,
+    'purpose' => $purpose,
+    'first_name' => $first,
+    'middle_name' => $middle,
+    'last_name' => $last,
+    'organization' => $org,
+    'sitio_street' => $sitio,
+    'barangay' => $barangay,
+    'municipality' => $municipality,
+    'city' => $city,
+    'seedlings' => $seedlings,
+];
+$fingerprint = hash('sha256', json_encode($fingerprintData));
+$duplicateWindow = 90; // seconds
+$prevSubmission = $_SESSION['last_seedling_submission'] ?? null;
+if (
+    isset($prevSubmission['hash'], $prevSubmission['ts'], $prevSubmission['response'])
+    && $prevSubmission['hash'] === $fingerprint
+    && (time() - (int)$prevSubmission['ts']) <= $duplicateWindow
+) {
+    out(true, '', $prevSubmission['response'] + ['duplicate' => true]);
+}
 
-if ($mode === 'auto' && $existing) out(true, '', ['needs_decision' => true, 'existing_client' => $existing]);
-if ($mode === 'auto') $mode = 'new';
+/* duplicate check */
+$existing = null;
+if (!$isReuseMode) {
+    $dup = $pdo->prepare('
+        SELECT client_id, first_name, middle_name, last_name,
+               sitio_street, barangay, municipality, city, signature, contact_number
+        FROM public.client
+        WHERE lower(btrim(coalesce(first_name,\'\')))  = lower(:f)
+          AND lower(btrim(coalesce(middle_name,\'\'))) = lower(:m)
+          AND lower(btrim(coalesce(last_name,\'\')))   = lower(:l)
+        ORDER BY id DESC LIMIT 1
+    ');
+    $dup->execute([':f' => $first, ':m' => $middle, ':l' => $last]);
+    $existing = $dup->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($mode === 'auto' && $existing) out(true, '', ['needs_decision' => true, 'existing_client' => $existing]);
+    if ($mode === 'auto') $mode = 'new';
+}
 
 /* validate seedlings catalog */
 $ids = array_map(fn($r) => $r['seedlings_id'], $seedlings);
@@ -172,13 +204,22 @@ foreach ($seedlings as $r) if (!isset($catalog[$r['seedlings_id']])) out(false, 
 
 /* letter builder */
 $build_letter_mhtml = function (array $client, string $sig_b64, string $purpose, array $seedlings, array $catalog, string $request_date): array {
-    $first = trim((string)($client['first_name'] ?? ''));
-    $middle = trim((string)($client['middle_name'] ?? ''));
-    $last = trim((string)($client['last_name'] ?? ''));
-    $sitio = trim((string)($client['sitio_street'] ?? ''));
-    $brgy = trim((string)($client['barangay'] ?? ''));
-    $muni = trim((string)($client['municipality'] ?? ''));
-    $city = trim((string)($client['city'] ?? ''));
+    $toTitle = static function (?string $s): string {
+        $s = trim((string)$s);
+        if ($s === '') return '';
+        if (function_exists('mb_convert_case')) {
+            return mb_convert_case($s, MB_CASE_TITLE, 'UTF-8');
+        }
+        return ucwords(strtolower($s));
+    };
+
+    $first = $toTitle($client['first_name'] ?? '');
+    $middle = $toTitle($client['middle_name'] ?? '');
+    $last = $toTitle($client['last_name'] ?? '');
+    $sitio = $toTitle($client['sitio_street'] ?? '');
+    $brgy = $toTitle($client['barangay'] ?? '');
+    $muni = $toTitle($client['municipality'] ?? '');
+    $city = $toTitle($client['city'] ?? '');
     $org = trim((string)($client['organization'] ?? ''));
 
     $lgu = $city ?: $muni;
@@ -208,7 +249,7 @@ $build_letter_mhtml = function (array $client, string $sig_b64, string $purpose,
         <p style="text-align:justify;text-indent:50px;">I am writing to formally request ' . $totalQty . ' seedlings of ' . $seedTxt . ' for ' . h($purpose) . '. The seedlings will be planted at ' . h($addressLine ?: $cityProv) . '.</p>
         <p style="text-align:justify;text-indent:50px;">The purpose of this request is ' . h($purpose) . '.</p>
         <p style="text-align:justify;text-indent:50px;">I would be grateful if you could approve this request at your earliest convenience.</p>
-        <p>Thank you for your time and consideration.</p>
+        <p style="text-align:justify;text-indent:50px;">Thank you for your time and consideration.</p>
         <p>Sincerely,<br><br>
             <img src="cid:sigimg" width="140" height="25" style="height:auto;border:1px solid #ccc;"><br>
             ' . h($fullName) . '<br>' . h($addressLine ?: $cityProv) . '<br>' . h($org) . '
@@ -232,6 +273,7 @@ try {
     $client_id = null;
     $client_for_doc = null;
     $sigUrl = null;
+    $application_id = null;
 
     if ($mode === 'reuse') {
         $cid = $existingIdIn ?: ($existing['client_id'] ?? '');
@@ -302,25 +344,95 @@ try {
     $stmt->execute([':f' => $fileUrl]);
     $requirement_id = (string)$stmt->fetchColumn();
 
+    // application_form row (seedling metadata)
+    $formFirst = trim((string)($client_for_doc['first_name'] ?? $first));
+    $formMiddle = trim((string)($client_for_doc['middle_name'] ?? $middle));
+    $formLast = trim((string)($client_for_doc['last_name'] ?? $last));
+    $completeName = trim($formFirst . ' ' . ($formMiddle ? $formMiddle . ' ' : '') . $formLast);
+    if ($completeName === '') {
+        $completeName = null;
+    }
+
+    $sitioForForm = trim((string)($client_for_doc['sitio_street'] ?? $sitio));
+    $brgyForForm = trim((string)($client_for_doc['barangay'] ?? $barangay));
+    $muniForForm = trim((string)($client_for_doc['municipality'] ?? $municipality));
+    $cityForForm = trim((string)($client_for_doc['city'] ?? $city));
+    $addressParts = [];
+    if ($sitioForForm) $addressParts[] = $sitioForForm;
+    if ($brgyForForm) $addressParts[] = 'Brgy. ' . $brgyForForm;
+    if ($muniForForm) $addressParts[] = $muniForForm;
+    if ($cityForForm) $addressParts[] = $cityForForm;
+    $presentAddress = $addressParts ? implode(', ', $addressParts) : null;
+    $location = $cityForForm ?: $muniForForm ?: null;
+
+    $contactNumberForForm = trim($contact_number ?: ($client_for_doc['contact_number'] ?? ''));
+    if ($contactNumberForForm === '') $contactNumberForForm = null;
+
+    $orgName = trim($org);
+    if ($orgName === '') $orgName = null;
+
+    $requestDateNormalized = null;
+    if ($request_date) {
+        $ts = strtotime($request_date);
+        $requestDateNormalized = $ts !== false ? date('Y-m-d', $ts) : $request_date;
+    }
+
+    $signatureForForm = trim((string)($sigUrl ?: ($client_for_doc['signature'] ?? '')));
+    if ($signatureForForm === '') {
+        $signatureForForm = null;
+    }
+
+    $insApp = $pdo->prepare('
+        INSERT INTO public.application_form
+            (client_id, contact_number, application_for, type_of_permit,
+             complete_name, company_name, present_address, province, location,
+             purpose_of_use, date, date_today, signature_of_applicant)
+        VALUES
+            (:client_id, :contact_number, :application_for, :type_of_permit,
+             :complete_name, :company_name, :present_address, :province, :location,
+             :purpose_of_use, :date, :date_today, :signature)
+        RETURNING application_id
+    ');
+    $insApp->execute([
+        ':client_id' => $client_id,
+        ':contact_number' => $contactNumberForForm,
+        ':application_for' => 'seedling',
+        ':type_of_permit' => 'seedling',
+        ':complete_name' => $completeName,
+        ':company_name' => $orgName,
+        ':present_address' => $presentAddress,
+        ':province' => 'Cebu',
+        ':location' => $location,
+        ':purpose_of_use' => $purpose,
+        ':date' => $requestDateNormalized,
+        ':date_today' => $requestDateNormalized,
+        ':signature' => $signatureForForm
+    ]);
+    $application_id = (string)$insApp->fetchColumn();
+
     // seedling_requests (one per seedling)
-    $insSeed = $pdo->prepare('INSERT INTO public.seedling_requests (client_id, seedlings_id, quantity) VALUES (:cid,:sid,:qty) RETURNING seedl_req_id');
+    $insSeed = $pdo->prepare('INSERT INTO public.seedling_requests (client_id, seedlings_id, quantity, batch_key) VALUES (:cid,:sid,:qty,:batch_key) RETURNING seedl_req_id');
     $seed_req_ids = [];
     foreach ($seedlings as $r) {
-        $insSeed->execute([':cid' => $client_id, ':sid' => $r['seedlings_id'], ':qty' => (int)$r['qty']]);
+        $insSeed->execute([':cid' => $client_id, ':sid' => $r['seedlings_id'], ':qty' => (int)$r['qty'], ':batch_key' => $batch_key]);
         $seed_req_ids[] = (string)$insSeed->fetchColumn();
     }
 
-    // approvals (one per seedling request)
+    // approval (one per entire request)
     $insAppr = $pdo->prepare('
-        INSERT INTO public.approval (client_id, requirement_id, request_type, submitted_at, seedl_req_id)
-        VALUES (:cid, :rid, :rtype, now(), :sreq)
+        INSERT INTO public.approval (client_id, requirement_id, request_type, submitted_at, seedl_req_id, application_id)
+        VALUES (:cid, :rid, :rtype, now(), :sreq, :app_id)
         RETURNING approval_id
     ');
-    $approval_ids = [];
-    foreach ($seed_req_ids as $sid) {
-        $insAppr->execute([':cid' => $client_id, ':rid' => $requirement_id, ':rtype' => 'seedling', ':sreq' => $sid]);
-        $approval_ids[] = (string)$insAppr->fetchColumn();
-    }
+    $seedlReference = $seed_req_ids[0] ?? null;
+    $insAppr->execute([
+        ':cid' => $client_id,
+        ':rid' => $requirement_id,
+        ':rtype' => 'seedling',
+        ':sreq' => $seedlReference,
+        ':app_id' => $application_id
+    ]);
+    $approval_ids = [(string)$insAppr->fetchColumn()];
 
     // ───────────────────────────────────────────────────────────────
     // SINGLE notification for the whole request (aggregated message)
@@ -348,7 +460,7 @@ try {
 
     $pdo->commit();
 
-    out(true, '', [
+    $successPayload = [
         'needs_decision' => false,
         'mode_used' => $mode,
         'client_id' => $client_id,
@@ -356,9 +468,18 @@ try {
         'requirement_id' => $requirement_id,
         'seedling_request_ids' => $seed_req_ids,
         'approval_ids' => $approval_ids,
-        'notification_ids' => [$notif_id],  // single element
+        'notification_ids' => [$notif_id],
         'application_form_url' => $fileUrl,
-    ]);
+        'application_id' => $application_id,
+    ];
+
+    $_SESSION['last_seedling_submission'] = [
+        'hash' => $fingerprint,
+        'ts' => time(),
+        'response' => $successPayload,
+    ];
+
+    out(true, '', $successPayload);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     http_response_code(500);

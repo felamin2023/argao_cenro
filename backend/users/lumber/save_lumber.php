@@ -79,6 +79,16 @@ function norm(?string $s): string
     return strtolower(trim((string)$s));
 }
 
+function pick_post_value(array $keys): string
+{
+    foreach ($keys as $key) {
+        if (array_key_exists($key, $_POST)) {
+            return trim((string)($_POST[$key] ?? ''));
+        }
+    }
+    return '';
+}
+
 /* ----------------------------- main ---------------------------- */
 try {
     if (!isset($_SESSION['user_id'])) throw new Exception('Not authenticated');
@@ -113,17 +123,75 @@ try {
     $is_govt = strtolower(trim($_POST['is_government_employee'] ?? ($_POST['is_government_employee_ren'] ?? '')));
     if (!in_array($is_govt, ['yes', 'no'], true)) $is_govt = null;
 
-    $business_address = trim($_POST['business_address'] ?? ($_POST['business_address_ren'] ?? ''));
-    $operation_place  = trim($_POST['operation_place']  ?? ($_POST['operation_place_ren']  ?? ''));
+    $business_address = pick_post_value(['business_address', 'business_address_ren']);
+    $operation_place  = pick_post_value([
+        'proposed_place_of_operation',
+        'proposed_place_of_operation_ren',
+        'place_of_operation',
+        'place_of_operation_ren',
+        'operation_place',
+        'operation_place_ren',
+        'location',
+        'location_ren',
+        'place',
+        'place_ren',
+    ]);
 
-    $annual_volume = trim($_POST['annual_volume'] ?? ($_POST['annual_volume_ren'] ?? ''));
-    $annual_worth  = trim($_POST['annual_worth']  ?? ($_POST['annual_worth_ren']  ?? ''));
+    $annual_volume = pick_post_value([
+        'expected_annual_volume',
+        'expected_annual_volume_ren',
+        'expected_gross_annual_volume',
+        'expected_gross_annual_volume_ren',
+        'expected_gross_annual_volume_of_business',
+        'expected_gross_annual_volume_of_business_ren',
+        'annual_volume',
+        'annual_volume_ren',
+    ]);
+    $annual_worth = pick_post_value([
+        'estimated_annual_worth',
+        'estimated_annual_worth_ren',
+        'annual_worth',
+        'annual_worth_ren',
+        'worth',
+        'worth_ren',
+        'value',
+        'value_ren',
+        'estimated_value',
+        'estimated_value_ren',
+    ]);
 
-    $employees_count  = trim($_POST['employees_count']  ?? ($_POST['employees_count_ren']  ?? ''));
-    $dependents_count = trim($_POST['dependents_count'] ?? ($_POST['dependents_count_ren'] ?? ''));
+    $employees_count = pick_post_value([
+        'total_number_of_employees',
+        'total_number_of_employees_ren',
+        'total_employees',
+        'total_employees_ren',
+        'employees_count',
+        'employees_count_ren',
+        'number_of_employees',
+        'number_of_employees_ren',
+    ]);
+    $dependents_count = pick_post_value([
+        'total_number_of_dependents',
+        'total_number_of_dependents_ren',
+        'total_dependents',
+        'total_dependents_ren',
+        'dependents_count',
+        'dependents_count_ren',
+        'number_of_dependents',
+        'number_of_dependents_ren',
+    ]);
 
     $intended_market = trim($_POST['intended_market'] ?? ($_POST['intended_market_ren'] ?? ''));
-    $experience      = trim($_POST['experience']      ?? ($_POST['experience_ren']      ?? ''));
+    $experience = pick_post_value([
+        'my_experience_as_alumber_dealer',
+        'my_experience_as_alumber_dealer_ren',
+        'experience_as_lumber_dealer',
+        'experience_as_lumber_dealer_ren',
+        'lumber_dealer_experience',
+        'lumber_dealer_experience_ren',
+        'experience',
+        'experience_ren',
+    ]);
     $declaration_name = trim($_POST['declaration_name'] ?? ($_POST['declaration_name_ren'] ?? ''));
 
     $suppliers_json = (string)($_POST['suppliers_json'] ?? ($_POST['suppliers_json_ren'] ?? ''));

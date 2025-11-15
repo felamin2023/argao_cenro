@@ -1,5 +1,5 @@
 <?php
-// supernotif.php (PDO/Supabase)
+// supernotif.php (PDO/Supabase) — UPDATED to match superhome.php bell UI + logic
 declare(strict_types=1);
 session_start();
 
@@ -34,65 +34,151 @@ try {
     exit();
 }
 
-// Get current page (for nav highlighting)
-$current_page = basename($_SERVER['PHP_SELF']);
+// =================== AJAX (same endpoints as superhome.php) ===================
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
 
-// Fetch notifications (profile update requests)
+    try {
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where lower("to") = :to and (is_read is null or is_read = false)
+            ');
+            $u->execute([':to' => 'cenro']);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_read') {
+            $nid = $_GET['notif_id'] ?? '';
+            if (!$nid) {
+                echo json_encode(['success' => false, 'error' => 'Missing notif_id']);
+                exit;
+            }
+            $u = $pdo->prepare('
+                update public.notifications
+                set is_read = true
+                where notif_id = :nid and lower("to") = :to
+            ');
+            $u->execute([':nid' => $nid, ':to' => 'cenro']);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    } catch (Throwable $e) {
+        error_log('[SUPRENOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// =================== Load notifications (identical query to superhome.php) ===================
+$notifs = [];
+$unreadCount = 0;
+
 try {
-    $sql = "
-        SELECT
-            pur.id,
-            pur.user_id,
-            pur.created_at,
-            pur.is_read,
-            pur.department,
-            pur.status,
-            pur.reviewed_at,
-            pur.reviewed_by,
-            u.first_name,
-            u.last_name
-        FROM public.profile_update_requests pur
-        JOIN public.users u
-          ON pur.user_id = u.user_id
-        ORDER BY
-            CASE WHEN lower(pur.status) = 'pending' THEN 0 ELSE 1 END ASC,
-            pur.is_read ASC,
-            CASE WHEN lower(pur.status) = 'pending' THEN pur.created_at ELSE pur.reviewed_at END DESC
-    ";
-    $notifications = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    $ns = $pdo->prepare('
+        select
+            notif_id,
+            "from",
+            "to",
+            message,
+            is_read,
+            created_at,
+            reqpro_id
+        from public.notifications
+        where lower("to") = :to
+        order by created_at desc
+        limit 100
+    ');
+    $ns->execute([':to' => 'cenro']);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
 } catch (Throwable $e) {
-    error_log('[SUPRENOTIF FETCH] ' . $e->getMessage());
-    $notifications = [];
+    error_log('[SUPRENOTIF LOAD] ' . $e->getMessage());
+    $notifs = [];
+    $unreadCount = 0;
 }
 
-// Helper: normalize Postgres boolean-ish values
-function pg_bool_true($v): bool
+// =================== Helpers (exact same as superhome.php) ===================
+// Treat naive DB timestamps as UTC, then show elapsed time in Asia/Manila.
+function _to_manila_dt(string $src): DateTimeImmutable
 {
-    if (is_bool($v)) return $v;
-    $s = strtolower((string)$v);
-    return in_array($s, ['t', 'true', '1', 'yes', 'on'], true);
+    $src = trim($src);
+    $hasTz = (bool)preg_match('/[zZ]|[+\-]\d{2}:\d{2}$/', $src); // already has TZ?
+    $base  = new DateTimeImmutable($src, $hasTz ? null : new DateTimeZone('UTC'));
+    return $base->setTimezone(new DateTimeZone('Asia/Manila'));
 }
 
-$unread_notifications = array_values(array_filter($notifications, fn($n) => !pg_bool_true($n['is_read'])));
-
-// Helper for "15 minutes ago"
-function time_elapsed_string($datetime, $full = false)
+function time_elapsed_string(string $datetime, bool $full = false): string
 {
-    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    $now = new DateTimeImmutable('now', new DateTimeZone('Asia/Manila'));
+    $ago = _to_manila_dt($datetime);
+
     $diff = $now->diff($ago);
 
-    $weeks = (int)floor($diff->d / 7);
-    $days  = $diff->d % 7;
+    // Use total days for weeks calculation
+    $daysTotal = is_int($diff->days) ? $diff->days : (int)$diff->d;
+    $weeks     = intdiv($daysTotal, 7);
+    $daysLeft  = $daysTotal - $weeks * 7;
 
-    $map = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $units = [
+        'y' => ['v' => $diff->y,        'label' => 'year'],
+        'm' => ['v' => $diff->m,        'label' => 'month'],
+        'w' => ['v' => $weeks,          'label' => 'week'],
+        'd' => ['v' => $daysLeft,       'label' => 'day'],
+        'h' => ['v' => $diff->h,        'label' => 'hour'],
+        'i' => ['v' => $diff->i,        'label' => 'minute'],
+        's' => ['v' => $diff->s,        'label' => 'second'],
+    ];
+
     $parts = [];
-    foreach ($map as $k => $label) {
-        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
-        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    foreach ($units as $u) {
+        if ($u['v'] > 0) {
+            $parts[] = $u['v'] . ' ' . $u['label'] . ($u['v'] > 1 ? 's' : '');
+        }
     }
     if (!$full) $parts = array_slice($parts, 0, 1);
+
     return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+// Optional: nice absolute Manila time for tooltips
+function format_manila_abs(string $datetime): string
+{
+    return _to_manila_dt($datetime)->format('M j, Y g:i A');
+}
+
+// For nav highlighting
+$current_page = basename($_SERVER['PHP_SELF']);
+
+// Build filtered arrays for All/Unread tabs
+$unreadOnly = array_values(array_filter($notifs, fn($n) => empty($n['is_read'])));
+
+// Little helpers for title/message, same rules as superhome.php
+function notif_title_from($fromVal): string
+{
+    $fv = trim((string)$fromVal);
+    if (preg_match('/^register request$/i', $fv)) return 'Registration';
+    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $fv)) return 'Profile update';
+    return 'Notification';
+}
+function clean_notif_msg($m): string
+{
+    $t = trim((string)$m);
+    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
+    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+    $t = trim(preg_replace('/\s{2,}/', ' ', $t));
+    return $t !== '' ? $t : 'There’s an update.';
 }
 ?>
 <!DOCTYPE html>
@@ -103,7 +189,200 @@ function time_elapsed_string($datetime, $full = false)
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notifications</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Page (list) styles -->
     <link rel="stylesheet" href="/denr/superadmin/css/supernotif.css">
+
+    <!-- Bell dropdown styles (copied from superhome.php) -->
+    <style>
+        :root {
+            --as-primary: #2b6625;
+            --as-primary-dark: #1e4a1a;
+            --as-white: #fff;
+            --as-light-gray: #f5f5f5;
+            --as-radius: 8px;
+            --as-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+            --as-trans: all .2s ease;
+        }
+
+        .as-item {
+            position: relative;
+        }
+
+        .as-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--as-trans);
+        }
+
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+        }
+
+        .as-icon i {
+            font-size: 1.3rem;
+        }
+
+        .as-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 300px;
+            background: #fff;
+            border-radius: var(--as-radius);
+            box-shadow: var(--as-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: var(--as-trans);
+            padding: 0;
+            z-index: 1000;
+        }
+
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--as-primary);
+            font-size: 1.1rem;
+        }
+
+        .as-mark-all {
+            color: var(--as-primary);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--as-trans);
+        }
+
+        .as-mark-all:hover {
+            color: var(--as-primary-dark);
+            transform: scale(1.05);
+        }
+
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+            background: #fff;
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--as-trans);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05);
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .as-notif-icon {
+            color: var(--as-primary);
+            font-size: 1.2rem;
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--as-primary);
+            margin-bottom: 4px;
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35;
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px;
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+            background: #fff;
+            position: sticky;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .as-view-all {
+            color: var(--as-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline;
+        }
+
+        .as-badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
 </head>
 
 <body>
@@ -124,68 +403,70 @@ function time_elapsed_string($datetime, $full = false)
                 </div>
             </div>
 
-
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <!-- === Bell dropdown (IDENTICAL to superhome.php) === -->
+            <div class="as-item">
+                <div class="as-icon">
                     <i class="fas fa-bell"></i>
-                    <!-- ✅ Unique ID so we never confuse this with status pills -->
-                    <span class="badge" id="bell-badge"><?= count($unread_notifications) ?></span>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge"><?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+
+                <div class="as-dropdown-menu as-notifications">
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
 
-                    <div class="notification-list">
-                        <?php if (count($notifications) === 0): ?>
-                            <div class="notification-item">
-                                <div class="notification-content">
-                                    <div class="notification-title">No profile update requests</div>
+                    <div class="notifcontainer">
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No record found</div>
+                                    <div class="as-notif-message">There are no notifications.</div>
                                 </div>
                             </div>
-                        <?php else: ?>
-                            <?php foreach ($notifications as $notif): ?>
-                                <!-- ✅ data-id for cross-list syncing -->
-                                <div class="notification-item <?= (!pg_bool_true($notif['is_read'])) ? 'unread' : '' ?> status-<?= htmlspecialchars((string)$notif['status']) ?>" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">
-                                    <a href="supereach.php?id=<?= htmlspecialchars((string)$notif['id']) ?>" class="notification-link">
-                                        <div class="notification-icon">
-                                            <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                                <i class="fas fa-exclamation-triangle text-warning"></i>
-                                            <?php elseif (strtolower((string)$notif['status']) === 'approved'): ?>
-                                                <i class="fas fa-check-circle text-success"></i>
-                                            <?php else: ?>
-                                                <i class="fas fa-times-circle text-danger"></i>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="notification-content">
-                                            <div class="notification-title">
-                                                Profile Update <?= ucfirst((string)$notif['status']) ?>
-                                                <span class="badge badge-<?= strtolower((string)$notif['status']) === 'pending' ? 'warning' : (strtolower((string)$notif['status']) === 'approved' ? 'success' : 'danger') ?>">
-                                                    <?= ucfirst((string)$notif['status']) ?>
-                                                </span>
-                                            </div>
-                                            <div class="notification-message">
-                                                <?= htmlspecialchars((string)$notif['department']) ?> Administrator requested to update their profile.
-                                            </div>
-                                            <div class="notification-time">
-                                                <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                                    Requested <?= time_elapsed_string((string)$notif['created_at']) ?>
-                                                <?php else: ?>
-                                                    <?= ucfirst((string)$notif['status']) ?> by
-                                                    <?= htmlspecialchars((string)$notif['reviewed_by']) ?>
-                                                    <?= time_elapsed_string((string)$notif['reviewed_at']) ?>
-                                                <?php endif; ?>
+                            <?php else: foreach ($notifs as $n):
+                                $unread   = empty($n['is_read']);
+                                $created  = isset($n['created_at']) ? (string)$n['created_at'] : '';
+                                $fromVal  = (string)($n['from'] ?? '');
+                                $reqproId = $n['reqpro_id'] ?? '';
+
+                                $title = notif_title_from($fromVal);
+
+                                $cleanMsg = clean_notif_msg($n['message'] ?? '');
+
+                                // Relative/absolute times (Asia/Manila)
+                                $relTime  = $created !== '' ? time_elapsed_string($created) : 'just now';
+                                $absTitle = $created !== '' ? format_manila_abs($created)
+                                    : format_manila_abs((new DateTimeImmutable('now'))->format('Y-m-d H:i:s'));
+                                $ts = $created !== ''
+                                    ? _to_manila_dt($created)->getTimestamp()
+                                    : (new DateTimeImmutable('now', new DateTimeZone('Asia/Manila')))->getTimestamp();
+                            ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        data-from="<?= htmlspecialchars($fromVal, ENT_QUOTES) ?>"
+                                        data-reqpro-id="<?= htmlspecialchars((string)$reqproId, ENT_QUOTES) ?>">
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time"
+                                                data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>"
+                                                title="<?= htmlspecialchars($absTitle, ENT_QUOTES) ?>">
+                                                <?= htmlspecialchars($relTime, ENT_QUOTES) ?>
                                             </div>
                                         </div>
                                     </a>
                                 </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-footer">
-                        <a href="supernotif.php" class="view-all">View All Notifications</a>
+                    <div class="as-notif-footer">
+                        <a href="supernotif.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
@@ -206,132 +487,94 @@ function time_elapsed_string($datetime, $full = false)
         </div>
     </header>
 
-    <!-- Notifications Content -->
+    <!-- =================== MAIN LIST (All / Unread tabs) =================== -->
     <div class="notifications-container">
         <div class="notifications-header">NOTIFICATIONS</div>
 
         <div class="notification-tabs">
             <div id="all-tab" class="tab active">All Notifications</div>
-            <div id="unread-tab" class="tab">Unread <span class="tab-badge"><?= count($unread_notifications) ?></span></div>
+            <div id="unread-tab" class="tab">Unread <span class="tab-badge"><?= (int)$unreadCount ?></span></div>
         </div>
 
+        <!-- ALL -->
         <div id="all-notifications" class="notification-list">
-            <?php if (count($notifications) === 0): ?>
+            <?php if (!$notifs): ?>
                 <div class="notification-item">
                     <div class="notification-content">
-                        <div class="notification-title">No profile update requests</div>
+                        <div class="notification-title">No notifications for CENRO</div>
                     </div>
                 </div>
-            <?php else: ?>
-                <?php foreach ($notifications as $notif): ?>
-                    <div class="notification-item <?= (!pg_bool_true($notif['is_read'])) ? 'unread' : '' ?> status-<?= htmlspecialchars((string)$notif['status']) ?>" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">
-                        <div class="notification-title">
-                            <div class="notification-icon">
-                                <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                    <i class="fas fa-exclamation-triangle text-warning"></i>
-                                <?php elseif (strtolower((string)$notif['status']) === 'approved'): ?>
-                                    <i class="fas fa-check-circle text-success"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-times-circle text-danger"></i>
-                                <?php endif; ?>
-                            </div>
-                            Profile Update <?= ucfirst((string)$notif['status']) ?>
-                            <span class="badge badge-<?= strtolower((string)$notif['status']) === 'pending' ? 'warning' : (strtolower((string)$notif['status']) === 'approved' ? 'success' : 'danger') ?>">
-                                <?= ucfirst((string)$notif['status']) ?>
-                            </span>
-                        </div>
-                        <div class="notification-content">
-                            <?= htmlspecialchars((string)$notif['department']) ?> Administrator requested to update their profile.
-                        </div>
-                        <div class="notification-time">
-                            <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                Requested <?= time_elapsed_string((string)$notif['created_at']) ?>
-                            <?php else: ?>
+                <?php else: foreach ($notifs as $n):
+                    $unread   = empty($n['is_read']);
+                    $created  = isset($n['created_at']) ? (string)$n['created_at'] : '';
+                    $fromVal  = (string)($n['from'] ?? '');
+                    $reqproId = $n['reqpro_id'] ?? '';
 
-                                <?= time_elapsed_string((string)$notif['reviewed_at']) ?>
-                            <?php endif; ?>
+                    $title    = notif_title_from($fromVal);
+                    $cleanMsg = clean_notif_msg($n['message'] ?? '');
+                    $relTime  = $created !== '' ? time_elapsed_string($created) : 'just now';
+                ?>
+                    <div class="notification-item <?= $unread ? 'unread' : '' ?>" data-id="<?= htmlspecialchars((string)$n['notif_id']) ?>">
+                        <div class="notification-title">
+                            <div class="notification-icon"><i class="fas fa-info-circle"></i></div>
+                            <?= htmlspecialchars($title) ?>
                         </div>
+                        <div class="notification-content"><?= htmlspecialchars($cleanMsg) ?></div>
+                        <div class="notification-time"><?= htmlspecialchars($relTime) ?></div>
                         <div class="notification-actions">
-                            <button class="action-button view-details-btn" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">View Details</button>
-                            <?php if (!pg_bool_true($notif['is_read'])): ?>
-                                <button class="action-button mark-read-btn" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">Mark as Read</button>
+                            <button
+                                class="action-button view-details-btn"
+                                data-notif-id="<?= htmlspecialchars((string)$n['notif_id']) ?>"
+                                data-from="<?= htmlspecialchars($fromVal) ?>"
+                                data-reqpro-id="<?= htmlspecialchars((string)$reqproId) ?>">View Details</button>
+                            <?php if ($unread): ?>
+                                <button class="action-button mark-read-btn" data-id="<?= htmlspecialchars((string)$n['notif_id']) ?>">Mark as Read</button>
                             <?php endif; ?>
                         </div>
                     </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+            <?php endforeach;
+            endif; ?>
         </div>
 
+        <!-- UNREAD -->
         <div id="unread-notifications" class="notification-list" style="display:none;">
-            <?php if (count($unread_notifications) === 0): ?>
+            <?php if (!$unreadOnly): ?>
                 <div class="notification-item">
                     <div class="notification-content">
                         <div class="notification-title">No unread notifications</div>
                     </div>
                 </div>
-            <?php else: ?>
-                <?php foreach ($unread_notifications as $notif): ?>
-                    <div class="notification-item unread status-<?= htmlspecialchars((string)$notif['status']) ?>" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">
+                <?php else: foreach ($unreadOnly as $n):
+                    $created  = isset($n['created_at']) ? (string)$n['created_at'] : '';
+                    $fromVal  = (string)($n['from'] ?? '');
+                    $reqproId = $n['reqpro_id'] ?? '';
+
+                    $title    = notif_title_from($fromVal);
+                    $cleanMsg = clean_notif_msg($n['message'] ?? '');
+                    $relTime  = $created !== '' ? time_elapsed_string($created) : 'just now';
+                ?>
+                    <div class="notification-item unread" data-id="<?= htmlspecialchars((string)$n['notif_id']) ?>">
                         <div class="notification-title">
-                            <div class="notification-icon">
-                                <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                    <i class="fas fa-exclamation-triangle text-warning"></i>
-                                <?php elseif (strtolower((string)$notif['status']) === 'approved'): ?>
-                                    <i class="fas fa-check-circle text-success"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-times-circle text-danger"></i>
-                                <?php endif; ?>
-                            </div>
-                            Profile Update <?= ucfirst((string)$notif['status']) ?>
-                            <span class="badge badge-<?= strtolower((string)$notif['status']) === 'pending' ? 'warning' : (strtolower((string)$notif['status']) === 'approved' ? 'success' : 'danger') ?>">
-                                <?= ucfirst((string)$notif['status']) ?>
-                            </span>
+                            <div class="notification-icon"><i class="fas fa-info-circle"></i></div>
+                            <?= htmlspecialchars($title) ?>
                         </div>
-                        <div class="notification-content">
-                            <?= htmlspecialchars((string)$notif['department']) ?> Administrator requested to update their profile.
-                        </div>
-                        <div class="notification-time">
-                            <?php if (strtolower((string)$notif['status']) === 'pending'): ?>
-                                Requested <?= time_elapsed_string((string)$notif['created_at']) ?>
-                            <?php else: ?>
-                                <?= ucfirst((string)$notif['status']) ?> by
-                                <?= htmlspecialchars((string)$notif['reviewed_by']) ?>
-                                <?= time_elapsed_string((string)$notif['reviewed_at']) ?>
-                            <?php endif; ?>
-                        </div>
+                        <div class="notification-content"><?= htmlspecialchars($cleanMsg) ?></div>
+                        <div class="notification-time"><?= htmlspecialchars($relTime) ?></div>
                         <div class="notification-actions">
-                            <button class="action-button view-details-btn" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">View Details</button>
-                            <button class="action-button mark-read-btn" data-id="<?= htmlspecialchars((string)$notif['id']) ?>">Mark as Read</button>
+                            <button
+                                class="action-button view-details-btn"
+                                data-notif-id="<?= htmlspecialchars((string)$n['notif_id']) ?>"
+                                data-from="<?= htmlspecialchars($fromVal) ?>"
+                                data-reqpro-id="<?= htmlspecialchars((string)$reqproId) ?>">View Details</button>
+                            <button class="action-button mark-read-btn" data-id="<?= htmlspecialchars((string)$n['notif_id']) ?>">Mark as Read</button>
                         </div>
                     </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+            <?php endforeach;
+            endif; ?>
         </div>
 
         <div class="mark-all-button">
             <button id="mark-all-read">✓ Mark all as read</button>
-        </div>
-    </div>
-
-    <!-- Details Modal (static example – can be removed if not needed) -->
-    <div class="modal" id="notification-modal">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <div class="modal-header">
-                <h2>Admin Profile Update Request</h2>
-            </div>
-            <div class="modal-body">
-                <p><strong>Category:</strong> Administrator Request</p>
-                <p><strong>Received:</strong> Today, 10:30 AM</p>
-                <h3>Username Change Request</h3>
-                <p>The Seedlings Administrator has requested to change their username.</p>
-                <p><strong>Requested by:</strong> Seedlings Administrator</p>
-                <p><strong>Request Date:</strong> <?= date('F j, Y') ?></p>
-                <p><strong>Current Username:</strong> seedlings_admin</p>
-                <p><strong>Requested New Username:</strong> seedlings_administrator</p>
-                <p><strong>Reason for Change:</strong> Standardizing admin usernames across the system</p>
-                <p><strong>Priority:</strong> Medium</p>
-            </div>
         </div>
     </div>
 
@@ -367,34 +610,59 @@ function time_elapsed_string($datetime, $full = false)
                 });
             });
 
-            // Close dropdowns when clicking outside (mobile)
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+            // === Header dropdown: same deep-link + mark-read pattern as superhome.php ===
+            (function() {
+                const list = document.querySelector('.notifcontainer');
+                if (!list) return;
+
+                const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+                list.addEventListener('click', (e) => {
+                    const link = e.target.closest('.as-notif-link');
+                    if (!link) return;
+
+                    e.preventDefault();
+
+                    const notifId = link.dataset.notifId || '';
+                    const fromVal = (link.dataset.from || '').trim();
+                    const reqproId = (link.dataset.reqproId || '').trim();
+
+                    // mark as read (fire-and-forget) via this page's ajax
+                    fetch('?ajax=mark_read&notif_id=' + encodeURIComponent(notifId), {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).catch(() => {});
+
+                    // decide target (exact rules as superhome.php)
+                    let url = 'superhome.php';
+                    if (/^register request$/i.test(fromVal)) {
+                        url = 'superhome.php';
+                    } else if (uuidRe.test(fromVal)) {
+                        url = (reqproId && /^\d+$/.test(reqproId)) ?
+                            'supereach.php?id=' + encodeURIComponent(reqproId) :
+                            'supereach.php?user=' + encodeURIComponent(fromVal);
+                    }
+                    window.location.href = url;
+                });
+
+                // "Mark all as read" in header
+                const markAll = document.getElementById('asMarkAllRead');
+                if (markAll) {
+                    markAll.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        fetch('?ajax=mark_all_read', {
+                            method: 'POST',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        }).finally(() => location.reload());
                     });
                 }
-            });
+            })();
 
-            // "Mark all as read" in header dropdown (persist to backend)
-            const markAllHeader = document.querySelector('.mark-all-read');
-            markAllHeader && markAllHeader.addEventListener('click', (e) => {
-                e.preventDefault();
-                sendMarkAll().then(ok => {
-                    if (ok) {
-                        document.querySelectorAll('.notification-item.unread').forEach(item => {
-                            item.classList.remove('unread');
-                            const b = item.querySelector('.mark-read-btn');
-                            if (b) b.remove();
-                        });
-                        updateUnreadCounts();
-                    }
-                });
-            });
-
-            // Tabs
+            // ===== Tabs =====
             const allTab = document.getElementById('all-tab');
             const unreadTab = document.getElementById('unread-tab');
             const allContent = document.getElementById('all-notifications');
@@ -413,21 +681,51 @@ function time_elapsed_string($datetime, $full = false)
                 allContent.style.display = 'none';
             });
 
-            // View Details → supereach.php
+            // ===== Deep-link routing for the big lists =====
+            const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+            function computeTargetURL({
+                fromVal,
+                reqproId,
+                notifId
+            }) {
+                const f = (fromVal || '').trim();
+                if (/^register request$/i.test(f)) {
+                    return 'superhome.php?notif_id=' + encodeURIComponent(notifId);
+                }
+                if (uuidRe.test(f)) {
+                    if (reqproId && /^\d+$/.test(reqproId)) {
+                        return 'supereach.php?id=' + encodeURIComponent(reqproId) +
+                            '&notif_id=' + encodeURIComponent(notifId);
+                    }
+                    return 'supereach.php?user=' + encodeURIComponent(f) +
+                        '&notif_id=' + encodeURIComponent(notifId);
+                }
+                return 'supernotif.php?notif_id=' + encodeURIComponent(notifId);
+            }
+
             document.querySelectorAll('.view-details-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const id = btn.getAttribute('data-id');
-                    window.location.href = 'supereach.php?id=' + encodeURIComponent(id);
+                    const notifId = btn.dataset.notifId || '';
+                    const fromVal = btn.dataset.from || '';
+                    const reqproId = btn.dataset.reqproId || '';
+                    const url = computeTargetURL({
+                        fromVal,
+                        reqproId,
+                        notifId
+                    });
+                    // Do not mark read here; destination page marks on load
+                    window.location.href = url;
                 });
             });
 
-            // Mark one as read
+            // ===== Mark one / all as read (using this page's ajax, same as superhome.php) =====
             document.querySelectorAll('.mark-read-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const id = btn.getAttribute('data-id');
-                    const ok = await sendMarkOne(id);
+                    const ok = await markOne(id);
                     if (ok) {
-                        // ✅ Clear "unread" from every copy (header + All + Unread)
+                        // remove 'unread' state from all duplicates of this notif
                         const sel = `.notification-item[data-id="${CSS.escape(id)}"]`;
                         document.querySelectorAll(sel).forEach(el => {
                             el.classList.remove('unread');
@@ -439,92 +737,59 @@ function time_elapsed_string($datetime, $full = false)
                 });
             });
 
-            // Mark all as read (button below lists)
             document.getElementById('mark-all-read').addEventListener('click', async () => {
-                const ok = await sendMarkAll();
+                const ok = await markAll();
                 if (ok) {
-                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                        item.classList.remove('unread');
-                        const b = item.querySelector('.mark-read-btn');
+                    document.querySelectorAll('.notification-item.unread').forEach(el => {
+                        el.classList.remove('unread');
+                        const b = el.querySelector('.mark-read-btn');
                         if (b) b.remove();
                     });
                     updateUnreadCounts();
                 }
             });
 
-            async function sendMarkOne(id) {
+            async function markOne(id) {
                 try {
-                    const r = await fetch('backend/admin/mark_notification_read.php', {
+                    const r = await fetch('?ajax=mark_read&notif_id=' + encodeURIComponent(id), {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
                             'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        credentials: 'same-origin',
-                        body: 'id=' + encodeURIComponent(id)
+                        }
                     });
-                    const txt = await r.text();
-                    let data;
-                    try {
-                        data = JSON.parse(txt);
-                    } catch (e) {
-                        console.error('Non-JSON response for mark one:', txt);
-                        return false;
-                    }
-                    if (!r.ok || !data || !data.success) {
-                        console.error('Mark one failed:', data);
-                        return false;
-                    }
-                    return true;
-                } catch (err) {
-                    console.error('Mark one error:', err);
+                    const data = await r.json().catch(() => null);
+                    return !!(r.ok && data && data.success);
+                } catch {
                     return false;
                 }
             }
-
-            async function sendMarkAll() {
+            async function markAll() {
                 try {
-                    const r = await fetch('backend/admin/mark_notification_read.php', {
+                    const r = await fetch('?ajax=mark_all_read', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
                             'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        credentials: 'same-origin',
-                        body: 'mark_all=1'
+                        }
                     });
-                    const txt = await r.text();
-                    let data;
-                    try {
-                        data = JSON.parse(txt);
-                    } catch (e) {
-                        console.error('Non-JSON response for mark all:', txt);
-                        return false;
-                    }
-                    if (!r.ok || !data || !data.success) {
-                        console.error('Mark all failed:', data);
-                        return false;
-                    }
-                    return true;
-                } catch (err) {
-                    console.error('Mark all error:', err);
+                    const data = await r.json().catch(() => null);
+                    return !!(r.ok && data && data.success);
+                } catch {
                     return false;
                 }
             }
 
             function updateUnreadCounts() {
-                // ✅ Count from a single source of truth to avoid duplicates
-                const src = document.getElementById('all-notifications');
-                const unread = src ? src.querySelectorAll('.notification-item.unread').length : 0;
-
+                const unread = document.querySelectorAll('#all-notifications .notification-item.unread').length;
                 const tabBadge = document.querySelector('.tab-badge');
-                const bellBadge = document.getElementById('bell-badge');
-
-                if (tabBadge) tabBadge.textContent = unread;
-                if (bellBadge) bellBadge.textContent = unread;
-
-                if (tabBadge) tabBadge.style.display = unread === 0 ? 'none' : 'inline-block';
-                if (bellBadge) bellBadge.style.display = unread === 0 ? 'none' : 'inline-block';
+                const bellBadge = document.getElementById('asNotifBadge');
+                if (tabBadge) {
+                    tabBadge.textContent = unread;
+                    tabBadge.style.display = unread ? 'inline-block' : 'none';
+                }
+                if (bellBadge) {
+                    bellBadge.textContent = unread;
+                    bellBadge.style.display = unread ? 'inline-flex' : 'none';
+                }
             }
         });
     </script>

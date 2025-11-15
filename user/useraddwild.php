@@ -105,6 +105,196 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt->close();
 }
+
+/* Prefetch released wildlife permits (WFP numbers) for renewal assist */
+$clientRows = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT client_id, user_id, first_name, middle_name, last_name,
+               sitio_street, barangay, municipality, city
+        FROM public.client
+        ORDER BY (user_id = :uid) DESC, last_name ASC, first_name ASC
+        LIMIT 500
+    ");
+    $stmt->execute([':uid' => $_SESSION['user_id']]);
+    $clientRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('[WILDLIFE-CLIENTS] ' . $e->getMessage());
+    $clientRows = [];
+}
+
+$wfpRecords = [];
+$wfpSelectOptions = [];
+$wfpRecordsJson = '{}';
+if (!empty($_SESSION['user_id'])) {
+    try {
+        $wfpStmt = $pdo->prepare("
+            WITH latest_docs AS (
+                SELECT DISTINCT ON (upper(trim(d.wfp_no)))
+                    d.approved_id,
+                    d.approval_id AS doc_approval_id,
+                    trim(d.wfp_no) AS wfp_no,
+                    d.date_issued,
+                    d.expiry_date,
+                    d.approved_document,
+                    d.series,
+                    d.meeting_date,
+                    a.approval_id,
+                    a.permit_type,
+                    a.application_id,
+                    a.requirement_id,
+                    a.submitted_at,
+                    af.additional_information,
+                    af.present_address,
+                    af.telephone_number,
+                    c.first_name    AS client_first,
+                    c.middle_name   AS client_middle,
+                    c.last_name     AS client_last,
+                    req.application_form,
+                    req.wild_sec_cda_registration,
+                    req.wild_scientific_expertise,
+                    req.wild_financial_plan,
+                    req.wild_facility_design,
+                    req.wild_prior_clearance,
+                    req.wild_vicinity_map,
+                    req.wild_proof_of_purchase,
+                    req.wild_deed_of_donation,
+                    req.wild_inspection_report,
+                    req.wild_previous_wfp_copy,
+                    req.wild_breeding_report_quarterly,
+                    req.wild_cites_import_permit,
+                    req.wild_local_transport_permit,
+                    req.wild_barangay_mayor_clearance
+                FROM public.approved_docs d
+                JOIN public.approval a ON a.approval_id = d.approval_id
+                JOIN public.client   c ON c.client_id   = a.client_id
+                LEFT JOIN public.application_form af ON af.application_id = a.application_id
+                LEFT JOIN public.requirements     req ON req.requirement_id = a.requirement_id
+                WHERE c.user_id = :uid
+                  AND a.request_type ILIKE 'wildlife'
+                  AND NULLIF(btrim(d.wfp_no), '') IS NOT NULL
+                ORDER BY upper(trim(d.wfp_no)), COALESCE(d.date_issued, a.submitted_at) DESC, d.approved_id DESC
+            )
+            SELECT *
+            FROM latest_docs
+            ORDER BY COALESCE(date_issued, submitted_at) DESC NULLS LAST, approved_id DESC
+            LIMIT 60
+        ");
+        $wfpStmt->execute([':uid' => $_SESSION['user_id']]);
+        $rows = $wfpStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $fileMap = [
+            'renewal-uploaded-files-2'  => ['wild_previous_wfp_copy', 'Copy of previous WFP'],
+            'renewal-uploaded-files-3'  => ['wild_breeding_report_quarterly', 'Quarterly breeding report'],
+            'renewal-uploaded-files-4a' => ['wild_cites_import_permit', 'CITES/Non-CITES import permit'],
+            'renewal-uploaded-files-4b' => ['wild_proof_of_purchase', 'Proof of purchase'],
+            'renewal-uploaded-files-4c' => ['wild_deed_of_donation', 'Deed of donation'],
+            'renewal-uploaded-files-4d' => ['wild_local_transport_permit', 'Local transport permit'],
+            'renewal-uploaded-files-5a' => ['wild_barangay_mayor_clearance', 'Barangay/Mayor clearance'],
+            'renewal-uploaded-files-5b' => ['wild_facility_design', 'Facility design'],
+            'renewal-uploaded-files-5c' => ['wild_vicinity_map', 'Vicinity map'],
+            'renewal-uploaded-files-6'  => ['wild_inspection_report', 'Inspection report'],
+        ];
+
+        foreach ($rows as $row) {
+            $key = $row['approved_id'] ?? $row['doc_approval_id'] ?? $row['approval_id'] ?? md5(($row['wfp_no'] ?? '') . ($row['date_issued'] ?? '') . uniqid('', true));
+            $info = [];
+            if (!empty($row['additional_information'])) {
+                $decoded = json_decode($row['additional_information'], true);
+                if (is_array($decoded)) {
+                    $info = $decoded;
+                }
+            }
+
+            $categories = [];
+            if (!empty($info['categories']) && is_array($info['categories'])) {
+                $categories = [
+                    'zoo' => !empty($info['categories']['zoo']),
+                    'botanical_garden' => !empty($info['categories']['botanical_garden']),
+                    'private_collection' => !empty($info['categories']['private_collection']),
+                ];
+            }
+
+            $animals = [];
+            if (!empty($info['animals']) && is_array($info['animals'])) {
+                $animals = $info['animals'];
+            }
+
+            $files = [];
+            foreach ($fileMap as $containerId => [$column, $label]) {
+                if (!empty($row[$column])) {
+                    $entry = [
+                        'label' => $label,
+                        'url' => $row[$column],
+                    ];
+                    $files[$containerId][] = $entry;
+                }
+            }
+
+            $issuedDisplay = '';
+            if (!empty($row['date_issued'])) {
+                try {
+                    $issuedDisplay = (new DateTime($row['date_issued']))->format('M j, Y');
+                } catch (Throwable $e) {
+                    $issuedDisplay = $row['date_issued'];
+                }
+            }
+
+            $optionPieces = [];
+            $optionPieces[] = trim((string)$row['wfp_no']);
+            if (!empty($row['permit_type'])) {
+                $optionPieces[] = '(' . ucwords((string)$row['permit_type']) . ')';
+            }
+            if ($issuedDisplay) {
+                $optionPieces[] = 'issued ' . $issuedDisplay;
+            }
+            $optionLabel = trim(implode(' ', array_filter($optionPieces)));
+
+            $wfpSelectOptions[] = [
+                'key' => $key,
+                'label' => $optionLabel ?: ($row['wfp_no'] ?: 'Released WFP'),
+            ];
+
+            $wfpRecords[$key] = [
+                'key' => $key,
+                'label' => $optionLabel,
+                'wfp_number' => $row['wfp_no'],
+                'permit_type' => strtolower((string)($row['permit_type'] ?? '')),
+                'date_issued' => $row['date_issued'],
+                'expiry_date' => $row['expiry_date'],
+                'issue_date' => $info['issue_date'] ?? $row['date_issued'] ?? '',
+                'approved_document' => $row['approved_document'],
+                'series' => $row['series'],
+                'meeting_date' => $row['meeting_date'],
+                'client' => [
+                    'first_name' => $row['client_first'] ?? '',
+                    'middle_name' => $row['client_middle'] ?? '',
+                    'last_name' => $row['client_last'] ?? '',
+                ],
+                'info' => [
+                    'residence_address' => $info['residence_address'] ?? $row['present_address'] ?? '',
+                    'telephone_number' => $info['telephone_number'] ?? $row['telephone_number'] ?? '',
+                    'establishment_name' => $info['establishment_name'] ?? '',
+                    'establishment_address' => $info['establishment_address'] ?? '',
+                    'establishment_telephone' => $info['establishment_telephone'] ?? '',
+                    'postal_address' => $info['postal_address'] ?? '',
+                    'wfp_number' => $info['wfp_number'] ?? $row['wfp_no'] ?? '',
+                ],
+                'categories' => $categories,
+                'animals' => $animals,
+                'files' => $files,
+            ];
+        }
+
+        $jsonFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+        $wfpRecordsJson = json_encode($wfpRecords, $jsonFlags) ?: '{}';
+    } catch (Throwable $e) {
+        error_log('[WILDLIFE WFP LIST] ' . $e->getMessage());
+        $wfpRecords = [];
+        $wfpSelectOptions = [];
+        $wfpRecordsJson = '{}';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -713,6 +903,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 4px;
             font-size: 14px;
             transition: border-color 0.3s;
+        }
+
+        .readonly-input {
+            background-color: #f4f4f4 !important;
+            cursor: not-allowed;
         }
 
         .form-row {
@@ -1991,9 +2186,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .permit-type-selector {
             display: flex;
-            justify-content: flex-start;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 20px;
         }
+
+        .permit-type-selector small {
+            flex-basis: 100%;
+            color: #4f5d48;
+        }
+
+        .permit-type-buttons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .renewal-wfp-picker {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: #f8fff6;
+            border: 1px solid #c9e6c0;
+            border-radius: 6px;
+        }
+
+        .renewal-wfp-picker label {
+            font-weight: 600;
+            font-size: .9rem;
+            color: #2b6625;
+        }
+
+        .renewal-wfp-picker select {
+            min-width: 220px;
+            padding: 6px 10px;
+            border: 1px solid #2b6625;
+            border-radius: 4px;
+            font-size: .95rem;
+        }
+
 
         .permit-type-btn {
             padding: 12px 25px;
@@ -2032,6 +2265,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to {
                 transform: rotate(360deg);
             }
+        }
+
+        .uploaded-files a {
+            display: none !important;
         }
     </style>
 </head>
@@ -2183,8 +2420,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Permit Type Selector -->
                 <div class="permit-type-selector">
-                    <button type="button" class="permit-type-btn active" data-type="new">New permit</button>
-                    <button type="button" class="permit-type-btn" data-type="renewal">Renewal permit</button>
+
+                    <div class="permit-type-buttons">
+                        <button type="button" class="permit-type-btn active" data-type="new">New permit</button>
+                        <button type="button" class="permit-type-btn" data-type="renewal">Renewal permit</button>
+                        <div class="client-mode-toggle" id="clientModeToggle" style=" display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+                            <button type="button" id="btnExisting" class="btn btn-outline">
+                                <i class="fas fa-user-check"></i>&nbsp;Existing client
+                            </button>
+                            <button type="button" id="btnNew" class="btn btn-outline" style="display:none;">
+                                <i class="fas fa-user-plus"></i>&nbsp;New client
+                            </button>
+
+                        </div>
+                    </div>
+                    <div class="renewal-wfp-picker" id="renewalWfpPicker" data-has-options="<?= $wfpSelectOptions ? '1' : '0' ?>">
+                        <?php if ($wfpSelectOptions): ?>
+                            <label for="renewalWfpSelect">WFP No.</label>
+                            <select id="renewalWfpSelect">
+                                <option value="">Select released WFP</option>
+                                <?php foreach ($wfpSelectOptions as $opt): ?>
+                                    <option value="<?= htmlspecialchars($opt['key'], ENT_QUOTES) ?>"><?= htmlspecialchars($opt['label'], ENT_QUOTES) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <span style="font-size:.85rem;color:#6c7a67;">No released WFP records yet.</span>
+                        <?php endif; ?>
+                    </div>
+                    <small style="opacity:.8;">Choose <b>Renewal permit</b> if you already have a released wildlife permit.</small>
+                    <small style="opacity:.8;">Choose <b>Existing client</b> if the client record already exists.</small>
                 </div>
 
                 <!-- ================= NEW: Upper sections ================= -->
@@ -2210,7 +2474,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-section">
                         <h2>APPLICANT INFORMATION</h2>
 
-                        <div class="form-row">
+
+
+                        <input type="hidden" id="clientMode" value="new">
+
+                        <div id="existingClientRow" class="form-group" style="display:none;">
+                            <label for="clientPick" style="font-weight:600;margin-bottom:6px;display:block;">Select client</label>
+                            <select id="clientPick" style="height:42px;width:100%;border:1px solid #ccc;border-radius:4px;padding:0 10px;">
+                                <option value="">-- Select a client --</option>
+                                <?php
+                                $myId = (string)($_SESSION['user_id'] ?? '');
+                                $renderOption = static function (array $c): string {
+                                    $full = trim(trim((string)($c['first_name'] ?? '')) . ' ' . trim((string)($c['middle_name'] ?? '')) . ' ' . trim((string)($c['last_name'] ?? '')));
+                                    $full = trim(preg_replace('/\s+/', ' ', $full));
+                                    $addrParts = [];
+                                    if (!empty($c['sitio_street'])) $addrParts[] = $c['sitio_street'];
+                                    if (!empty($c['barangay'])) $addrParts[] = 'Brgy. ' . $c['barangay'];
+                                    if (!empty($c['municipality']) || !empty($c['city'])) {
+                                        $addrParts[] = $c['municipality'] ?: $c['city'];
+                                    }
+                                    $label = $full ?: 'Unnamed client';
+                                    if ($addrParts) {
+                                        $label .= ' - ' . implode(', ', $addrParts);
+                                    }
+                                    $addressValue = $addrParts ? implode(', ', $addrParts) : '';
+                                    $attrs = sprintf(
+                                        ' value="%s" data-first="%s" data-middle="%s" data-last="%s" data-sitio="%s" data-barangay="%s" data-municipality="%s" data-city="%s" data-address="%s"',
+                                        htmlspecialchars((string)($c['client_id'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['first_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['middle_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['last_name'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['sitio_street'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['barangay'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['municipality'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars((string)($c['city'] ?? ''), ENT_QUOTES),
+                                        htmlspecialchars($addressValue, ENT_QUOTES)
+                                    );
+                                    return '<option' . $attrs . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+                                };
+                                $hasMine = false;
+                                foreach ($clientRows as $c) {
+                                    if ((string)($c['user_id'] ?? '') !== $myId) continue;
+                                    if (!$hasMine) {
+                                        echo '<optgroup label="Your clients">';
+                                        $hasMine = true;
+                                    }
+                                    echo $renderOption($c);
+                                }
+                                if ($hasMine) echo '</optgroup>';
+
+                                $hasOthers = false;
+                                foreach ($clientRows as $c) {
+                                    if ((string)($c['user_id'] ?? '') === $myId) continue;
+                                    if (!$hasOthers) {
+                                        echo '<optgroup label="All clients (others)">';
+                                        $hasOthers = true;
+                                    }
+                                    echo $renderOption($c);
+                                }
+                                if ($hasOthers) echo '</optgroup>';
+                                ?>
+                            </select>
+                            <div id="clientPickError" class="field-error" style="display:none;"></div>
+                        </div>
+
+                        <div class="form-row" id="newClientRow">
                             <div class="form-group">
                                 <label for="first-name" class="required">First Name:</label>
                                 <input type="text" id="first-name" name="first_name" />
@@ -2901,6 +3229,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     <script>
+        window.__WFP_RECORDS__ = <?= $wfpRecordsJson ?? '{}' ?>;
+    </script>
+    <script>
         (() => {
             // ====== CONFIG ======
             const SAVE_URL = new URL('../backend/users/wildlife/save_wildlife.php', window.location.href).toString();
@@ -2923,6 +3254,197 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const v = (id) => (byId(id)?.value || '').trim();
             const activePermitType = () =>
                 (document.querySelector('.permit-type-btn.active')?.getAttribute('data-type') || 'new');
+            const wfpRecords = window.__WFP_RECORDS__ || {};
+            const renewalWfpPicker = byId('renewalWfpPicker');
+            const renewalWfpSelect = byId('renewalWfpSelect');
+            const fileContainerIds = [
+                'renewal-uploaded-files-2',
+                'renewal-uploaded-files-3',
+                'renewal-uploaded-files-4a',
+                'renewal-uploaded-files-4b',
+                'renewal-uploaded-files-4c',
+                'renewal-uploaded-files-4d',
+                'renewal-uploaded-files-5a',
+                'renewal-uploaded-files-5b',
+                'renewal-uploaded-files-5c',
+                'renewal-uploaded-files-6',
+            ];
+            const fileInputByContainer = {
+                'renewal-uploaded-files-2': 'renewal-file-2',
+                'renewal-uploaded-files-3': 'renewal-file-3',
+                'renewal-uploaded-files-4a': 'renewal-file-4a',
+                'renewal-uploaded-files-4b': 'renewal-file-4b',
+                'renewal-uploaded-files-4c': 'renewal-file-4c',
+                'renewal-uploaded-files-4d': 'renewal-file-4d',
+                'renewal-uploaded-files-5a': 'renewal-file-5a',
+                'renewal-uploaded-files-5b': 'renewal-file-5b',
+                'renewal-uploaded-files-5c': 'renewal-file-5c',
+                'renewal-uploaded-files-6': 'renewal-file-6',
+            };
+            const existingFileCache = Object.create(null); // fieldId -> File
+            const existingFileFetches = Object.create(null); // fieldId -> Promise
+            const existingFileTargets = Object.create(null); // fieldId -> url
+            const existingFileUrls = Object.create(null); // fieldId -> original URL/reference
+
+            // ====== CLIENT MODE (new permit) ======
+            const clientModeEl = byId('clientMode');
+            const btnExisting = byId('btnExisting');
+            const btnNew = byId('btnNew');
+            const existingClientRow = byId('existingClientRow');
+            const newClientRow = byId('newClientRow');
+            const clientPick = byId('clientPick');
+            const clientPickError = byId('clientPickError');
+            const clientModeToggle = byId('clientModeToggle');
+            const firstNameInput = byId('first-name');
+            const middleNameInput = byId('middle-name');
+            const lastNameInput = byId('last-name');
+            const residenceAddrInput = byId('residence-address');
+            const nameInputs = [firstNameInput, middleNameInput, lastNameInput];
+            let manualClientCache = {
+                first: firstNameInput?.value || '',
+                middle: middleNameInput?.value || '',
+                last: lastNameInput?.value || '',
+                residence: residenceAddrInput?.value || '',
+            };
+
+            function clearFieldErrorEl(input) {
+                if (!input) return;
+                const err = input.nextElementSibling;
+                if (err?.classList?.contains('field-error')) err.style.display = 'none';
+                input.classList.remove('invalid');
+                input.removeAttribute('aria-invalid');
+            }
+
+            function setClientPickError(msg) {
+                if (!clientPickError) return;
+                if (msg) {
+                    clientPickError.textContent = msg;
+                    clientPickError.style.display = 'block';
+                    clientPick?.classList?.add('invalid');
+                    clientPick?.setAttribute('aria-invalid', 'true');
+                } else {
+                    clientPickError.textContent = '';
+                    clientPickError.style.display = 'none';
+                    clientPick?.classList?.remove('invalid');
+                    clientPick?.removeAttribute('aria-invalid');
+                }
+            }
+
+            function clearClientPickError() {
+                setClientPickError('');
+            }
+
+            function populateNameInputs(first, middle, last, opts = {}) {
+                const silent = !!opts.silent;
+                const apply = (input, value) => {
+                    if (!input) return;
+                    input.value = value || '';
+                    if (silent) {
+                        clearFieldErrorEl(input);
+                    } else {
+                        input.dispatchEvent(new Event('input', {
+                            bubbles: true
+                        }));
+                    }
+                };
+                apply(firstNameInput, first);
+                apply(middleNameInput, middle);
+                apply(lastNameInput, last);
+            }
+
+            function setResidenceAddress(value, opts = {}) {
+                const silent = !!opts.silent;
+                if (!residenceAddrInput) return;
+                residenceAddrInput.value = value || '';
+                if (silent) {
+                    clearFieldErrorEl(residenceAddrInput);
+                } else {
+                    residenceAddrInput.dispatchEvent(new Event('input', {
+                        bubbles: true
+                    }));
+                }
+            }
+
+            function applyClientPickValues(showError = false) {
+                if (!clientPick) return;
+                if (!clientPick.value) {
+                    if (showError) {
+                        setClientPickError('Please select an existing client.');
+                    } else {
+                        clearClientPickError();
+                    }
+                    populateNameInputs('', '', '', {
+                        silent: true
+                    });
+                    setResidenceAddress('', {
+                        silent: true
+                    });
+                    return;
+                }
+                const opt = clientPick.options[clientPick.selectedIndex];
+                const first = opt?.dataset?.first || '';
+                const middle = opt?.dataset?.middle || '';
+                const last = opt?.dataset?.last || '';
+                const address = opt?.dataset?.address || '';
+                populateNameInputs(first, middle, last);
+                setResidenceAddress(address);
+                clearClientPickError();
+            }
+
+            function setClientMode(mode = 'new') {
+                if (!clientModeEl) return;
+                const isExisting = mode === 'existing';
+                clientModeEl.value = isExisting ? 'existing' : 'new';
+
+                if (existingClientRow) existingClientRow.style.display = isExisting ? '' : 'none';
+                if (newClientRow) newClientRow.style.display = isExisting ? 'none' : '';
+                if (btnExisting) btnExisting.style.display = isExisting ? 'none' : 'inline-flex';
+                if (btnNew) btnNew.style.display = isExisting ? 'inline-flex' : 'none';
+
+                nameInputs.forEach((input) => {
+                    if (!input) return;
+                    if (isExisting) {
+                        input.setAttribute('readonly', 'readonly');
+                    } else {
+                        input.removeAttribute('readonly');
+                    }
+                    input.classList.toggle('readonly-input', isExisting);
+                });
+
+                if (isExisting) {
+                    manualClientCache = {
+                        first: firstNameInput?.value || '',
+                        middle: middleNameInput?.value || '',
+                        last: lastNameInput?.value || '',
+                        residence: residenceAddrInput?.value || '',
+                    };
+                    applyClientPickValues(false);
+                } else {
+                    clearClientPickError();
+                    if (clientPick) clientPick.value = '';
+                    populateNameInputs(
+                        manualClientCache.first || '',
+                        manualClientCache.middle || '',
+                        manualClientCache.last || '', {
+                            silent: true
+                        }
+                    );
+                    setResidenceAddress(manualClientCache.residence || '', {
+                        silent: true
+                    });
+                }
+            }
+
+            btnExisting?.addEventListener('click', () => setClientMode('existing'));
+            btnNew?.addEventListener('click', () => setClientMode('new'));
+            clientPick?.addEventListener('change', () => {
+                if ((clientModeEl?.value || 'new') === 'existing') {
+                    applyClientPickValues(true);
+                } else {
+                    clearClientPickError();
+                }
+            });
+            setClientMode(clientModeEl?.value || 'new');
 
             function toast(msg) {
                 const n = byId('profile-notification');
@@ -2937,6 +3459,245 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         n.style.opacity = '1';
                     }, 350);
                 }, 2400);
+            }
+
+            const toYMD = (value) => {
+                if (!value) return '';
+                if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+                const d = new Date(value);
+                if (isNaN(d.getTime())) return '';
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${d.getFullYear()}-${mm}-${dd}`;
+            };
+            const titleCase = (value = '') => {
+                const lower = String(value || '').toLowerCase();
+                return lower.replace(/\b\w/g, (char) => char.toUpperCase());
+            };
+
+            function toggleWfpPicker(isNew) {
+                if (!renewalWfpPicker) return;
+                renewalWfpPicker.style.display = isNew ? 'none' : 'flex';
+            }
+
+            function clearAllFileContainers() {
+                fileContainerIds.forEach((id) => {
+                    const el = byId(id);
+                    if (el) el.innerHTML = '';
+                    const inputId = fileInputByContainer[id];
+                    if (inputId) {
+                        const nameSpan = byId(inputId)?.closest('.file-input-container')?.querySelector('.file-name');
+                        if (nameSpan) nameSpan.textContent = 'No file chosen';
+                        delete existingFileCache[inputId];
+                        delete existingFileFetches[inputId];
+                        delete existingFileTargets[inputId];
+                        delete existingFileUrls[inputId];
+                    }
+                });
+            }
+
+            function clearRenewalFilePreviews() {
+                clearAllFileContainers();
+            }
+
+            function renderRenewalFiles(data = {}) {
+                clearAllFileContainers();
+                const fileMap = data.files || {};
+                Object.entries(fileMap).forEach(([containerId, entries]) => {
+                    const el = byId(containerId);
+                    if (!el) return;
+                    const list = Array.isArray(entries) ? entries : [entries];
+                    existingFileUrls[fileInputByContainer[containerId]] = list[0]?.url || '';
+                    const frag = document.createDocumentFragment();
+                    list.forEach((entry) => {
+                        if (!entry || !entry.url) return;
+                        const link = document.createElement('a');
+                        link.href = entry.url;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = entry.label || 'View file';
+                        link.style.display = 'block';
+                        frag.appendChild(link);
+                    });
+                    if (frag.childNodes.length) {
+                        el.appendChild(frag);
+                        const inputId = fileInputByContainer[containerId];
+                        if (inputId) {
+                            const nameSpan = byId(inputId)?.closest('.file-input-container')?.querySelector('.file-name');
+                            if (nameSpan) nameSpan.textContent = fileNameFromEntry(list[0]) || 'Loading file...';
+                            queueExistingFileDownload(inputId, list[0]);
+                        }
+                    }
+                });
+            }
+
+            function fileNameFromEntry(entry) {
+                if (!entry) return '';
+                if (entry.url) {
+                    const clean = entry.url.split('?')[0];
+                    const idx = clean.lastIndexOf('/');
+                    const last = idx >= 0 ? clean.substring(idx + 1) : clean;
+                    try {
+                        return decodeURIComponent(last) || entry.label || '';
+                    } catch {
+                        return last || entry.label || '';
+                    }
+                }
+                return entry.label || '';
+            }
+
+            function queueExistingFileDownload(fieldId, entry) {
+                if (!fieldId || !entry || !entry.url) {
+                    delete existingFileCache[fieldId];
+                    delete existingFileFetches[fieldId];
+                    delete existingFileTargets[fieldId];
+                    return;
+                }
+                const url = entry.url;
+                const label = entry.label || fieldId;
+                existingFileTargets[fieldId] = url;
+                const promise = fetch(url, {
+                    credentials: 'include'
+                }).then(res => {
+                    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+                    return res.blob();
+                }).then(blob => {
+                    let base = label.replace(/[^\w.\-]+/g, '_') || fieldId;
+                    const urlPath = url.split('?')[0];
+                    const ext = urlPath.includes('.') ? urlPath.substring(urlPath.lastIndexOf('.') + 1) : '';
+                    if (ext && !base.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) {
+                        base = `${base}.${ext}`;
+                    }
+                    const file = new File([blob], base, {
+                        type: blob.type || 'application/octet-stream'
+                    });
+                    if (existingFileTargets[fieldId] !== url) return;
+                    existingFileCache[fieldId] = file;
+                    delete existingFileFetches[fieldId];
+                    const inputEl = byId(fieldId);
+                    const hasUserFile = !!(inputEl?.files && inputEl.files.length);
+                    if (inputEl && typeof DataTransfer !== 'undefined') {
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        inputEl.files = dt.files;
+                    }
+                    if (!hasUserFile || !inputEl) {
+                        const nameSpan = inputEl?.closest('.file-input-container')?.querySelector('.file-name');
+                        if (nameSpan) nameSpan.textContent = file.name;
+                    }
+                }).catch(err => {
+                    console.error('Existing file fetch failed:', err);
+                    delete existingFileCache[fieldId];
+                    delete existingFileFetches[fieldId];
+                    delete existingFileTargets[fieldId];
+                });
+                existingFileFetches[fieldId] = promise;
+            }
+
+            function populateRenewalAnimalsFromData(rows = []) {
+                const tbody = document.querySelector('#renewal-animals-table tbody');
+                if (!tbody) return;
+                const template = tbody.querySelector('tr') ? tbody.querySelector('tr').cloneNode(true) : null;
+                tbody.innerHTML = '';
+                const list = Array.isArray(rows) && rows.length ? rows : [{}];
+                const valFrom = (obj, keys) => {
+                    for (const key of keys) {
+                        if (obj && obj[key] !== undefined && obj[key] !== null) {
+                            return obj[key];
+                        }
+                    }
+                    return '';
+                };
+                const buildRow = (item = {}) => {
+                    let tr;
+                    if (template) {
+                        tr = template.cloneNode(true);
+                    } else {
+                        tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><input type="text" class="table-input"><div class="field-error" style="display:none"></div></td>
+                            <td><input type="text" class="table-input"><div class="field-error" style="display:none"></div></td>
+                            <td><input type="number" class="table-input" min="1"><div class="field-error" style="display:none"></div></td>
+                            <td>
+                                <select class="table-input">
+                                    <option value="Alive">Alive</option>
+                                    <option value="Deceased">Deceased</option>
+                                </select>
+                            </td>
+                            <td><button type="button" class="remove-row-btn">Remove</button></td>
+                        `;
+                    }
+                    const inputs = tr.querySelectorAll('input, select');
+                    const [commonInput, sciInput, qtyInput, remarksSelect] = inputs;
+                    if (commonInput) commonInput.value = valFrom(item, ['commonName', 'common', 'common_name']);
+                    if (sciInput) sciInput.value = valFrom(item, ['scientificName', 'scientific', 'scientific_name']);
+                    if (qtyInput) qtyInput.value = valFrom(item, ['quantity', 'qty', 'count']);
+                    if (remarksSelect) {
+                        const remarksVal = String(valFrom(item, ['remarks', 'status']) || '');
+                        if (remarksVal) {
+                            const match = Array.from(remarksSelect.options).some(opt => opt.value === remarksVal);
+                            remarksSelect.value = match ? remarksVal : (remarksSelect.options[0]?.value || '');
+                        } else if (remarksSelect.options.length) {
+                            remarksSelect.value = remarksSelect.options[0].value;
+                        }
+                    }
+                    return tr;
+                };
+                list.forEach((item) => {
+                    tbody.appendChild(buildRow(item));
+                });
+                if (!tbody.children.length && template) {
+                    tbody.appendChild(template.cloneNode(true));
+                }
+                Array.from(tbody.querySelectorAll('.remove-row-btn')).forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const row = btn.closest('tr');
+                        if (!row) return;
+                        if (tbody.children.length <= 1) return;
+                        row.remove();
+                    });
+                });
+            }
+
+            function applyWfpRecord(key, {
+                silent = false
+            } = {}) {
+                const data = wfpRecords[key];
+                if (!data) return;
+                if (activePermitType() !== 'renewal') {
+                    setPermit('renewal');
+                }
+                const assign = (id, value) => {
+                    const el = byId(id);
+                    if (el) el.value = value ?? '';
+                };
+                const info = data.info || {};
+                const client = data.client || {};
+                assign('renewal-first-name', client.first_name || '');
+                assign('renewal-middle-name', client.middle_name || '');
+                assign('renewal-last-name', client.last_name || '');
+                assign('renewal-residence-address', info.residence_address || '');
+                assign('renewal-telephone-number', info.telephone_number || '');
+                assign('renewal-establishment-name', info.establishment_name || '');
+                assign('renewal-establishment-address', info.establishment_address || '');
+                assign('renewal-establishment-telephone', info.establishment_telephone || '');
+                assign('renewal-postal-address', info.postal_address || '');
+                assign('renewal-wfp-number', data.wfp_number || info.wfp_number || '');
+                assign('renewal-issue-date', toYMD(data.issue_date || info.issue_date || data.date_issued || ''));
+                const categories = data.categories || {};
+                const setChecked = (id, value) => {
+                    const el = byId(id);
+                    if (el) el.checked = !!value;
+                };
+                setChecked('renewal-zoo', categories.zoo);
+                setChecked('renewal-botanical-garden', categories.botanical_garden);
+                setChecked('renewal-private-collection', categories.private_collection);
+                populateRenewalAnimalsFromData(Array.isArray(data.animals) ? data.animals : []);
+                renderRenewalFiles(data);
+                if (!silent) {
+                    const label = data.wfp_number || data.label || 'selected WFP';
+                    toast(`Loaded details from ${label}.`);
+                }
             }
 
             function dataURLToBlob(dataURL) {
@@ -2990,6 +3751,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const nameSpan = fi.parentElement?.querySelector('.file-name');
                     if (nameSpan) nameSpan.textContent = 'No file chosen';
                 });
+                clearRenewalFilePreviews();
+                if (renewalWfpSelect) renewalWfpSelect.selectedIndex = 0;
                 // tables: leave one row
                 ['animals-table', 'renewal-animals-table'].forEach(tid => {
                     const tbody = document.querySelector(`#${tid} tbody`);
@@ -3003,6 +3766,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clearSigPad(false);
                 clearSigPad(true);
                 setPermit('new');
+                manualClientCache = {
+                    first: '',
+                    middle: '',
+                    last: '',
+                    residence: ''
+                };
+                setClientMode('new');
                 chosenClientId = null;
                 precheckCache = null;
                 suggestedClient = null;
@@ -3036,19 +3806,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 newReqs.style.display = isNew ? 'grid' : 'none';
                 renUpper.style.display = isNew ? 'none' : '';
                 renReqs.style.display = isNew ? 'none' : 'grid';
+                if (clientModeToggle) clientModeToggle.style.display = isNew ? 'flex' : 'none';
                 newBtn.classList.toggle('active', isNew);
                 renewalBtn.classList.toggle('active', !isNew);
+                toggleWfpPicker(isNew);
             }
+            renewalWfpSelect?.addEventListener('change', (e) => {
+                const value = e.target.value;
+                if (!value) {
+                    clearRenewalFilePreviews();
+                    return;
+                }
+                applyWfpRecord(value);
+            });
             newBtn?.addEventListener('click', () => setPermit('new'));
             renewalBtn?.addEventListener('click', () => setPermit('renewal'));
             setPermit('new');
 
-            // ====== FILE INPUT LABEL SYNC ======
+            // ...inside the same <script> where FILE INPUT LABEL SYNC lives...
             document.addEventListener('change', (e) => {
                 const input = e.target;
-                if (input?.classList?.contains('file-input')) {
-                    const nameSpan = input.parentElement?.querySelector('.file-name');
-                    if (nameSpan) nameSpan.textContent = input.files && input.files[0] ? input.files[0].name : 'No file chosen';
+                if (!(input && input.classList && input.classList.contains('file-input'))) return;
+
+                const nameSpan = input.parentElement?.querySelector('.file-name');
+
+                if (input.files && input.files.length > 0) {
+                    // User picked a new file
+                    if (nameSpan) nameSpan.textContent = input.files[0].name;
+                    input.dataset.userCleared = '0';
+
+                    // They actually replaced the preloaded file: drop caches/urls
+                    if (input.id) {
+                        delete existingFileCache[input.id];
+                        delete existingFileFetches[input.id];
+                        delete existingFileTargets[input.id];
+                        delete existingFileUrls[input.id];
+                    }
+                } else {
+                    // User opened the picker but canceled -> treat as CLEARED
+                    input.dataset.userCleared = '1';
+                    if (nameSpan) nameSpan.textContent = 'No file chosen';
+                    // Important: do NOT delete caches/urls here; validator will block submit
                 }
             });
 
@@ -3297,7 +4095,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     pending_new: 'Pending Application',
                     pending_renewal: 'Pending Application',
                     unexpired_permit: 'Unexpired Permit Found',
+                    need_released_new: 'Renewal Not Allowed'
                 };
+
+                // Special-case: when renewal is blocked because there's no released NEW permit,
+                // offer a quick "Request new" action next to Close so the user can switch to filing
+                // a new permit without hunting through the form.
+                if (code === 'need_released_new') {
+                    openValidation({
+                        title: readable[code] || 'Validation',
+                        html: message || 'To file a renewal, the client must already have a released NEW wildlife permit record.',
+                        buttons: [{
+                                text: 'Request new',
+                                class: 'btn btn-outline',
+                                onClick: () => {
+                                    closeValidation();
+                                    // switch the UI to "new" permit and copy fields where appropriate
+                                    try {
+                                        if (typeof setPermit === 'function') setPermit('new');
+                                    } catch (e) {}
+                                    if (typeof autofillRenewalFromNew === 'function') {
+                                        // When switching to new, copy any useful data from renewal/new flows
+                                        autofillRenewalFromNew();
+                                    }
+                                    window.scrollTo({
+                                        top: 0,
+                                        behavior: 'smooth'
+                                    });
+                                }
+                            },
+                            {
+                                text: 'Close',
+                                class: 'btn btn-primary',
+                                onClick: closeValidation
+                            }
+                        ]
+                    });
+                    return;
+                }
+
                 openValidation({
                     title: readable[code] || 'Validation',
                     html: message || 'Please resolve this before continuing.',
@@ -3485,6 +4321,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const first = type === 'renewal' ? v('renewal-first-name') : v('first-name');
                 const middle = type === 'renewal' ? v('renewal-middle-name') : v('middle-name');
                 const last = type === 'renewal' ? v('renewal-last-name') : v('last-name');
+                const clientMode = (clientModeEl?.value || 'new').toLowerCase();
+                const usingExistingPick = type === 'new' && clientMode === 'existing';
 
                 // 0) VALIDATE FIRST — if invalid, stop here (no precheck, no modal)
                 if (typeof window.__validateWildlifeForm === 'function') {
@@ -3496,6 +4334,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         toast('Please complete the required fields first.');
                         return;
                     }
+                }
+
+                if (usingExistingPick && !(clientPick?.value)) {
+                    setClientPickError('Please select an existing client.');
+                    toast('Please select an existing client.');
+                    return;
+                }
+
+                if (usingExistingPick) {
+                    chosenClientId = clientPick.value;
+                    window.__FORCE_NEW_CLIENT__ = false;
+                    precheckCache = null;
+                    await finalSubmit();
+                    return;
                 }
 
                 try {
@@ -3548,8 +4400,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     text: 'Submit as new',
                                     class: 'btn btn-outline',
                                     onClick: async () => {
+                                        // When user chooses to "Submit as new" while filing a renewal,
+                                        // ensure we do not bypass the released-NEW requirement.
+                                        // `type` and `f` are available in the outer scope of this handler.
                                         window.__FORCE_NEW_CLIENT__ = true;
                                         chosenClientId = null;
+                                        // If this is a renewal attempt and the detected client lacks a released NEW,
+                                        // show the same validation modal as the 'Yes, submit' path.
+                                        try {
+                                            if (type === 'renewal') {
+                                                const flags = (f || {});
+                                                if (!flags.has_released_new) {
+                                                    closeClientDecision();
+                                                    showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wildlife permit record.');
+                                                    return;
+                                                }
+                                            }
+                                        } catch (err) {
+                                            // if anything unexpected happens, fall back to safe behavior
+                                            console.error(err);
+                                            closeClientDecision();
+                                            showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wildlife permit record.');
+                                            return;
+                                        }
+
                                         closeClientDecision();
                                         await finalSubmit();
                                     }
@@ -3598,6 +4472,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             if (f.has_pending_renewal || f.has_pending_new) {
                                                 closeClientDecision();
                                                 showBlock('pending_renewal', 'You already have a pending wildlife application. Please wait for the update first.');
+                                                return;
+                                            }
+                                            // Require that client has a released NEW wildlife permit to allow renewal
+                                            if (!f.has_released_new) {
+                                                closeClientDecision();
+                                                showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wildlife permit record.');
                                                 return;
                                             }
                                             // Block: unexpired permit
@@ -3649,11 +4529,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     {
                                         text: 'Continue renewal',
                                         class: 'btn btn-primary',
-                                        onClick: async () => {
-                                            window.__FORCE_NEW_CLIENT__ = true; // create a brand-new client
-                                            chosenClientId = null;
+                                        onClick: () => {
+                                            // Do not allow continuing a renewal when no existing client record with a released NEW permit exists
                                             closeClientDecision();
-                                            await finalSubmit();
+                                            showBlock('need_released_new', 'To file a renewal, the client must already have a released NEW wildlife permit record.');
                                         }
                                     }
                                 ]
@@ -3831,7 +4710,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     });
                 }
 
-                const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+                const docFirstName = titleCase(firstName);
+                const docMiddleName = titleCase(middleName);
+                const docLastName = titleCase(lastName);
+                const docResidenceAddress = titleCase(residenceAddress);
+                const docEstablishmentName = titleCase(establishmentName);
+                const docEstablishmentAddress = titleCase(establishmentAddress);
+                const docPostalAddress = titleCase(postalAddress);
+                const fullName = [docFirstName, docMiddleName, docLastName].filter(Boolean).join(' ');
                 const check = (b) => b ? '☒' : '☐';
 
                 // Build HTML content for the application (New vs Renewal)
@@ -3908,17 +4794,17 @@ ${headerHtml}
 ${
   isRenewal
   ? `
-    <p class="info-line">I, <span class="underline">${fullName}</span> with address at <span class="underline">${residenceAddress}</span></p>
+    <p class="info-line">I, <span class="underline">${fullName}</span> with address at <span class="underline">${docResidenceAddress}</span></p>
     <p class="info-line indent">and Tel. no. <span class="underline-small">${telephoneNumber}</span>, have the honor to request for the</p>
-    <p class="info-line indent">renewal of my Certificate of Wildlife Registration of <span class="underline">${establishmentName}</span></p>
-    <p class="info-line indent">located at <span class="underline">${establishmentAddress}</span> with Tel. no. <span class="underline-small">${establishmentTelephone}</span></p>
+    <p class="info-line indent">renewal of my Certificate of Wildlife Registration of <span class="underline">${docEstablishmentName}</span></p>
+    <p class="info-line indent">located at <span class="underline">${docEstablishmentAddress}</span> with Tel. no. <span class="underline-small">${establishmentTelephone}</span></p>
     <p class="info-line indent">and Original WFP No. <span class="underline-small">${wfpNumber}</span> issued on <span class="underline-small">${issueDate}</span>, and</p>
     <p class="info-line">registration of animals/stocks maintained which are as follows:</p>
   `
   : `
-    <p class="info-line">I <span class="underline">${fullName}</span> with address at <span class="underline">${residenceAddress}</span></p>
-    <p class="info-line indent">and Tel. no. <span class="underline-small">${telephoneNumber}</span> have the honor to apply for the registration of <span class="underline">${establishmentName}</span></p>
-    <p class="info-line indent">located at <span class="underline">${establishmentAddress}</span> with Tel. no. <span class="underline-small">${establishmentTelephone}</span> and registration of animals/stocks maintained</p>
+    <p class="info-line">I <span class="underline">${fullName}</span> with address at <span class="underline">${docResidenceAddress}</span></p>
+    <p class="info-line indent">and Tel. no. <span class="underline-small">${telephoneNumber}</span> have the honor to apply for the registration of <span class="underline">${docEstablishmentName}</span></p>
+    <p class="info-line indent">located at <span class="underline">${docEstablishmentAddress}</span> with Tel. no. <span class="underline-small">${establishmentTelephone}</span> and registration of animals/stocks maintained</p>
     <p class="info-line">there at which are as follows:</p>
   `
 }
@@ -3950,7 +4836,7 @@ ${
   <p>Signature of Applicant</p>
 </div>
 
-<p class="info-line">Postal Address: <span class="underline">${postalAddress}</span></p>
+<p class="info-line">Postal Address: <span class="underline">${docPostalAddress}</span></p>
 
 </body>
 </html>
@@ -4002,6 +4888,13 @@ ${
                 if (isRenewal) {
                     fd.append('wfp_number', wfpNumber);
                     fd.append('issue_date', issueDate);
+                    const pendingFetches = Object.values(existingFileFetches).filter(Boolean);
+                    if (pendingFetches.length) {
+                        try {
+                            await Promise.allSettled(pendingFetches);
+                        } catch (_) {}
+                    }
+                    fd.append('existing_file_urls', JSON.stringify(existingFileUrls));
                 }
 
                 // Animals JSON
@@ -4032,9 +4925,18 @@ ${
                         'renewal-file-5a', 'renewal-file-5b', 'renewal-file-5c',
                         'renewal-file-6'
                     ].forEach((id) => {
-                        const f = byId(id)?.files?.[0];
-                        if (f) fd.append(id.replace(/-/g, '_'), f); // e.g., renewal_file_1, renewal_file_4a
+                        const el = byId(id);
+                        const f = el?.files?.[0];
+                        const cached = existingFileCache[id];
+                        const cleared = el?.dataset?.userCleared === '1';
+
+                        if (f) {
+                            fd.append(id.replace(/-/g, '_'), f);
+                        } else if (cached && !cleared) {
+                            fd.append(id.replace(/-/g, '_'), cached);
+                        }
                     });
+
                 }
 
                 // ---- SEND ----
@@ -4092,6 +4994,9 @@ ${
         (() => {
             const $ = (id) => document.getElementById(id);
             const activeType = () => (document.querySelector('.permit-type-btn.active')?.dataset.type || 'new');
+            const clientModeEl = $('clientMode');
+            const clientPickEl = $('clientPick');
+            const clientPickError = $('clientPickError');
 
             // ---------- error helpers ----------
             function errElFor(input) {
@@ -4164,6 +5069,48 @@ ${
             const phoneRe = /^[0-9+()\-\s]{6,20}$/;
             const addressBadCharsRe = /[^A-Za-z0-9À-ÖØ-öø-ÿ\s.,#\/\-()]/;
 
+            function isFileSatisfied(inputEl) {
+                if (!inputEl) return true;
+
+                // a) user picked a new file
+                if (inputEl.files && inputEl.files.length > 0) return true;
+
+                // b) if user explicitly cleared, it must be treated as NOT satisfied
+                if (inputEl.dataset && inputEl.dataset.userCleared === '1') return false;
+
+                // c) otherwise, preloaded (anchor) counts as satisfied
+                const wrap = inputEl.closest('.file-upload');
+                if (wrap && wrap.querySelector('.uploaded-files a')) return true;
+
+                return false;
+            }
+
+
+            function validateFileUploads(listId) {
+                const scope = document.getElementById(listId);
+                if (!scope) return true;
+
+                let ok = true;
+                const inputs = scope.querySelectorAll('.file-upload input[type="file"].file-input');
+                inputs.forEach((inp) => {
+                    if (isFileSatisfied(inp)) {
+                        clearErr(inp); // uses your existing clearErr()
+                    } else {
+                        ok = setErr(inp, null, 'Please attach a file.') && ok; // uses your existing setErr()
+                    }
+                });
+                return !!ok;
+            }
+
+            // live cleanup when user chooses a file
+            document.addEventListener('change', (e) => {
+                const t = e.target;
+                if (t && t.tagName === 'INPUT' && t.type === 'file') {
+                    if (isFileSatisfied(t)) clearErr(t);
+                    else setErr(t, null, 'Please attach a file.');
+                }
+            }, true);
+
             function validateAddress(id, label, required = false) {
                 const el = $(id);
                 if (!el) return true;
@@ -4179,6 +5126,32 @@ ${
                 }
                 return clearErr(el);
             }
+
+            function validateClientPick() {
+                if (!clientPickEl) return true;
+                const type = activeType();
+                const mode = (clientModeEl?.value || 'new').toLowerCase();
+                if (type !== 'new' || mode !== 'existing') {
+                    clientPickEl.classList.remove('invalid');
+                    clientPickEl.removeAttribute('aria-invalid');
+                    if (clientPickError) clientPickError.style.display = 'none';
+                    return true;
+                }
+                if (!clientPickEl.value) {
+                    clientPickEl.classList.add('invalid');
+                    clientPickEl.setAttribute('aria-invalid', 'true');
+                    if (clientPickError) {
+                        clientPickError.textContent = 'Please select an existing client.';
+                        clientPickError.style.display = 'block';
+                    }
+                    return false;
+                }
+                clientPickEl.classList.remove('invalid');
+                clientPickEl.removeAttribute('aria-invalid');
+                if (clientPickError) clientPickError.style.display = 'none';
+                return true;
+            }
+            clientPickEl?.addEventListener('change', validateClientPick);
 
 
             // ---------- field validators ----------
@@ -4403,6 +5376,7 @@ ${
                 const type = activeType();
 
                 if (type === 'new') {
+                    ok &= validateClientPick();
                     ok &= requireName('first-name', 'First Name');
                     ok &= requireName('last-name', 'Last Name');
                     ok &= requireText('residence-address', 'Residence Address', 5);
@@ -4644,6 +5618,61 @@ ${
                 return clearErr(el);
             }
 
+            function isFileSatisfied(inputEl) {
+                if (!inputEl) return true;
+
+                // a) user picked a new file
+                if (inputEl.files && inputEl.files.length > 0) return true;
+
+                // b) if user explicitly cleared, it must be treated as NOT satisfied
+                if (inputEl.dataset && inputEl.dataset.userCleared === '1') return false;
+
+                // c) otherwise, preloaded (anchor) counts as satisfied
+                const wrap = inputEl.closest('.file-upload');
+                if (wrap && wrap.querySelector('.uploaded-files a')) return true;
+
+                return false;
+            }
+
+
+            function validateFileUploads(listId) {
+                const scope = document.getElementById(listId);
+                if (!scope) return true;
+
+                let ok = true;
+                const inputs = scope.querySelectorAll('.file-upload input[type="file"].file-input');
+
+                inputs.forEach((inp) => {
+                    // Force “paint errors” even if the user hasn’t interacted yet
+                    try {
+                        touched.add(inp);
+                    } catch {}
+
+                    if (isFileSatisfied(inp)) {
+                        clearErr(inp);
+                    } else {
+                        ok = setErr(inp, null, 'Please attach a file.') && ok;
+                    }
+                });
+
+                return !!ok;
+            }
+
+
+            // live revalidation when user picks a file
+            document.addEventListener('change', (e) => {
+                const t = e.target;
+                if (!(t instanceof HTMLElement)) return;
+                if (t.tagName === 'INPUT' && t.getAttribute('type') === 'file') {
+                    // mark touched (same gating behavior as other fields)
+                    try {
+                        touched.add(t);
+                    } catch {}
+                    if (isFileSatisfied(t)) clearErr(t);
+                    else setErr(t, null, 'Please attach a file.');
+                }
+            }, true);
+
             // ===== checkbox groups =====
             function validateCategories(isRenewal) {
                 const ids = isRenewal ? ['renewal-zoo', 'renewal-botanical-garden', 'renewal-private-collection'] : ['zoo', 'botanical-garden', 'private-collection'];
@@ -4782,6 +5811,9 @@ ${
                     ok = optionalText('postal-address', 'Postal Address') && ok;
                     ok = validateCategories(false) && ok;
                     ok = validateAnimalsNew() && ok;
+
+                    // NEW: require all visible file inputs in New requirements
+                    ok = validateFileUploads('new-requirements') && ok;
                 } else {
                     ok = requireName('renewal-first-name', 'First Name') && ok;
                     ok = optionalName('renewal-middle-name', 'Middle Name') && ok; // optional
@@ -4796,9 +5828,13 @@ ${
                     ok = optionalText('renewal-postal-address', 'Postal Address') && ok;
                     ok = validateCategories(true) && ok;
                     ok = validateAnimalsRenewal() && ok;
+
+                    // NEW: require all visible file inputs in Renewal requirements
+                    ok = validateFileUploads('renewal-requirements') && ok;
                 }
                 return !!ok;
             }
+
 
             function scrollFirstErrorIntoView() {
                 const first = document.querySelector('.invalid') ||
