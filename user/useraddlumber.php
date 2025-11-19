@@ -3663,8 +3663,21 @@ try {
                         uploadImg.value = '';
                         uploadImg.onchange = (evt) => {
                             if (uploadImg.files?.[0]) {
-                                input.files = uploadImg.files;
-                                triggerInputChange(input, id);
+                                const file = uploadImg.files[0];
+                                // Store file info in dataset
+                                input.dataset.uploadedFile = file.name;
+                                // Validate and display
+                                const nameEl = input.parentElement?.querySelector('.file-name');
+                                if (nameEl) nameEl.textContent = file.name;
+                                const validation = validateFileType(id, file);
+                                const errorEl = input.parentElement?.querySelector('.file-type-error');
+                                if (!validation.valid && errorEl) {
+                                    errorEl.textContent = validation.error;
+                                    errorEl.classList.add('show');
+                                } else if (errorEl) {
+                                    errorEl.classList.remove('show');
+                                    errorEl.textContent = '';
+                                }
                             }
                         };
                         uploadImg.click();
@@ -3673,8 +3686,21 @@ try {
                         uploadDoc.value = '';
                         uploadDoc.onchange = (evt) => {
                             if (uploadDoc.files?.[0]) {
-                                input.files = uploadDoc.files;
-                                triggerInputChange(input, id);
+                                const file = uploadDoc.files[0];
+                                // Store file info in dataset
+                                input.dataset.uploadedFile = file.name;
+                                // Validate and display
+                                const nameEl = input.parentElement?.querySelector('.file-name');
+                                if (nameEl) nameEl.textContent = file.name;
+                                const validation = validateFileType(id, file);
+                                const errorEl = input.parentElement?.querySelector('.file-type-error');
+                                if (!validation.valid && errorEl) {
+                                    errorEl.textContent = validation.error;
+                                    errorEl.classList.add('show');
+                                } else if (errorEl) {
+                                    errorEl.classList.remove('show');
+                                    errorEl.textContent = '';
+                                }
                             }
                         };
                         uploadDoc.click();
@@ -3695,23 +3721,46 @@ try {
                 if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
                 const nameEl = input.parentElement?.querySelector('.file-name');
                 const errorEl = input.parentElement?.querySelector('.file-type-error');
-                const fileName = input.files?.[0]?.name ?? 'No file chosen';
+
+                // Determine the file name to display
+                let fileName = 'No file chosen';
+                let fileObj = null;
+
+                // First check if files were set directly (fallback case)
+                if (input.files?.length > 0) {
+                    fileName = input.files[0].name;
+                    fileObj = input.files[0];
+                }
+                // Otherwise check dataset (hidden input case)
+                else if (input.dataset?.uploadedFile) {
+                    fileName = input.dataset.uploadedFile;
+                }
 
                 if (nameEl) nameEl.textContent = fileName;
 
-                // Validate file type
-                if (input.files?.[0]) {
-                    const validation = validateFileType(id, input.files[0]);
-                    if (!validation.valid && errorEl) {
-                        errorEl.textContent = validation.error;
-                        errorEl.classList.add('show');
-                    } else if (errorEl) {
+                // Store the uploaded file info in dataset so validation can detect it
+                if (fileObj || input.dataset.uploadedFile) {
+                    if (!input.dataset.uploadedFile && fileObj) {
+                        input.dataset.uploadedFile = fileObj.name;
+                    }
+
+                    // Only validate if we have an actual file object
+                    if (fileObj) {
+                        const validation = validateFileType(id, fileObj);
+                        if (!validation.valid && errorEl) {
+                            errorEl.textContent = validation.error;
+                            errorEl.classList.add('show');
+                        } else if (errorEl) {
+                            errorEl.classList.remove('show');
+                            errorEl.textContent = '';
+                        }
+                    }
+                } else {
+                    if (input.dataset) delete input.dataset.uploadedFile;
+                    if (errorEl) {
                         errorEl.classList.remove('show');
                         errorEl.textContent = '';
                     }
-                } else if (errorEl) {
-                    errorEl.classList.remove('show');
-                    errorEl.textContent = '';
                 }
             }
 
@@ -4979,8 +5028,8 @@ try {
 
             function hasFile(input) {
                 if (!input) return false;
-                // valid if: user picked a file OR a CR-loaded remote file is attached (via dataset.loadedUrl)
-                return (input.files && input.files.length > 0) || (input.dataset && input.dataset.loadedUrl);
+                // valid if: user picked a file OR a file is stored in dataset OR a CR-loaded remote file is attached
+                return (input.files && input.files.length > 0) || (input.dataset && (input.dataset.uploadedFile || input.dataset.loadedUrl));
             }
 
             function ensureFileError(container) {
