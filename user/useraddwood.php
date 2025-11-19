@@ -4851,25 +4851,82 @@ try {
                 return Array.from(root.querySelectorAll('input[type="file"]'));
             }
 
-            // Main file validator
+            // Main file validator - File uploads are OPTIONAL unless explicitly required
+            // Determine allowed file type for a requirement based on its title text
+            function allowedForInput(input) {
+                // find the nearest requirement title text
+                let titleEl = input.closest('.requirement-item')?.querySelector('.requirement-title');
+                if (!titleEl) {
+                    // sub-requirements may have a <p> tag with description
+                    titleEl = input.closest('.sub-requirement')?.querySelector('p');
+                }
+                const txt = (titleEl?.textContent || '').toLowerCase();
+
+                // heuristics: image-only keywords
+                const imageKeywords = /photo|photos|image|images|jpg|jpeg|png|gis|geo[- ]?tag|geotag|map|geo tag/;
+                if (imageKeywords.test(txt)) {
+                    return {
+                        kind: 'image',
+                        message: 'JPG/PNG only.'
+                    };
+                }
+
+                // default to document-only for most requirement titles
+                return {
+                    kind: 'doc',
+                    message: 'PDF/DOC/DOCX only.'
+                };
+            }
+
+            // Validate a single file input; returns true if ok
+            function validateSingleFile(input) {
+                // Skip if its requirement row is currently hidden
+                const reqItem = input.closest('.requirement-item') || input.closest('.file-upload') || input.parentElement;
+                if (reqItem && !isDisplayed(reqItem)) {
+                    setFileError(input, ''); // clear any stale error
+                    return true;
+                }
+
+                const chosen = (input.files && input.files.length > 0);
+                const auto = hasAutoAttachedPreview(input);
+                const loaded = !!(input.dataset && input.dataset.loadedUrl);
+
+                // if nothing selected and nothing auto-loaded, it's fine (uploads optional)
+                if (!(chosen || auto || loaded)) {
+                    setFileError(input, '');
+                    return true;
+                }
+
+                // if there's a file, check extension against expected kind
+                if (chosen && input.files[0]) {
+                    const name = (input.files[0].name || '').toLowerCase();
+                    const ext = (name.split('.').pop() || '').replace(/[^a-z0-9]/g, '');
+                    const rules = allowedForInput(input);
+                    if (rules.kind === 'doc') {
+                        if (!['pdf', 'doc', 'docx'].includes(ext)) {
+                            setFileError(input, rules.message);
+                            return false;
+                        }
+                    } else if (rules.kind === 'image') {
+                        if (!['jpg', 'jpeg', 'png'].includes(ext)) {
+                            setFileError(input, rules.message);
+                            return false;
+                        }
+                    }
+                }
+
+                // all good
+                setFileError(input, '');
+                return true;
+            }
+
+            // Main file validator: validate all visible file inputs for the active type
             function validateFiles(activeType) {
                 let ok = true;
                 const files = fileInputsForType(activeType);
                 files.forEach(input => {
-                    // Skip if its requirement row is currently hidden
-                    const reqItem = input.closest('.requirement-item') || input.closest('.file-upload') || input.parentElement;
-                    if (reqItem && !isDisplayed(reqItem)) {
-                        setFileError(input, ''); // clear any stale error
-                        return;
-                    }
-
-                    const chosen = (input.files && input.files.length > 0);
-                    const auto = hasAutoAttachedPreview(input);
-                    const loaded = !!(input.dataset && input.dataset.loadedUrl);
-
-                    const good = chosen || auto || loaded;
-                    setFileError(input, good ? '' : 'This file is required.');
-                    if (!good) ok = false;
+                    const res = validateSingleFile(input);
+                    if (!res) ok = false;
                 });
                 return ok;
             }
@@ -4878,7 +4935,8 @@ try {
             function attachFileLiveValidation() {
                 const all = Array.from(document.querySelectorAll('#new-requirements input[type="file"], #renewal-requirements input[type="file"]'));
                 all.forEach(el => {
-                    el.addEventListener('change', () => validateFiles(activeType()));
+                    // Validate only the specific input on change
+                    el.addEventListener('change', () => validateSingleFile(el));
                 });
                 // Re-check when switching tabs (buttons are present in DOM)
                 document.querySelectorAll('.permit-type-btn').forEach(btn => {

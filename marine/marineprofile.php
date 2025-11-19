@@ -44,6 +44,74 @@ $email      = htmlspecialchars((string)($user['email'] ?? ''),      ENT_QUOTES, 
 $role       = htmlspecialchars((string)($user['role'] ?? ''),       ENT_QUOTES, 'UTF-8');
 $department = htmlspecialchars((string)($user['department'] ?? ''), ENT_QUOTES, 'UTF-8');
 $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 'UTF-8');
+
+// Simple helpers (used by header)
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        // Parse DB timestamps as UTC then convert to Asia/Manila
+        try {
+            $ago = new DateTime($datetime, new DateTimeZone('UTC'));
+            $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        } catch (Exception $e) {
+            $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        }
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
+// Fetch notifications and incidents for header (marine)
+$marineNotifs = [];
+$unreadMarine = 0;
+
+try {
+    // Fetch notifications addressed to 'marine' only from the notifications table.
+    // Include any linked ids that may be present on the notification row so we can route appropriately.
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               n.incident_id, n.reqpro_id,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'marine'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ");
+    $marineNotifs = $notifRows ? $notifRows->fetchAll(PDO::FETCH_ASSOC) : [];
+
+    // Unread count calculated only from notifications table (do not query incident_report table here).
+    $unreadMarine = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications n WHERE LOWER(COALESCE(n.\"to\", ''))='marine' AND n.is_read=false")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[MARINE HEADER NOTIFS] ' . $e->getMessage());
+    $marineNotifs = [];
+    $unreadMarine = 0;
+}
+
+// Used by the profile icon "active" state
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -99,6 +167,160 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             height: 60px;
             transition: width .5s, height .5s
         }
+
+        /* Inline field error visuals */
+        .field-error {
+            color: red;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+            line-height: 1.3;
+        }
+
+        .invalid {
+            border-color: red !important;
+            outline-color: red !important;
+        }
+
+        /* Notification / dropdown styles (copy into your CSS or inline <style>) */
+        .dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: #fff;
+            min-width: 300px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s ease;
+            padding: 0;
+        }
+
+        .notifications-dropdown {
+            min-width: 350px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .notification-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .notification-header h3 {
+            margin: 0;
+            color: #2b6625;
+            font-size: 1.2rem;
+        }
+
+        .mark-all-read {
+            color: #2b6625;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-decoration: none;
+        }
+
+        .notification-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .notification-item.unread {
+            background-color: rgba(43, 102, 37, 0.05);
+        }
+
+        .notification-icon {
+            margin-right: 15px;
+            color: #2b6625;
+            font-size: 1.2rem;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #2b6625;
+        }
+
+        .notification-message {
+            color: #2b6625;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .notification-time {
+            color: #999;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .notification-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+
+        .view-all {
+            color: #2b6625;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            padding: 5px 0;
+        }
+
+        .notification-link {
+            display: flex;
+            align-items: flex-start;
+            text-decoration: none;
+            color: inherit;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            transition: all 0.2s ease;
+        }
+
+        .badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            background: #ff4757;
+            color: white;
+            border-radius: 50%;
+            width: 14px;
+            height: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
     </style>
 </head>
 
@@ -110,44 +332,121 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
     </div>
 
     <header>
-        <div class="logo"><a href="seedlingshome.php"><img src="seal.png" alt="Site Logo"></a></div>
-        <button class="mobile-toggle" aria-label="Toggle menu"><i class="fas fa-bars"></i></button>
+        <div class="logo">
+            <a href="marinehome.php">
+                <img src="seal.png" alt="Site Logo">
+            </a>
+        </div>
+
+        <!-- Mobile menu toggle -->
+        <button class="mobile-toggle" aria-label="Toggle menu">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Navigation on the right -->
         <div class="nav-container">
-            <div class="nav-item dropdown">
-                <div class="nav-icon active"><i class="fas fa-bars"></i></div>
+            <!-- Dashboard Dropdown -->
+            <div class="nav-item dropdown" data-dropdown>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="mpa-management.php" class="dropdown-item"><i class="fas fa-water"></i><span>MPA Management</span></a>
-                    <a href="habitat.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Habitat Assessment</span></a>
-                    <a href="species.php" class="dropdown-item"><i class="fas fa-fish"></i><span>Species Monitoring</span></a>
-                    <a href="reports.php" class="dropdown-item"><i class="fas fa-chart-bar"></i><span>Reports & Analytics</span></a>
-                    <a href="reportaccident.php" class="dropdown-item active-page"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
+                    <a href="mpa-management.php" class="dropdown-item">
+                        <i class="fas fa-water"></i>
+                        <span>MPA Management</span>
+                    </a>
+                    <a href="habitat.php" class="dropdown-item">
+                        <i class="fas fa-tree"></i>
+                        <span>Habitat Assessment</span>
+                    </a>
+                    <a href="species.php" class="dropdown-item">
+                        <i class="fas fa-fish"></i>
+                        <span>Species Monitoring</span>
+                    </a>
+                    <a href="reports.php" class="dropdown-item">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Reports & Analytics</span>
+                    </a>
+                    <a href="reportaccident.php" class="dropdown-item">
+                        <i class="fas fa-file-invoice"></i>
+                        <span>Incident Reports</span>
+                    </a>
                 </div>
             </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
+
+            <!-- Notifications -->
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadMarine ?></span>
+                </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="marineeach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Illegal Logging Alert</div>
-                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
-                                <div class="notification-time">15 minutes ago</div>
+                    <div class="notification-list" id="marineNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits / notifications
+                        foreach ($marineNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a marine request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'marineprofile.php' : (!empty($nf['approval_id']) ? 'mpa-management.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'marinenotif.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No marine notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Marine Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
+
+                    <div class="notification-footer"><a href="marinenotif.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
+
+            <!-- Profile Dropdown -->
             <div class="nav-item dropdown">
-                <div class="nav-icon active"><i class="fas fa-user-circle"></i></div>
+                <div class="nav-icon <?php echo $current_page === 'marineprofile' ? 'active' : ''; ?>" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-user-circle"></i>
+                </div>
                 <div class="dropdown-menu">
-                    <a href="seedlingsprofile.php" class="dropdown-item active-page"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
-                    <a href="../logout.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+                    <a href="marineprofile.php" class="dropdown-item <?php echo $current_page === 'marineprofile' ? 'active-page' : ''; ?>">
+                        <i class="fas fa-user-edit"></i>
+                        <span>Edit Profile</span>
+                    </a>
+                    <a href="../logout.php" class="dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
             </div>
         </div>

@@ -26,6 +26,43 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 
 require_once __DIR__ . '/../backend/connection.php';
 
+/* ---- AJAX: mark single / mark all read (handled by this same page) ---- */
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+                exit;
+            }
+
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("UPDATE public.notifications SET is_read = true WHERE LOWER(COALESCE(\"to\", ''))='seedling' AND is_read=false");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[SEEDLING NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit;
+}
+
+date_default_timezone_set('Asia/Manila');
+
 $user_id = (string)$_SESSION['user_id'];
 try {
     $st = $pdo->prepare("
@@ -808,52 +845,45 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_notifs_for_approval') {
     exit();
 }
 
-/* ---------------- NOTIFS for header ---------------- */
-$seedNotifs = [];
-$unreadSeed = 0;
+/* ---------------- NOTIFS for header ---- */
+$seedlingNotifs = [];
+$unreadSeedling = 0;
+
 try {
-    $notifRows = $pdo->query("
-        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
-               a.approval_id,
-               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
-               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
-               LOWER(COALESCE(a.request_type,'')) AS request_type,
-               c.first_name  AS client_first, c.last_name AS client_last,
-               NULL::text AS incident_id
+    $seedlingNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
         LEFT JOIN public.client   c ON c.client_id = a.client_id
-        WHERE LOWER(COALESCE(n.\"to\", ''))='seedling'
-        ORDER BY n.is_read ASC, n.created_at DESC
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+        ORDER BY n.created_at DESC
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $seedNotifs = $notifRows;
 
-    $unreadPermits = (int)$pdo->query("
-        SELECT COUNT(*) FROM public.notifications n
-        WHERE LOWER(COALESCE(n.\"to\", ''))='seedling' AND n.is_read=false
+    $unreadSeedling = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+          AND n.is_read = false
     ")->fetchColumn();
-
-    $unreadIncidents = (int)$pdo->query("
-        SELECT COUNT(*) FROM public.incident_report
-        WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false
-    ")->fetchColumn();
-
-    $unreadSeed = $unreadPermits + $unreadIncidents;
-
-    $incRows = $pdo->query("
-        SELECT incident_id,
-               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
-               status, is_read, created_at
-        FROM public.incident_report
-        WHERE lower(COALESCE(category,''))='tree cutting'
-        ORDER BY created_at DESC LIMIT 100
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
-    error_log('[SEEDLING NOTIFS-FOR-NAV] ' . $e->getMessage());
-    $seedNotifs = [];
-    $unreadSeed = 0;
-    $incRows = [];
+    error_log('[SEEDLING NOTIFS] ' . $e->getMessage());
+    $seedlingNotifs = [];
+    $unreadSeedling = 0;
 }
 
 /* ---------------- Page data ---------------- */
@@ -1156,7 +1186,8 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             min-width: 100px
         }
 
-        .status-val.approved {
+        .status-val.approved,
+        .status-val.verified {
             color: #065f46
         }
 
@@ -1675,68 +1706,67 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             <div class="nav-item dropdown" data-dropdown>
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="seedlingpermit.php" class="dropdown-item active" aria-current="page">
-                        <i class="fas fa-seedling"></i><span>Seedling Requests</span>
+                    <a href="incoming.php" class="dropdown-item">
+                        <i class="fas fa-seedling"></i><span>Seedlings Received</span>
                     </a>
+
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i><span>Incident Reports</span>
+                    </a>
+
+                    <a href="user_requestseedlings.php" class="dropdown-item active" aria-current="page">
+                        <i class="fas fa-paper-plane"></i><span>Seedlings Request</span>
                     </a>
                 </div>
             </div>
 
-            <!-- Bell (Seedling notifs + Tree Cutting incidents) -->
+            <!-- Bell (Seedling notifs) -->
             <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge"><?= (int)$unreadSeed ?></span>
+                    <span class="badge"><?= (int)$unreadSeedling ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
                         <h3 style="margin:0;">Notifications</h3>
                         <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-list" id="treeNotifList">
+                    <div class="notification-list" id="seedlingNotifList">
                         <?php
                         $combined = [];
-                        foreach ($seedNotifs as $nf) {
+
+                        // Permits / notifications
+                        foreach ($seedlingNotifs as $nf) {
                             $combined[] = [
-                                'id'      => $nf['notif_id'],
-                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-                                'type'    => 'permit',
-                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.')),
-                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
-                                'link'    => 'seedlingpermit.php'
-                            ];
-                        }
-                        foreach ($incRows as $ir) {
-                            $combined[] = [
-                                'id'      => $ir['incident_id'],
-                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
-                                'type'    => 'incident',
-                                'message' => trim((string)$ir['body_text']),
-                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
-                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a seedling request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'seedlingsprofile.php' : (!empty($nf['approval_id']) ? 'user_requestseedlings.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'seedlingsnotification.php'))
                             ];
                         }
 
                         if (empty($combined)): ?>
                             <div class="notification-item">
                                 <div class="notification-content">
-                                    <div class="notification-title">No notifications</div>
+                                    <div class="notification-title">No seedling notifications</div>
                                 </div>
                             </div>
                             <?php else:
                             foreach ($combined as $item):
-                                $title = $item['type'] === 'permit' ? 'Seedling notification' : 'Incident report';
                                 $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Seedling Request');
                             ?>
                                 <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
-                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
-                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    data-notif-id="<?= h($item['id']) ?>">
                                     <a href="<?= h($item['link']) ?>" class="notification-link">
                                         <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
-                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-title"><?= $notifTitle ?></div>
                                             <div class="notification-message"><?= h($item['message']) ?></div>
                                             <div class="notification-time"><?= h($item['ago']) ?></div>
                                         </div>
@@ -1745,7 +1775,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <?php endforeach;
                         endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="reportaccident.php" class="view-all">View All Notifications</a></div>
+                    <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -1805,14 +1835,15 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     <tbody id="statusTableBody">
                         <?php foreach ($rows as $r):
                             $st  = strtolower((string)($r['approval_status'] ?? 'pending'));
-                            $cls = $st === 'approved' ? 'approved' : ($st === 'rejected' ? 'rejected' : 'pending');
+                            $displaySt = $st === 'approved' ? 'verified' : $st;
+                            $cls = $st === 'approved' ? 'verified' : ($st === 'rejected' ? 'rejected' : 'pending');
                             $req = strtolower((string)($r['request_type'] ?? ''));
                         ?>
                             <tr data-approval-id="<?= h($r['approval_id']) ?>">
                                 <td><?= h($r['first_name'] ?? '—') ?></td>
                                 <td><span class="pill"><?= h($req) ?></span></td>
                                 <!-- Permit Type cell removed -->
-                                <td><span class="status-val <?= $cls ?>"><?= ucfirst($st) ?></span></td>
+                                <td><span class="status-val <?= $cls ?>"><?= ucfirst($displaySt) ?></span></td>
                                 <td><?= h($r['submitted_at'] ? date('Y-m-d H:i', strtotime((string)$r['submitted_at'])) : '—') ?></td>
                                 <td><button class="btn small" data-action="view"><i class="fas fa-eye"></i> View</button></td>
                             </tr>
@@ -2032,7 +2063,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             /* MARK ALL AS READ */
             document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
                 e.preventDefault();
-                document.querySelectorAll('#treeNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                document.querySelectorAll('#seedlingNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
                 const badge = document.querySelector('#notifDropdown .badge');
                 if (badge) {
                     badge.textContent = '0';
@@ -2053,7 +2084,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             });
 
             /* Click any single notification → mark read */
-            document.getElementById('treeNotifList')?.addEventListener('click', async (e) => {
+            document.getElementById('seedlingNotifList')?.addEventListener('click', async (e) => {
                 const link = e.target.closest('.notification-link');
                 if (!link) return;
                 const item = link.closest('.notification-item');
@@ -2220,9 +2251,9 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             badge.textContent = String(next);
                             if (next <= 0) badge.style.display = 'none';
                         }
-                        document.querySelectorAll('#treeNotifList .notification-item.unread').forEach(el => {
+                        document.querySelectorAll('#seedlingNotifList .notification-item.unread').forEach(el => {
                             const a = el.querySelector('a.notification-link');
-                            if (a && a.getAttribute('href') === 'seedlingpermit.php') el.classList.remove('unread');
+                            if (a && a.getAttribute('href') === 'user_requestseedlings.php') el.classList.remove('unread');
                         });
                     }
                 } catch (_) {}
@@ -2384,7 +2415,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 if (tr) {
                     // status column is now index 2 (after removing Permit Type col)
                     const tdStatus = tr.children[2];
-                    if (tdStatus) tdStatus.innerHTML = `<span class="status-val ${status}">${status[0].toUpperCase()+status.slice(1)}</span>`;
+                    if (tdStatus) {
+                        const displayStatus = (status === 'approved') ? 'verified' : status;
+                        tdStatus.innerHTML = `<span class="status-val ${status}">${displayStatus[0].toUpperCase()+displayStatus.slice(1)}</span>`;
+                    }
                 }
             }
 

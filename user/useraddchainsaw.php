@@ -282,7 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wildlife Registration Application</title>
+    <title>Chainsaw Registration Application</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -2257,7 +2257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">1</span>
-                                Certificate of Chainsaw Registration (3 copies for CENRO signature)
+                                Certificate of Chainsaw Registration
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2305,7 +2305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">3</span>
-                                Geo-tagged Photos of the Chainsaw (2 copies from the client)
+                                Geo-tagged Photos of the Chainsaw
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2324,7 +2324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">4</span>
-                                Permit to Sell (2 copies)
+                                Permit to Sell
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2341,7 +2341,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">5</span>
-                                Photocopy of Business Permit – new recent issued (2 copies)
+                                Photocopy of Business Permit – new recent issued
                             </div>
                         </div>
                         <div class="file-upload">
@@ -2358,7 +2358,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="requirement-header">
                             <div class="requirement-title">
                                 <span class="requirement-number">6</span>
-                                Photocopy of old chainsaw Registration – 2 copies
+                                Photocopy of old chainsaw Registration
                             </div>
                         </div>
                         <div class="file-upload">
@@ -4370,20 +4370,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 need($("#file-cert-sticker"), "Upload image.", "jpg,jpeg,png", 5);
                 need($("#file-memo"), "Upload file.", "pdf,doc,docx", 15);
 
-                // geo (gps if jpeg)
+                // geo (any image)
                 const geo = $("#file-geo");
                 if (geo?.files?.[0]) {
                     const f = geo.files[0];
                     clrErr(geo);
                     if (!okType(f, "jpg,jpeg,png")) ok = setErr(geo, "JPG/PNG only.");
-                    else if (f.type === "image/jpeg") {
-                        try {
-                            const hasGps = await jpegHasGPS(f);
-                            if (!hasGps) ok = setErr(geo, "Need GPS EXIF.");
-                        } catch {
-                            ok = setErr(geo, "EXIF error.");
-                        }
-                    }
+                    else if (f.size > 5 * 1024 * 1024) ok = setErr(geo, "Max 5MB.");
                 } else {
                     ok = setErr(geo, "Upload image.");
                 }
@@ -4533,13 +4526,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             else over(f.size, 5);
                         } else if (id === "file-geo") {
                             if (!okType(f, "jpg,jpeg,png")) setErr(inp, "JPG/PNG only.");
-                            else if (f.type === "image/jpeg") {
-                                try {
-                                    if (!(await jpegHasGPS(f))) setErr(inp, "Need GPS EXIF.");
-                                } catch {
-                                    setErr(inp, "EXIF error.");
-                                }
-                            }
+                            else over(f.size, 5);
                         } else if (id === "file-sell-permit" || id === "file-business-permit") {
                             if (!okType(f, "pdf,doc,docx")) setErr(inp, "PDF/DOC/DOCX only.");
                             else over(f.size, 10);

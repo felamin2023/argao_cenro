@@ -47,37 +47,6 @@ try {
 }
 
 // -------------------------
-// AJAX: mark all notifications as read (Seedling + Tree Cutting incidents)
-// -------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'notifications_mark_all_seedling_read') {
-    header('Content-Type: application/json');
-    if (!$pdo) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'DB connection not available']);
-        exit;
-    }
-    try {
-        $pdo->beginTransaction();
-
-        // Mark all notifications addressed to Seedling as read
-        $st1 = $pdo->prepare('UPDATE public.notifications SET is_read = TRUE WHERE lower("to") = :to AND is_read = FALSE');
-        $st1->execute([':to' => 'seedling']);
-
-        // Mark all incident reports with category Tree Cutting as read
-        $st2 = $pdo->prepare('UPDATE public.incident_report SET is_read = TRUE WHERE lower(category) = :cat AND is_read = FALSE');
-        $st2->execute([':cat' => 'tree cutting']);
-
-        $pdo->commit();
-        echo json_encode(['success' => true]);
-    } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'Could not update notifications']);
-    }
-    exit;
-}
-
-// -------------------------
 // AJAX: save seedling intakes
 // -------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'seedlings_intake_create') {
@@ -123,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'seedl
             VALUES (:agency_name, :seedlings_name, :seedlings_id, :quantity, :date_received, :received_by)
         ");
 
-        // If column is still UUID (old), warn early (we’ll still try best-effort)
+        // If column is still UUID (old), warn early (we'll still try best-effort)
         $isUuidCol = (strtolower((string)$intakesSeedlingsIdType) === 'uuid');
         $isUuid = function ($v) {
             return is_string($v) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $v);
@@ -212,109 +181,112 @@ if ($pdo) {
 }
 
 // -------------------------
-// Header notifications (merge: Seedling + Tree Cutting incidents)
+// Header notifications (seedlingshome.php style)
 // -------------------------
 $seedlingNotifs = [];
-$unreadSeedlingCount = 0;
+$unreadSeedling = 0;
 
-$treeIncidents = [];
-$unreadIncidentsCount = 0;
-
-if ($pdo) {
-    // Seedling notifications (public.notifications WHERE to='Seedling')
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
     try {
-        $st = $pdo->prepare('
-            SELECT notif_id, message, is_read, created_at
-            FROM public.notifications
-            WHERE lower("to") = :to
-            ORDER BY created_at DESC
-            LIMIT 20
-        ');
-        $st->execute([':to' => 'seedling']);
-        $seedlingNotifs = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+                exit;
+            }
 
-        $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM public.notifications WHERE lower("to") = :to AND is_read = FALSE');
-        $cntStmt->execute([':to' => 'seedling']);
-        $unreadSeedlingCount = (int)$cntStmt->fetchColumn();
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("UPDATE public.notifications SET is_read = true WHERE LOWER(COALESCE(\"to\", ''))='seedling' AND is_read=false");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
     } catch (Throwable $e) {
-        $seedlingNotifs = [];
-        $unreadSeedlingCount = 0;
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[SEEDLING NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
     }
-
-    // Incident reports (public.incident_report WHERE category='Tree Cutting')
-    try {
-        $st2 = $pdo->prepare('
-            SELECT incident_id, what, more_description, is_read, created_at, status
-            FROM public.incident_report
-            WHERE lower(category) = :cat
-            ORDER BY created_at DESC
-            LIMIT 20
-        ');
-        $st2->execute([':cat' => 'tree cutting']);
-        $treeIncidents = $st2->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $cnt2 = $pdo->prepare('SELECT COUNT(*) FROM public.incident_report WHERE lower(category) = :cat AND is_read = FALSE');
-        $cnt2->execute([':cat' => 'tree cutting']);
-        $unreadIncidentsCount = (int)$cnt2->fetchColumn();
-    } catch (Throwable $e) {
-        $treeIncidents = [];
-        $unreadIncidentsCount = 0;
-    }
+    exit;
 }
-
-// Merge & sort (newest first)
-$allNotifs = [];
-
-// map seedling notifications
-foreach ($seedlingNotifs as $n) {
-    $allNotifs[] = [
-        'source'     => 'seedling',
-        'id'         => $n['notif_id'],
-        'title'      => 'Notification',
-        'message'    => (string)$n['message'],
-        'is_read'    => (bool)$n['is_read'],
-        'created_at' => (string)$n['created_at'],
-    ];
-}
-
-// map incident reports
-foreach ($treeIncidents as $r) {
-    $msg = $r['what'] ?: $r['more_description'] ?: 'New Tree Cutting incident.';
-    $status = $r['status'] ? (' [' . strtoupper((string)$r['status']) . ']') : '';
-    $allNotifs[] = [
-        'source'     => 'incident',
-        'id'         => $r['incident_id'],
-        'title'      => 'Incident Report',
-        'message'    => (string)$msg . $status,
-        'is_read'    => (bool)$r['is_read'],
-        'created_at' => (string)$r['created_at'],
-    ];
-}
-
-// sort by created_at desc
-usort($allNotifs, function ($a, $b) {
-    return strtotime($b['created_at'] ?? '') <=> strtotime($a['created_at'] ?? '');
-});
-
-$unreadTotal = $unreadSeedlingCount + $unreadIncidentsCount;
 
 // -------------------------
 // helpers
 // -------------------------
-function e($s)
+function h(?string $s): string
 {
     return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function fmt_dt($ts)
+function time_elapsed_string($datetime, $full = false): string
 {
-    if (!$ts) return '';
-    try {
-        $d = new DateTime($ts);
-        return $d->format('M d, Y g:i A');
-    } catch (Throwable $e) {
-        return (string)$ts;
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
+    $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $parts = [];
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
     }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+try {
+    $seedlingNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadSeedling = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+          AND n.is_read = false
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[SEEDLING NOTIFS] ' . $e->getMessage());
+    $seedlingNotifs = [];
+    $unreadSeedling = 0;
+}
+
+function e($s)
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 ?>
 <!DOCTYPE html>
@@ -563,7 +535,14 @@ function fmt_dt($ts)
         }
 
         .view-records-button {
-            background: #00796b
+            background: #00796b;
+        }
+
+        .view-records-button:hover,
+        .view-records-button:focus {
+            background: #165033;
+            outline: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
         }
 
         .species-list {
@@ -805,73 +784,107 @@ function fmt_dt($ts)
             }
         }
 
-        /* Simple notification list layout inside dropdown */
-        .notifications-dropdown {
-            padding: 10px 0;
+        /* Notification styles from seedlingshome.php */
+        .dropdown-menu.notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0;
         }
 
-        .notification-header {
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 16px;
-            border-bottom: 1px solid #eee;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff;
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none;
         }
 
         .notification-item {
-            padding: 12px 16px;
+            padding: 18px;
+            background: #f8faf7;
         }
 
         .notification-item.unread {
-            background: #f6fff6;
+            background: #eef7ee;
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1;
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20;
         }
 
         .notification-link {
             display: flex;
-            gap: 12px;
             text-decoration: none;
-            color: #222;
-        }
-
-        .notification-icon {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #eef7ee;
-        }
-
-        .notification-content {
-            flex: 1;
+            color: inherit;
+            width: 100%;
         }
 
         .notification-title {
             font-weight: 700;
-            margin-bottom: 4px;
-        }
-
-        .notification-message {
-            font-size: .95rem;
+            color: #1b5e20;
+            margin-bottom: 6px;
         }
 
         .notification-time {
-            font-size: .85rem;
-            color: #666;
-            margin-top: 2px;
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px;
         }
 
-        .notification-footer {
-            border-top: 1px solid #eee;
-            padding: 10px 16px;
-            text-align: center;
+        .notification-message {
+            color: #234;
         }
 
-        .notification-footer .view-all {
+        .mark-all-read {
+            color: #1b5e20;
             text-decoration: none;
-            color: #0b6;
-            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .mark-all-read:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -899,10 +912,7 @@ function fmt_dt($ts)
                     <a href="incoming.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span class="item-text">Seedlings Received</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_received']; ?></span>
                     </a>
-
-
 
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
@@ -916,51 +926,63 @@ function fmt_dt($ts)
                 </div>
             </div>
 
-            <!-- Notifications (Seedling + Tree Cutting) -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <!-- Notifications -->
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge" style="<?= ($unreadTotal > 0) ? '' : 'display:none;' ?>"><?= (int)$unreadTotal ?></span>
+                    <span class="badge"><?= (int)$unreadSeedling ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
+                    <div class="notification-list" id="seedlingNotifList">
+                        <?php
+                        $combined = [];
 
-                    <?php if (count($allNotifs) === 0): ?>
-                        <div class="notification-item">
-                            <div class="notification-link" href="javascript:void(0)">
-                                <div class="notification-icon">
-                                    <i class="far fa-bell"></i>
-                                </div>
+                        // Permits / notifications
+                        foreach ($seedlingNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a seedling request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'seedlingsprofile.php' : (!empty($nf['approval_id']) ? 'user_requestseedlings.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'seedlingsnotification.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
                                 <div class="notification-content">
-                                    <div class="notification-title">No notifications</div>
-                                    <div class="notification-message">You’re all caught up.</div>
+                                    <div class="notification-title">No seedling notifications</div>
                                 </div>
                             </div>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($allNotifs as $it): ?>
-                            <?php $iconClass = $it['is_read'] ? 'far fa-bell' : 'fas fa-bell'; ?>
-                            <div class="notification-item <?= $it['is_read'] ? '' : 'unread' ?>" data-id="<?= e($it['id']) ?>" data-src="<?= e($it['source']) ?>">
-                                <a class="notification-link" href="javascript:void(0)">
-                                    <div class="notification-icon">
-                                        <i class="<?= $iconClass ?>"></i>
-                                    </div>
-                                    <div class="notification-content">
-                                        <div class="notification-title"><?= e($it['title']) ?></div>
-                                        <div class="notification-message"><?= e($it['message']) ?></div>
-                                        <div class="notification-time"><?= e(fmt_dt($it['created_at'])) ?></div>
-                                    </div>
-                                </a>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-
-                    <div class="notification-footer">
-                        <a href="seedlingsnotification.php" class="view-all">View All Notifications</a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Seedling Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
+
+                    <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -1391,85 +1413,175 @@ function fmt_dt($ts)
             });
         });
 
-        // Header-only JS (dropdowns + mobile toggle + mark-all-read)
+        // Header notification JS (from seedlingshome.php)
         document.addEventListener('DOMContentLoaded', function() {
+            const NOTIF_ENDPOINT = '<?php echo basename(__FILE__); ?>'; // calls THIS page for AJAX
+
+            // Minimal dropdown open/close just for the bell
+            const dd = document.getElementById('notifDropdown');
+            if (dd) {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger?.setAttribute('aria-expanded', 'true');
+                    if (menu) {
+                        menu.style.opacity = '1';
+                        menu.style.visibility = 'visible';
+                    }
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger?.setAttribute('aria-expanded', 'false');
+                    if (menu) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                    }
+                };
+                trigger?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dd.classList.toggle('open');
+                    if (dd.classList.contains('open')) open();
+                    else close();
+                });
+                document.addEventListener('click', (e) => {
+                    // Only close if clicking outside notifDropdown AND not on other nav items
+                    if (!e.target.closest('#notifDropdown') && !e.target.closest('.nav-item')) close();
+                });
+            }
+
+            // Mark ALL as read
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // optimistic UI
+                document.querySelectorAll('#seedlingNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch(`${NOTIF_ENDPOINT}?ajax=mark_all_read`, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch {
+                    location.reload();
+                }
+            });
+
+            // Mark ONE as read + follow link
+            document.getElementById('seedlingNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                const item = link.closest('.notification-item');
+                const notifId = item?.getAttribute('data-notif-id') || '';
+                const href = link.getAttribute('href') || '#';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch {}
+
+                item?.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
+
+            // Mobile menu toggle
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            if (mobileToggle) mobileToggle.addEventListener('click', () => navContainer.classList.toggle('active'));
 
-            const dropdowns = document.querySelectorAll('.dropdown');
-            dropdowns.forEach(dd => {
-                const toggle = dd.querySelector('.nav-icon');
-                const menu = dd.querySelector('.dropdown-menu');
+            if (mobileToggle) {
+                mobileToggle.addEventListener('click', () => {
+                    navContainer.classList.toggle('active');
+                });
+            }
 
-                dd.addEventListener('mouseenter', () => {
+            // Dropdown functionality
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+
+            dropdowns.forEach(dropdown => {
+                const toggle = dropdown.querySelector('.nav-icon');
+                const menu = dropdown.querySelector('.dropdown-menu');
+
+                // Show menu on hover (desktop)
+                dropdown.addEventListener('mouseenter', () => {
                     if (window.innerWidth > 992) {
                         menu.style.opacity = '1';
                         menu.style.visibility = 'visible';
-                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
-                    }
-                });
-                dd.addEventListener('mouseleave', e => {
-                    if (window.innerWidth > 992 && !dd.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(0)' :
+                            'translateY(0)';
                     }
                 });
 
-                if (window.innerWidth <= 992 && toggle) {
-                    toggle.addEventListener('click', e => {
+                // Hide menu when leaving (desktop)
+                dropdown.addEventListener('mouseleave', (e) => {
+                    if (window.innerWidth > 992 && !dropdown.contains(e.relatedTarget)) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                        menu.style.transform = menu.classList.contains('center') ?
+                            'translateX(-50%) translateY(10px)' :
+                            'translateY(10px)';
+                    }
+                });
+
+                // Toggle menu on click (mobile)
+                if (window.innerWidth <= 992) {
+                    toggle.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        document.querySelectorAll('.dropdown-menu').forEach(m => {
-                            if (m !== menu) m.style.display = 'none';
+
+                        // Close other dropdowns
+                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
+                            if (otherMenu !== menu) {
+                                otherMenu.style.display = 'none';
+                            }
                         });
-                        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+
+                        // Toggle current dropdown
+                        if (menu.style.display === 'block') {
+                            menu.style.display = 'none';
+                        } else {
+                            menu.style.display = 'block';
+                        }
                     });
                 }
             });
 
-            document.addEventListener('click', e => {
-                if (!e.target.closest('.dropdown') && window.innerWidth <= 992) {
-                    document.querySelectorAll('.dropdown-menu').forEach(menu => menu.style.display = 'none');
+            // Close dropdowns when clicking outside (mobile)
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-dropdown]') && window.innerWidth <= 992) {
+                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                        menu.style.display = 'none';
+                    });
                 }
             });
-
-            const badge = document.querySelector('.nav-item .badge');
-            const markAll = document.querySelector('.mark-all-read');
-            if (markAll) {
-                markAll.addEventListener('click', async e => {
-                    e.preventDefault();
-                    try {
-                        const body = new URLSearchParams();
-                        body.append('action', 'notifications_mark_all_seedling_read');
-                        const res = await fetch(window.location.href, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded'
-                            },
-                            body: body.toString()
-                        });
-                        const data = await res.json();
-                        if (!res.ok || !data.success) throw new Error('Failed to mark all as read');
-
-                        // Update UI
-                        document.querySelectorAll('.notifications-dropdown .notification-item.unread').forEach(item => {
-                            item.classList.remove('unread');
-                            const icon = item.querySelector('.notification-icon i');
-                            if (icon) {
-                                icon.classList.remove('fas');
-                                icon.classList.add('far'); // switch to outline bell when marked read
-                            }
-                        });
-                        if (badge) {
-                            badge.style.display = 'none';
-                        }
-                    } catch {
-                        // keep header minimal; no toast
-                    }
-                });
-            }
         });
     </script>
 </body>

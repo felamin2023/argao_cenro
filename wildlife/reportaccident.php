@@ -12,21 +12,15 @@ if (isset($_GET['ajax'])) {
     header('Content-Type: application/json; charset=utf-8');
     try {
         if ($_GET['ajax'] === 'mark_read') {
-            $notifId    = $_POST['notif_id']    ?? '';
-            $incidentId = $_POST['incident_id'] ?? '';
-            if (!$notifId && !$incidentId) {
-                echo json_encode(['ok' => false, 'error' => 'missing ids']);
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
                 exit;
             }
 
-            if ($notifId) {
-                $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
-                $st->execute([':id' => $notifId]);
-            }
-            if ($incidentId) {
-                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
-                $st->execute([':id' => $incidentId]);
-            }
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
             echo json_encode(['ok' => true]);
             exit;
         }
@@ -37,11 +31,6 @@ if (isset($_GET['ajax'])) {
                 UPDATE public.notifications
                    SET is_read = true
                  WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
-            ");
-            $pdo->exec("
-                UPDATE public.incident_report
-                   SET is_read = true
-                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
             ");
             $pdo->commit();
             echo json_encode(['ok' => true]);
@@ -69,7 +58,9 @@ if (!function_exists('time_elapsed_string')) {
     {
         if (!$datetime) return '';
         $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        // DB stores timestamps in UTC without timezone info, so parse as UTC then convert
+        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
         $diff = $now->diff($ago);
         $weeks = (int)floor($diff->d / 7);
         $days  = $diff->d % 7;
@@ -91,41 +82,37 @@ $unreadWildlife = 0;
 
 try {
     $wildNotifs = $pdo->query("
-        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
-               a.approval_id,
-               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
-               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
-               LOWER(COALESCE(a.request_type,'')) AS request_type,
-               c.first_name AS client_first, c.last_name AS client_last
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
-        LEFT JOIN public.client   c ON c.client_id   = a.client_id
-        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife'
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'wildlife'
         ORDER BY n.is_read ASC, n.created_at DESC
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $incRows = $pdo->query("
-        SELECT incident_id,
-               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
-               status, is_read, created_at
-        FROM public.incident_report
-        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
-        ORDER BY created_at DESC
-        LIMIT 100
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-    $unreadPermits = (int)$pdo->query("
-        SELECT COUNT(*) FROM public.notifications
-        WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
+    $unreadWildlife = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'wildlife'
+          AND n.is_read = false
     ")->fetchColumn();
 
-    $unreadIncidents = (int)$pdo->query("
-        SELECT COUNT(*) FROM public.incident_report
-        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
-    ")->fetchColumn();
-
-    $unreadWildlife = $unreadPermits + $unreadIncidents;
+    $incRows = [];
 } catch (Throwable $e) {
     error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
     $wildNotifs = [];
@@ -196,6 +183,110 @@ try {
     <link rel="stylesheet" href="/denr/superadmin/css/reportaccident.css">
     <!-- Fix: load JS as a script, not a stylesheet -->
     <script defer src="/denr/superadmin/js/reportaccident.js"></script>
+
+    <!-- keep UI identical; only behavior/data changed -->
+    <style>
+        .nav-item .badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+        }
+
+        .nav-item.dropdown.open .badge {
+            display: none;
+        }
+
+        .dropdown-menu.notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff;
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none;
+        }
+
+        .notification-item {
+            padding: 18px;
+            background: #f8faf7;
+        }
+
+        .notification-item.unread {
+            background: #eef7ee;
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1;
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20;
+        }
+
+        .notification-link {
+            display: flex;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px;
+        }
+
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px;
+        }
+
+        .notification-message {
+            color: #234;
+        }
+    </style>
 </head>
 
 <body>
@@ -244,29 +335,22 @@ try {
                         <?php
                         $combined = [];
 
-                        // Permits
+                        // Permits / notifications
                         foreach ($wildNotifs as $nf) {
                             $combined[] = [
-                                'id'      => $nf['notif_id'],
-                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-                                'type'    => 'permit',
-                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
-                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
-                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'wildprofile.php' : (!empty($nf['approval_id']) ? 'wildpermit.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'wildnotification.php'))
                             ];
                         }
 
-                        // Incidents
-                        foreach ($incRows as $ir) {
-                            $combined[] = [
-                                'id'      => $ir['incident_id'],
-                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
-                                'type'    => 'incident',
-                                'message' => trim((string)$ir['body_text']),
-                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
-                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
-                            ];
-                        }
+                        // incident reports removed
 
                         if (empty($combined)): ?>
                             <div class="notification-item">
@@ -276,12 +360,23 @@ try {
                             </div>
                             <?php else:
                             foreach ($combined as $item):
-                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $hasIncident = isset($item['incident_id']) && $item['incident_id'] !== null && trim((string)$item['incident_id']) !== '';
+                                $hasApproval = isset($item['approval_id']) && $item['approval_id'] !== null && trim((string)$item['approval_id']) !== '';
+                                $hasReqpro   = isset($item['reqpro_id'])   && $item['reqpro_id']   !== null && trim((string)$item['reqpro_id'])   !== '';
+
+                                if ($hasIncident) {
+                                    $title = 'Incident report';
+                                } elseif ($hasApproval) {
+                                    $title = 'Permit request';
+                                } elseif ($hasReqpro) {
+                                    $title = 'Profile request';
+                                } else {
+                                    $title = 'Permit request';
+                                }
                                 $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
                                 <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
-                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
-                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    data-notif-id="<?= h($item['id']) ?>" <?php if ($hasIncident): ?> data-incident-id="<?= h($item['incident_id']) ?>" <?php endif; ?>>
                                     <a href="<?= h($item['link']) ?>" class="notification-link">
                                         <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
@@ -324,36 +419,16 @@ try {
             </div>
 
             <!-- Controls -->
-            <div class="controls" style="background-color:#ffffff !important;">
-                <div class="filter">
-                    <select class="filter-month">
-                        <option value="">All months</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
+            <div class="controls" style="background-color:#ffffff !important;display:flex;align-items:center;gap:12px; justify-content: flex-start;">
+                <div class="status-filter">
+                    <label for="status-filter-select" style="margin-right:6px;font-weight:600;color:#005117;">Status</label>
+                    <select id="status-dropdown" style="padding:8px 12px;border-radius:4px;border:1px solid #ccc;font-size:14px;cursor:pointer;">
+                        <option value="all">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="rejected">Rejected</option>
                     </select>
-                    <input type="number" class="filter-year" placeholder="Year" list="year-suggestions">
-                    <datalist id="year-suggestions">
-                        <option value="2020">
-                        <option value="2021">
-                        <option value="2022">
-                        <option value="2023">
-                        <option value="2024">
-                        <option value="2025">
-                        <option value="2026">
-                    </datalist>
-                    <button class="filter-button" aria-label="Filter">
-                        <i class="fas fa-filter" style="font-size:18px;color:#005117;margin-right:6px;"></i> Filter
-                    </button>
                 </div>
 
                 <div class="search">
@@ -361,21 +436,12 @@ try {
                     <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon" id="search-icon">
                 </div>
 
-                <div class="export">
+                <!-- <div class="export">
                     <button class="export-button" id="export-button">
                         <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon">
                     </button>
                     <span class="export-label">Export as CSV</span>
-                </div>
-            </div>
-
-            <!-- Status buttons -->
-            <div class="status-buttons">
-                <button class="status-btn all-btn" data-status="all">ALL</button>
-                <button class="status-btn pending-btn" data-status="pending">PENDING</button>
-                <button class="status-btn approved-btn" data-status="approved">APPROVED</button>
-                <button class="status-btn resolved-btn" data-status="resolved">RESOLVED</button>
-                <button class="status-btn rejected-btn" data-status="rejected">REJECTED</button>
+                </div> -->
             </div>
 
             <!-- Table -->
@@ -394,48 +460,48 @@ try {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (!$incidents): ?>
+                        <?php foreach ($incidents as $row): ?>
                             <tr>
-                                <td colspan="8">No incident reports found</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($incidents as $row): ?>
-                                <tr>
-                                    <td><?= htmlspecialchars((string)$row['id']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['who']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['what']) ?></td>
-                                    <td><?= htmlspecialchars((string)$row['where']) ?></td>
-                                    <td><?= htmlspecialchars($row['when'] ? (new DateTime($row['when']))->format('Y-m-d H:i') : '') ?></td>
-                                    <td><?= htmlspecialchars((string)$row['why']) ?></td>
-                                    <?php
-                                    $statusRaw = (string)($row['status'] ?? '');
-                                    $statusKey = strtolower(trim($statusRaw));
-                                    if ($statusKey === '') {
-                                        $statusClass = 'pending';
-                                        $statusLabel = 'Pending';
-                                    } else {
-                                        $statusClassSanitized = preg_replace('/[^a-z0-9]+/', '-', $statusKey);
-                                        $statusClassSanitized = $statusClassSanitized !== '' ? $statusClassSanitized : 'unknown';
-                                        $knownStatuses = ['pending', 'approved', 'resolved', 'rejected'];
-                                        $statusClass = in_array($statusClassSanitized, $knownStatuses, true) ? $statusClassSanitized : 'unknown';
-                                        $labelSource = str_replace(['-', '_'], ' ', $statusKey);
-                                        $statusLabel = ucwords($labelSource);
-                                    }
-                                    ?>
-                                    <td>
-                                        <span class="status-pill status-pill--<?= htmlspecialchars($statusClass, ENT_QUOTES) ?>">
-                                            <?= htmlspecialchars($statusLabel) ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <button class="view-btn" data-id="<?= htmlspecialchars((string)$row['id']) ?>">View</button>
+                                <td><?= htmlspecialchars((string)$row['id']) ?></td>
+                                <td><?= htmlspecialchars((string)$row['who']) ?></td>
+                                <td><?= htmlspecialchars((string)$row['what']) ?></td>
+                                <td><?= htmlspecialchars((string)$row['where']) ?></td>
+                                <td><?= htmlspecialchars($row['when'] ? (new DateTime($row['when']))->format('Y-m-d H:i') : '') ?></td>
+                                <td><?= htmlspecialchars((string)$row['why']) ?></td>
+                                <?php
+                                $statusRaw = (string)($row['status'] ?? '');
+                                $statusKey = strtolower(trim($statusRaw));
+                                if ($statusKey === '') {
+                                    $statusClass = 'pending';
+                                    $statusLabel = 'Pending';
+                                } else {
+                                    $statusClassSanitized = preg_replace('/[^a-z0-9]+/', '-', $statusKey);
+                                    $statusClassSanitized = $statusClassSanitized !== '' ? $statusClassSanitized : 'unknown';
+                                    $knownStatuses = ['pending', 'approved', 'resolved', 'rejected'];
+                                    $statusClass = in_array($statusClassSanitized, $knownStatuses, true) ? $statusClassSanitized : 'unknown';
+                                    $labelSource = str_replace(['-', '_'], ' ', $statusKey);
+                                    $statusLabel = ucwords($labelSource);
+                                }
+                                ?>
+                                <td>
+                                    <span class="status-pill status-pill--<?= htmlspecialchars($statusClass, ENT_QUOTES) ?>">
+                                        <?= htmlspecialchars($statusLabel) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="view-btn" data-id="<?= htmlspecialchars((string)$row['id']) ?>">View</button>
 
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+
                     </tbody>
                 </table>
+
+                <!-- Full width placeholder shown when there are no visible records -->
+                <div id="no-record-placeholder" style="text-align: center; display: <?= empty($incidents) ? 'block' : 'none' ?>; padding:12px; background:#f5f5f5; border-radius:4px; margin-top:8px;">
+                    No record found
+                </div>
             </div>
         </div>
     </div>
@@ -582,13 +648,11 @@ try {
 
                 const item = link.closest('.notification-item');
                 const notifId = item?.getAttribute('data-notif-id') || '';
-                const incidentId = item?.getAttribute('data-incident-id') || '';
                 const href = link.getAttribute('href') || '#';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
-                    if (incidentId) form.set('incident_id', incidentId);
                     await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
                         method: 'POST',
                         headers: {
@@ -872,6 +936,9 @@ try {
                     const row = e.target.closest("tr");
                     row?.parentNode?.removeChild(row);
                     showNotification("Incident deleted");
+                    try {
+                        updateNoRecordRow();
+                    } catch (_) {}
                 } catch (err) {
                     console.error(err);
                     showNotification("Error deleting report");
@@ -898,15 +965,27 @@ try {
                 if (event.target === imageModal) closeModal(imageModal);
             });
 
-            // ===== Status filter buttons =====
-            const statusButtons = document.querySelectorAll(".status-btn");
-            const tableRows = document.querySelectorAll(".accident-table tbody tr");
-            statusButtons.forEach((button) => {
-                button.addEventListener("click", () => {
-                    statusButtons.forEach((btn) => btn.classList.remove("active"));
-                    button.classList.add("active");
-                    const status = button.dataset.status || "all";
-                    tableRows.forEach((row) => {
+            // ===== Status filter dropdown =====
+            const statusDropdown = document.getElementById("status-dropdown");
+
+            // Update visibility of the dedicated "no record" row depending on
+            // whether any data rows are currently visible.
+            function updateNoRecordRow() {
+                const tbody = document.querySelector('.accident-table tbody');
+                if (!tbody) return;
+                const dataRows = Array.from(tbody.querySelectorAll('tr'));
+                const visibleCount = dataRows.filter(r => r.style.display !== 'none').length;
+                const noRecordDiv = document.getElementById('no-record-placeholder');
+                if (noRecordDiv) {
+                    noRecordDiv.style.display = visibleCount === 0 ? 'block' : 'none';
+                }
+            }
+
+            if (statusDropdown) {
+                statusDropdown.addEventListener("change", () => {
+                    const status = statusDropdown.value || "all";
+                    const rows = document.querySelectorAll('.accident-table tbody tr');
+                    rows.forEach((row) => {
                         if (status === "all") {
                             row.style.display = "";
                         } else {
@@ -914,11 +993,8 @@ try {
                             row.style.display = rowStatus === status ? "" : "none";
                         }
                     });
+                    updateNoRecordRow();
                 });
-            });
-            const defaultStatusBtn = document.querySelector(".status-btn.all-btn");
-            if (defaultStatusBtn) {
-                defaultStatusBtn.classList.add("active");
             }
 
             // ===== Search (icon click or Enter) =====
@@ -927,45 +1003,27 @@ try {
 
             function performSearch() {
                 const term = (searchInput.value || "").toLowerCase();
-                tableRows.forEach((row) => {
+                const rows = document.querySelectorAll('.accident-table tbody tr');
+                const searchableIndices = [1, 2, 3, 4, 5];
+                rows.forEach((row) => {
                     let match = false;
-                    for (let i = 0; i < row.cells.length - 1; i++) {
-                        if ((row.cells[i]?.textContent || "").toLowerCase().includes(term)) {
+                    for (const idx of searchableIndices) {
+                        if ((row.cells[idx]?.textContent || "").toLowerCase().includes(term)) {
                             match = true;
                             break;
                         }
                     }
                     row.style.display = match ? "" : "none";
                 });
+                updateNoRecordRow();
             }
             if (searchIcon) searchIcon.addEventListener("click", performSearch);
             if (searchInput) {
                 searchInput.addEventListener("keypress", (e) => {
                     if (e.key === "Enter") performSearch();
                 });
-            }
-
-            // ===== Date filter (month/year) =====
-            const filterButton = document.querySelector(".filter-button");
-            const filterMonth = document.querySelector(".filter-month");
-            const filterYear = document.querySelector(".filter-year");
-
-            if (filterButton) {
-                filterButton.addEventListener("click", () => {
-                    const m = filterMonth.value;
-                    const y = filterYear.value;
-                    tableRows.forEach((row) => {
-                        const cell = row.cells[4]; // WHEN column (YYYY-MM-DD HH:MM)
-                        if (!cell) return;
-                        const txt = (cell.textContent || "").trim();
-                        const parts = txt.split("-");
-                        const yy = parts[0] || "";
-                        const mm = parts[1] || "";
-                        const monthOk = m ? mm === m : true;
-                        const yearOk = y ? yy === y : true;
-                        row.style.display = monthOk && yearOk ? "" : "none";
-                    });
-                });
+                // Also search on input change for real-time filtering
+                searchInput.addEventListener("input", performSearch);
             }
 
             // ===== Export CSV =====
@@ -997,6 +1055,10 @@ try {
                     document.body.removeChild(a);
                 });
             }
+            // Ensure the no-record row visibility is correct on initial load
+            try {
+                updateNoRecordRow();
+            } catch (_) {}
         });
     </script>
 

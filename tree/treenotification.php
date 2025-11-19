@@ -21,7 +21,13 @@ function time_elapsed_string($datetime, $full = false): string
 {
     if (!$datetime) return '';
     $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    // DB timestamps are stored in UTC. Parse as UTC then convert to Manila
+    try {
+        $ago = new DateTime($datetime, new DateTimeZone('UTC'));
+        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+    } catch (Exception $e) {
+        $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    }
     $diff = $now->diff($ago);
 
     $totalDays = $diff->days ?? 0;
@@ -149,6 +155,8 @@ $unreadTree = 0;
 try {
     $notifRows = $pdo->query("SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
                a.approval_id,
+               n.incident_id,
+               n.reqpro_id,
                COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
                COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
                LOWER(COALESCE(a.request_type,'')) AS request_type,
@@ -161,38 +169,35 @@ try {
         LIMIT 500");
     $treeNotifs = $notifRows ? $notifRows->fetchAll(PDO::FETCH_ASSOC) : [];
 
-    $incRows = $pdo->query("SELECT incident_id, COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text, status, is_read, created_at FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' ORDER BY created_at DESC LIMIT 500")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
     $unreadPermits = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications n WHERE LOWER(COALESCE(n.\"to\", ''))='tree cutting' AND n.is_read=false")->fetchColumn();
-    $unreadIncidents = (int)$pdo->query("SELECT COUNT(*) FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false")->fetchColumn();
-    $unreadTree = $unreadPermits + $unreadIncidents;
+    $unreadTree = $unreadPermits;
 } catch (Throwable $e) {
     error_log('[TREE NOTIFS] ' . $e->getMessage());
 }
 
 $combined = [];
 foreach ($treeNotifs as $nf) {
+    $isRead = ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1');
+    $hasIncident = !empty($nf['incident_id']);
+    $hasApproval = !empty($nf['approval_id']);
+    $hasReqpro   = !empty($nf['reqpro_id']);
+    $titleMsg = trim((string)$nf['message'] ?: ((($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.'));
+
+    $link = $hasApproval
+        ? 'requestpermits.php?approval_id=' . urlencode((string)$nf['approval_id'])
+        : ($hasIncident
+            ? 'reportaccident.php?focus=' . urlencode((string)$nf['incident_id'])
+            : ($hasReqpro ? 'treeprofile.php?reqpro_id=' . urlencode((string)$nf['reqpro_id']) : 'treenotification.php'));
+
     $combined[] = [
-        'id'      => $nf['notif_id'],
-        'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-        'type'    => 'permit',
-        'message' => trim((string)$nf['message'] ?: ((($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.')),
-        'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+        'id'         => $nf['notif_id'],
+        'is_read'    => $isRead,
+        'type'       => $hasIncident ? 'incident' : 'permit',
+        'message'    => $titleMsg,
+        'ago'        => time_elapsed_string($nf['created_at'] ?? date('c')),
         'created_at' => $nf['created_at'] ?? null,
-        'raw'     => $nf,
-        'link'    => 'requestpermits.php'
-    ];
-}
-foreach ($incRows as $ir) {
-    $combined[] = [
-        'id'      => $ir['incident_id'],
-        'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
-        'type'    => 'incident',
-        'message' => trim((string)$ir['body_text']),
-        'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
-        'created_at' => $ir['created_at'] ?? null,
-        'raw'     => $ir,
-        'link'    => 'reportaccident.php'
+        'raw'        => $nf,
+        'link'       => $link
     ];
 }
 
@@ -217,6 +222,132 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
     <!-- Use the same CSS as wildlife notification to match design -->
     <link rel="stylesheet" href="/denr/superadmin/css/wildnotification.css">
 </head>
+<style>
+    .nav-item .badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        width: 15px;
+        height: 15px;
+        background: #e74c3c;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        line-height: 1;
+        padding: 0;
+        box-sizing: border-box;
+        text-align: center;
+        /* ensures a white ring when over light icon box */
+    }
+
+    .nav-item.dropdown.open .badge {
+        display: none;
+    }
+
+    .dropdown-menu.notifications-dropdown {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        width: min(460px, 92vw);
+        max-height: 72vh;
+        overflow: hidden;
+        padding: 0;
+    }
+
+    .notifications-dropdown .notification-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .notifications-dropdown .notification-list {
+        overflow: auto;
+        padding: 8px 0;
+        background: #fff;
+    }
+
+    .notifications-dropdown .notification-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background: #fff;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px 16px;
+    }
+
+    .notifications-dropdown .view-all {
+        font-weight: 600;
+        color: #1b5e20;
+        text-decoration: none;
+    }
+
+    .notification-item {
+        padding: 18px;
+        background: #f8faf7;
+    }
+
+    .notification-item.unread {
+        background: #eef7ee;
+    }
+
+    .notification-item+.notification-item {
+        border-top: 1px solid #eef2f1;
+    }
+
+    .notification-icon {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 10px;
+        color: #1b5e20;
+    }
+
+    .notification-link {
+        display: flex;
+        text-decoration: none;
+        color: inherit;
+        width: 100%;
+    }
+
+    .notification-title {
+        display: flex;
+        font-weight: 700;
+        color: #1b5e20;
+        margin-bottom: 6px;
+        width: 30%;
+    }
+
+
+    .notification-time {
+        color: #6b7280;
+        font-size: .9rem;
+        padding: 0px 5px;
+    }
+
+    .notification-message {
+        color: #234;
+    }
+
+    .mark-all-button {
+        padding: 10px;
+    }
+
+    .notification-message {
+        text-decoration: none;
+    }
+</style>
 
 <body>
 
@@ -256,7 +387,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
 
             <!-- Notifications -->
-            <div class="nav-item dropdown" id="notifDropdown" style="position:relative;">
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
                     <span class="badge"><?= (int)$unreadTree ?></span>
@@ -266,44 +397,66 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <h3 style="margin:0;">Notifications</h3>
                         <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
+                    <div class="notification-list" id="treeNotifList">
+                        <?php
+                        // Use a separate variable for the header dropdown list to avoid
+                        // overwriting the main `$combined` used for the page content.
+                        $headerCombined = [];
 
-                    <div class="notification-list" id="notifDropdownList">
-                        <?php if (empty($combined)): ?>
+                        // Build header list from notifications; include approval/incident/reqpro ids and link mapping
+                        foreach ($treeNotifs as $nf) {
+                            $hasApproval = !empty($nf['approval_id']);
+                            $hasIncident = !empty($nf['incident_id']);
+                            $hasReqpro   = !empty($nf['reqpro_id']);
+                            $link = $hasApproval
+                                ? 'requestpermits.php?approval_id=' . urlencode((string)$nf['approval_id'])
+                                : ($hasIncident
+                                    ? 'reportaccident.php?focus=' . urlencode((string)$nf['incident_id'])
+                                    : ($hasReqpro ? 'treeprofile.php?reqpro_id=' . urlencode((string)$nf['reqpro_id']) : 'treenotification.php'));
+
+                            $headerCombined[] = [
+                                'id'          => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'        => $hasIncident ? 'incident' : 'permit',
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => $link,
+                                'raw'         => $nf
+                            ];
+                        }
+
+                        // incident_report rows removed by request
+
+                        if (empty($headerCombined)): ?>
                             <div class="notification-item">
                                 <div class="notification-content">
-                                    <div class="notification-title">No notifications</div>
-                                    <div class="notification-message">You're all caught up.</div>
+                                    <div class="notification-title">No tree cutting notifications</div>
                                 </div>
                             </div>
                             <?php else:
-                            $count = 0;
-                            foreach ($combined as $nf):
-                                // limit the number shown in the header dropdown to 8
-                                if ($count++ >= 8) break;
-                                $isUnread = empty($nf['is_read']) ? true : false;
-                                $icon = $nf['type'] === 'incident' ? 'fa-exclamation-triangle' : 'fa-bell';
-                                $href = '#';
-                                if ($nf['type'] === 'incident') {
-                                    $href = 'treeeach.php?id=' . urlencode((string)$nf['id']);
-                                } elseif (!empty($nf['raw']['approval_id'])) {
-                                    $href = 'requestpermits.php?approval_id=' . urlencode((string)$nf['raw']['approval_id']);
-                                } else {
-                                    $href = 'requestpermits.php';
-                                }
+                            foreach ($headerCombined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
-                                <div class="notification-item <?= $isUnread ? 'unread' : '' ?>" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? '')) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? ($nf['type'] === 'incident' ? $nf['id'] : ''))) ?>">
-                                    <a href="<?= h($href) ?>" class="notification-link">
-                                        <div class="notification-icon"><i class="fas <?= $icon ?>"></i></div>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h((string)($item['raw']['notif_id'] ?? $item['id'])) ?>"
+                                    data-incident-id="<?= h((string)($item['raw']['incident_id'] ?? '')) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
-                                            <div class="notification-title"><?= h(substr((string)$nf['message'], 0, 120)) ?></div>
-                                            <div class="notification-message"><?= h(substr((string)$nf['message'], 0, 240)) ?></div>
-                                            <div class="notification-time"><?= h(time_elapsed_string($nf['created_at'] ?? null)) ?></div>
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
                                         </div>
                                     </a>
                                 </div>
                         <?php endforeach;
                         endif; ?>
                     </div>
+
                     <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
@@ -346,16 +499,9 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 foreach ($combined as $nf):
                     $isUnread = empty($nf['is_read']) ? true : false;
                     $icon = $nf['type'] === 'incident' ? 'fa-exclamation-triangle' : 'fa-bell';
-                    $href = '#';
-                    if ($nf['type'] === 'incident') {
-                        $href = 'treeeach.php?id=' . urlencode((string)$nf['id']);
-                    } elseif (!empty($nf['raw']['approval_id'])) {
-                        $href = 'requestpermits.php?approval_id=' . urlencode((string)$nf['raw']['approval_id']);
-                    } else {
-                        $href = 'requestpermits.php';
-                    }
+                    $href = $nf['link'] ?? '#';
                 ?>
-                    <div class="notification-item <?= $isUnread ? 'unread' : '' ?>" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? '')) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? ($nf['type'] === 'incident' ? $nf['id'] : ''))) ?>">
+                    <div class="notification-item <?= $isUnread ? 'unread' : '' ?>" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? $nf['id'])) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? '')) ?>">
                         <div class="notification-title" style="width: 30%;"><?= h(substr((string)$nf['message'], 0, 120)) ?></div>
                         <div class="notification-content"><?= h((string)$nf['message']) ?></div>
                         <div class="notification-actions">
@@ -376,11 +522,12 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 if (empty($nf['is_read'])) {
                     $hasUnread = true;
                     $icon = $nf['type'] === 'incident' ? 'fa-exclamation-triangle' : 'fa-bell';
-                    $href = $nf['type'] === 'incident' ? 'treeeach.php?id=' . urlencode((string)$nf['id']) : (!empty($nf['raw']['approval_id']) ? 'requestpermits.php?approval_id=' . urlencode((string)$nf['raw']['approval_id']) : 'requestpermits.php');
+                    $href = $nf['link'] ?? '#';
             ?>
-                    <div class="notification-item unread" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? '')) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? ($nf['type'] === 'incident' ? $nf['id'] : ''))) ?>">
+                    <div class="notification-item unread" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? $nf['id'])) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? '')) ?>">
                         <div class="notification-title">
-                            <div class="notification-icon"><i class="fas <?= $icon ?>"></i></div><?= h(substr((string)$nf['message'], 0, 120)) ?>
+                            <div class="notification-icon"><i class="fas <?= $icon ?>"></i></div>
+                            <h4><?= h(substr((string)$nf['message'], 0, 120)) ?></h4>
                         </div>
                         <div class="notification-content"><?= h((string)$nf['message']) ?></div>
                         <div class="notification-time"><?= h(time_elapsed_string($nf['created_at'])) ?></div>
@@ -450,6 +597,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     dd.classList.add('open');
                     trigger?.setAttribute('aria-expanded', 'true');
                     if (menu) {
+                        menu.style.display = 'block';
                         menu.style.opacity = '1';
                         menu.style.visibility = 'visible';
                     }
@@ -460,8 +608,18 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     if (menu) {
                         menu.style.opacity = '0';
                         menu.style.visibility = 'hidden';
+                        menu.style.display = 'none';
                     }
                 };
+                // also open on hover and close when mouse leaves the dropdown
+                dd.addEventListener('mouseenter', () => {
+                    // don't override if already open via click
+                    if (!dd.classList.contains('open')) open();
+                });
+                dd.addEventListener('mouseleave', () => {
+                    // close on mouseleave
+                    if (dd.classList.contains('open')) close();
+                });
                 trigger?.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -490,10 +648,66 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 else b.style.display = 'inline-flex';
             }
 
+            // reset dropdown & trigger state so bell icon isn't visually stuck
+            function resetNotifDropdown() {
+                try {
+                    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                        try {
+                            document.activeElement.blur();
+                        } catch (_) {}
+                    }
+                    if (!dd) return;
+                    // remove classes from dropdown and its nav-item ancestor
+                    dd.classList.remove('open', 'active');
+                    const navItemAncestor = dd.closest('.nav-item');
+                    if (navItemAncestor) navItemAncestor.classList.remove('open', 'active');
+
+                    const triggerEl = dd.querySelector('.nav-icon');
+                    if (triggerEl) {
+                        triggerEl.setAttribute('aria-expanded', 'false');
+                        triggerEl.classList.remove('active');
+                        ['background', 'background-color', 'box-shadow', 'filter', 'outline'].forEach(p => {
+                            try {
+                                triggerEl.style.removeProperty(p);
+                            } catch (_) {}
+                        });
+                        try {
+                            triggerEl.blur();
+                        } catch (_) {}
+                        const innerIcon = triggerEl.querySelector('i');
+                        if (innerIcon) {
+                            try {
+                                innerIcon.style.removeProperty('color');
+                            } catch (_) {}
+                        }
+                    }
+
+                    const menu = dd.querySelector('.dropdown-menu');
+                    if (menu) {
+                        ['opacity', 'visibility', 'display'].forEach(p => {
+                            try {
+                                menu.style.removeProperty(p);
+                            } catch (_) {}
+                        });
+                    }
+                } catch (_) {}
+            }
+
             // Optimistic mark all as read (header)
             document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
                 e.preventDefault();
-                document.querySelectorAll('#notifDropdownList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                // remove unread state everywhere (header + main lists) and clear inline background
+                document.querySelectorAll('.notification-item.unread').forEach(el => {
+                    el.classList.remove('unread');
+                    try {
+                        el.style.backgroundColor = '';
+                    } catch (_) {}
+                });
+                // remove mark buttons everywhere
+                document.querySelectorAll('.mark-read-btn').forEach(b => b.remove());
+                // clear unread-only list placeholder
+                const unreadList = document.getElementById('unread-notifications');
+                if (unreadList) unreadList.innerHTML = '<div class="notification-item"><div class="notification-title">No unread notifications</div></div>';
                 setNavBadge(0);
                 setTabBadge(0);
                 try {
@@ -505,6 +719,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     });
                     const json = await res.json();
                     if (!json || json.ok !== true) location.reload();
+                    // aggressively reset dropdown & trigger so bell isn't stuck active
+                    try {
+                        resetNotifDropdown();
+                    } catch (_) {}
                 } catch (_) {
                     location.reload();
                 }
@@ -513,7 +731,18 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             // Mark all from main content
             document.getElementById('mark-all-read-main')?.addEventListener('click', async (e) => {
                 e.preventDefault();
-                document.querySelectorAll('.notification-item.unread').forEach(el => el.classList.remove('unread'));
+                // remove unread state in main lists and clear inline background
+                document.querySelectorAll('.notification-item.unread').forEach(el => {
+                    el.classList.remove('unread');
+                    try {
+                        el.style.backgroundColor = '';
+                    } catch (_) {}
+                });
+                // remove mark buttons everywhere
+                document.querySelectorAll('.mark-read-btn').forEach(b => b.remove());
+                // clear unread-only list placeholder
+                const unreadListMain = document.getElementById('unread-notifications');
+                if (unreadListMain) unreadListMain.innerHTML = '<div class="notification-item"><div class="notification-title">No unread notifications</div></div>';
                 setNavBadge(0);
                 setTabBadge(0);
                 try {
@@ -523,6 +752,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             'X-Requested-With': 'XMLHttpRequest'
                         }
                     });
+                    // aggressively reset dropdown & trigger so bell isn't stuck active
+                    try {
+                        resetNotifDropdown();
+                    } catch (_) {}
                 } catch (_) {}
             });
 
@@ -549,15 +782,30 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         body: form.toString()
                     });
                 } catch (_) {}
-                // optimistic UI update
-                if (item.classList.contains('unread')) {
-                    item.classList.remove('unread');
-                    const navCount = parseInt(document.querySelector('#notifDropdown .badge')?.textContent || '0', 10) || 0;
-                    const next = Math.max(0, navCount - 1);
-                    setNavBadge(next);
-                    // update tab badge
-                    const tabCount = document.querySelectorAll('.notification-item.unread').length;
-                    setTabBadge(tabCount);
+                // optimistic UI update: remove unread state from all DOM copies of this notif
+                if (notifId) {
+                    const sel = `.notification-item[data-notif-id="${notifId}"]`;
+                    document.querySelectorAll(sel).forEach(el => {
+                        el.classList.remove('unread');
+                        try {
+                            el.style.backgroundColor = '';
+                        } catch (_) {}
+                        // remove mark buttons inside any matching items
+                        el.querySelectorAll('.mark-read-btn').forEach(b => b.remove());
+                    });
+                    // also remove matching items from the unread-only list
+                    document.querySelectorAll(`#unread-notifications .notification-item[data-notif-id="${notifId}"]`).forEach(el => el.remove());
+
+                    // compute unique unread count by notif id (avoid double-counting duplicates across lists)
+                    const unreadEls = Array.from(document.querySelectorAll('.notification-item.unread[data-notif-id]'));
+                    const ids = new Set(unreadEls.map(e => e.getAttribute('data-notif-id')));
+                    const uniqueCount = ids.size;
+                    setNavBadge(uniqueCount);
+                    setTabBadge(uniqueCount);
+                    // aggressively reset dropdown & trigger so bell isn't stuck active
+                    try {
+                        resetNotifDropdown();
+                    } catch (_) {}
                 }
                 window.location.href = href;
             });
@@ -584,13 +832,32 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         body: form.toString()
                     });
                 } catch (_) {}
-                if (item.classList.contains('unread')) {
-                    item.classList.remove('unread');
-                    const navCount = parseInt(document.querySelector('#notifDropdown .badge')?.textContent || '0', 10) || 0;
-                    const next = Math.max(0, navCount - 1);
-                    setNavBadge(next);
-                    const tabCount = document.querySelectorAll('.notification-item.unread').length;
-                    setTabBadge(tabCount);
+
+                // remove the mark button from the UI and update unread state/counts across all copies
+                try {
+                    btn.remove();
+                } catch (_) {}
+
+                if (notifId) {
+                    const sel = `.notification-item[data-notif-id="${notifId}"]`;
+                    document.querySelectorAll(sel).forEach(el => {
+                        el.classList.remove('unread');
+                        try {
+                            el.style.backgroundColor = '';
+                        } catch (_) {}
+                        el.querySelectorAll('.mark-read-btn').forEach(b => b.remove());
+                    });
+                    document.querySelectorAll(`#unread-notifications .notification-item[data-notif-id="${notifId}"]`).forEach(el => el.remove());
+
+                    const unreadEls = Array.from(document.querySelectorAll('.notification-item.unread[data-notif-id]'));
+                    const ids = new Set(unreadEls.map(e => e.getAttribute('data-notif-id')));
+                    const uniqueCount = ids.size;
+                    setNavBadge(uniqueCount);
+                    setTabBadge(uniqueCount);
+                    // aggressively reset dropdown & trigger so bell isn't stuck active
+                    try {
+                        resetNotifDropdown();
+                    } catch (_) {}
                 }
             });
 

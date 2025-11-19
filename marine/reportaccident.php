@@ -37,6 +37,71 @@ try {
     exit();
 }
 
+// Simple helpers (used by header)
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        // Parse DB timestamps as UTC then convert to Asia/Manila
+        try {
+            $ago = new DateTime($datetime, new DateTimeZone('UTC'));
+            $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        } catch (Exception $e) {
+            $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        }
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
+// Fetch notifications for header (marine)
+$marineNotifs = [];
+$unreadMarine = 0;
+
+try {
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               n.incident_id, n.reqpro_id,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'marine'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ");
+    $marineNotifs = $notifRows ? $notifRows->fetchAll(PDO::FETCH_ASSOC) : [];
+
+    $unreadMarine = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications n WHERE LOWER(COALESCE(n.\"to\", ''))='marine' AND n.is_read=false")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[MARINE REPORTACCIDENT NOTIFS] ' . $e->getMessage());
+    $marineNotifs = [];
+    $unreadMarine = 0;
+}
+
+// Used by the profile icon "active" state
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
+
 /** Load Marine incident reports (PDO) */
 $incidents = [];
 try {
@@ -88,22 +153,61 @@ try {
 
 
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadMarine ?></span>
+                </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="marineeach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-circle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Marine Pollution Alert</div>
-                                <div class="notification-message">Community member reported plastic waste dumping in Lawis Beach.</div>
-                                <div class="notification-time">10 minutes ago</div>
+                    <div class="notification-list" id="marineNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits / notifications
+                        foreach ($marineNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a marine request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'marineprofile.php' : (!empty($nf['approval_id']) ? 'mpa-management.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'marinenotif.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No marine notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Marine Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
+
                     <div class="notification-footer"><a href="marinenotif.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
@@ -126,37 +230,17 @@ try {
                 </h1>
             </div>
 
-            <!-- Controls -->
-            <div class="controls" style="background-color:#ffffff !important;">
-                <div class="filter">
-                    <select class="filter-month">
-                        <option value="">All months</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
+            <!-- Controls: status dropdown + search + export -->
+            <div class="controls" style="background-color:#ffffff !important;display:flex;align-items:center;gap:12px; justify-content: flex-start;">
+                <div class="status-filter">
+                    <label for="status-filter-select" style="margin-right:6px;font-weight:600;color:#005117;">Status</label>
+                    <select id="status-filter-select" style="padding:6px;border-radius:4px;border:1px solid #ccc;">
+                        <option value="all">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="rejected">Rejected</option>
                     </select>
-                    <input type="number" class="filter-year" placeholder="Year" list="year-suggestions">
-                    <datalist id="year-suggestions">
-                        <option value="2020">
-                        <option value="2021">
-                        <option value="2022">
-                        <option value="2023">
-                        <option value="2024">
-                        <option value="2025">
-                        <option value="2026">
-                    </datalist>
-                    <button class="filter-button" aria-label="Filter">
-                        <i class="fas fa-filter" style="font-size:18px;color:#005117;margin-right:6px;"></i> Filter
-                    </button>
                 </div>
 
                 <div class="search">
@@ -164,22 +248,9 @@ try {
                     <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon" id="search-icon">
                 </div>
 
-                <div class="export">
-                    <button class="export-button" id="export-button">
-                        <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon">
-                    </button>
-                    <span class="export-label">Export as CSV</span>
-                </div>
             </div>
 
-            <!-- Status buttons -->
-            <div class="status-buttons">
-                <button class="status-btn all-btn" data-status="all">ALL</button>
-                <button class="status-btn pending-btn" data-status="pending">PENDING</button>
-                <button class="status-btn approved-btn" data-status="approved">APPROVED</button>
-                <button class="status-btn resolved-btn" data-status="resolved">RESOLVED</button>
-                <button class="status-btn rejected-btn" data-status="rejected">REJECTED</button>
-            </div>
+            <!-- Status filter moved to the controls as a dropdown -->
 
             <!-- Table -->
             <div class="table-container">
@@ -559,69 +630,74 @@ try {
                 }
             });
 
-            // ===== Status filter buttons =====
-            const statusButtons = document.querySelectorAll(".status-btn");
-            const tableRows = document.querySelectorAll(".accident-table tbody tr");
-            statusButtons.forEach((button) => {
-                button.addEventListener("click", () => {
-                    const status = button.dataset.status || "all"; // uses data-status
-                    tableRows.forEach((row) => {
-                        if (status === "all") {
-                            row.style.display = "";
-                        } else {
-                            const rowStatus = (row.cells[6]?.textContent || "").trim().toLowerCase();
-                            row.style.display = rowStatus === status ? "" : "none";
-                        }
-                    });
-                });
-            });
+            // ===== Status filter (dropdown) =====
+            const statusSelectFilter = document.getElementById('status-filter-select');
 
-            // ===== Search (icon click or Enter) =====
+            function applyStatusFilter() {
+                const status = (statusSelectFilter && statusSelectFilter.value) ? statusSelectFilter.value.toLowerCase() : 'all';
+                const rows = Array.from(document.querySelectorAll('.accident-table tbody tr'));
+                rows.forEach((row) => {
+                    // Skip server-side 'no incident reports' single-col rows
+                    if (row.querySelectorAll('td').length <= 1) return;
+                    if (status === 'all') {
+                        row.style.display = '';
+                    } else {
+                        const rowStatus = (row.cells[6]?.textContent || '').trim().toLowerCase();
+                        row.style.display = rowStatus === status ? '' : 'none';
+                    }
+                });
+            }
+            if (statusSelectFilter) {
+                // When status changes, re-run the unified search which also applies status
+                statusSelectFilter.addEventListener('change', performSearch);
+            }
+
+            // ===== Search (icon click, Enter or live input) =====
             const searchInput = document.getElementById("search-input");
             const searchIcon = document.getElementById("search-icon");
 
             function performSearch() {
                 const term = (searchInput.value || "").toLowerCase();
-                tableRows.forEach((row) => {
+                const activeStatus = (statusSelectFilter && statusSelectFilter.value) ? statusSelectFilter.value.toLowerCase() : 'all';
+                const rows = Array.from(document.querySelectorAll('.accident-table tbody tr'));
+                // Only search relevant columns: who(1), what(2), where(3), when(4), why(5)
+                const indices = [1, 2, 3, 4, 5];
+                rows.forEach((row) => {
+                    // Skip server-side 'no incident reports' single-col rows
+                    if (row.querySelectorAll('td').length <= 1) return;
+
                     let match = false;
-                    for (let i = 0; i < row.cells.length - 1; i++) {
-                        if (row.cells[i].textContent.toLowerCase().includes(term)) {
+                    for (let idx of indices) {
+                        if ((row.cells[idx]?.textContent || "").toLowerCase().includes(term)) {
                             match = true;
                             break;
                         }
                     }
-                    row.style.display = match ? "" : "none";
+
+                    // Apply status dropdown filter
+                    if (match) {
+                        if (activeStatus === 'all') {
+                            row.style.display = '';
+                        } else {
+                            const rowStatus = (row.cells[6]?.textContent || '').trim().toLowerCase();
+                            row.style.display = rowStatus === activeStatus ? '' : 'none';
+                        }
+                    } else {
+                        row.style.display = 'none';
+                    }
                 });
             }
+
             if (searchIcon) searchIcon.addEventListener("click", performSearch);
             if (searchInput) {
                 searchInput.addEventListener("keypress", (e) => {
                     if (e.key === "Enter") performSearch();
                 });
+                // Live update on every keystroke
+                searchInput.addEventListener("input", performSearch);
             }
 
-            // ===== Date filter (month/year) =====
-            const filterButton = document.querySelector(".filter-button");
-            const filterMonth = document.querySelector(".filter-month");
-            const filterYear = document.querySelector(".filter-year");
-
-            if (filterButton) {
-                filterButton.addEventListener("click", () => {
-                    const m = filterMonth.value;
-                    const y = filterYear.value;
-                    tableRows.forEach((row) => {
-                        const cell = row.cells[4];
-                        if (!cell) return;
-                        const txt = cell.textContent.trim(); // expects YYYY-MM-DD...
-                        const parts = txt.split("-");
-                        const yy = parts[0] || "";
-                        const mm = parts[1] || "";
-                        const monthOk = m ? mm === m : true;
-                        const yearOk = y ? yy === y : true;
-                        row.style.display = monthOk && yearOk ? "" : "none";
-                    });
-                });
-            }
+            // (Removed month/year date filter — replaced by status dropdown)
 
             // ===== Export CSV =====
             const exportButton = document.getElementById("export-button");

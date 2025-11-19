@@ -241,92 +241,48 @@ function canReleaseOneMonthOld(?string $date_received): bool
     }
 }
 
-// -------------------------
-// Header notifications (merge: Seedling + Tree Cutting incidents)
-// -------------------------
+/* ---- data needed by your pasted UI (badge + lists) ---- */
 $seedlingNotifs = [];
-$unreadSeedlingCount = 0;
+$unreadSeedling = 0;
 
-$treeIncidents = [];
-$unreadIncidentsCount = 0;
+try {
+    $seedlingNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-if ($pdo) {
-    // Seedling notifications (public.notifications WHERE to='Seedling')
-    try {
-        $st = $pdo->prepare('
-            SELECT notif_id, message, is_read, created_at
-            FROM public.notifications
-            WHERE lower("to") = :to
-            ORDER BY created_at DESC
-            LIMIT 20
-        ');
-        $st->execute([':to' => 'seedling']);
-        $seedlingNotifs = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM public.notifications WHERE lower("to") = :to AND is_read = FALSE');
-        $cntStmt->execute([':to' => 'seedling']);
-        $unreadSeedlingCount = (int)$cntStmt->fetchColumn();
-    } catch (Throwable $e) {
-        $seedlingNotifs = [];
-        $unreadSeedlingCount = 0;
-    }
-
-    // Incident reports (public.incident_report WHERE category='Tree Cutting')
-    try {
-        $st2 = $pdo->prepare('
-            SELECT incident_id, what, more_description, is_read, created_at, status
-            FROM public.incident_report
-            WHERE lower(category) = :cat
-            ORDER BY created_at DESC
-            LIMIT 20
-        ');
-        $st2->execute([':cat' => 'tree cutting']);
-        $treeIncidents = $st2->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $cnt2 = $pdo->prepare('SELECT COUNT(*) FROM public.incident_report WHERE lower(category) = :cat AND is_read = FALSE');
-        $cnt2->execute([':cat' => 'tree cutting']);
-        $unreadIncidentsCount = (int)$cnt2->fetchColumn();
-    } catch (Throwable $e) {
-        $treeIncidents = [];
-        $unreadIncidentsCount = 0;
-    }
+    $unreadSeedling = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+          AND n.is_read = false
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[SEEDLING NOTIFS] ' . $e->getMessage());
+    $seedlingNotifs = [];
+    $unreadSeedling = 0;
 }
 
-// Merge & sort (newest first)
-$allNotifs = [];
 
-// map seedling notifications
-foreach ($seedlingNotifs as $n) {
-    $allNotifs[] = [
-        'source'     => 'seedling',
-        'id'         => $n['notif_id'],
-        'title'      => 'Notification',
-        'message'    => (string)$n['message'],
-        'is_read'    => (bool)$n['is_read'],
-        'created_at' => (string)$n['created_at'],
-    ];
-}
-
-// map incident reports
-foreach ($treeIncidents as $r) {
-    $msg = $r['what'] ?: $r['more_description'] ?: 'New Tree Cutting incident.';
-    $status = $r['status'] ? (' [' . strtoupper((string)$r['status']) . ']') : '';
-    $allNotifs[] = [
-        'source'     => 'incident',
-        'id'         => $r['incident_id'],
-        'title'      => 'Incident Report',
-        'message'    => (string)$msg . $status,
-        'is_read'    => (bool)$r['is_read'],
-        'created_at' => (string)$r['created_at'],
-    ];
-}
-
-// sort by created_at desc
-usort($allNotifs, function ($a, $b) {
-    return strtotime($b['created_at'] ?? '') <=> strtotime($a['created_at'] ?? '');
-});
-
-$unreadTotal = $unreadSeedlingCount + $unreadIncidentsCount;
 
 // -------------------------
 // helpers (for header HTML)
@@ -334,6 +290,30 @@ $unreadTotal = $unreadSeedlingCount + $unreadIncidentsCount;
 function e($s)
 {
     return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function h(?string $s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function time_elapsed_string($datetime, $full = false): string
+{
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
+    $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $parts = [];
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
 }
 
 function fmt_dt($ts)
@@ -425,7 +405,7 @@ function fmt_dt($ts)
             display: flex;
             gap: 14px;
             align-items: center;
-            justify-content: space-between;
+            justify-content: start;
             margin: 12px 0 20px
         }
 
@@ -857,71 +837,109 @@ function fmt_dt($ts)
 
         /* Notifications dropdown */
         .notifications-dropdown {
-            padding: 10px 0;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0;
         }
 
-        .notification-header {
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 16px;
-            border-bottom: 1px solid #eee;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff;
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none;
         }
 
         .notification-item {
-            padding: 12px 16px;
+            padding: 18px;
+            background: #f8faf7;
         }
 
         .notification-item.unread {
-            background: #f6fff6;
+            background: #eef7ee;
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1;
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20;
         }
 
         .notification-link {
             display: flex;
-            gap: 12px;
             text-decoration: none;
-            color: #222;
+            color: inherit;
+            width: 100%;
         }
 
-        .notification-icon {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #eef7ee;
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px;
+        }
+
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px;
+        }
+
+        .notification-message {
+            color: #234;
         }
 
         .notification-content {
             flex: 1;
         }
 
-        .notification-title {
-            font-weight: 700;
-            margin-bottom: 4px;
-        }
-
-        .notification-message {
-            font-size: .95rem;
-        }
-
-        .notification-time {
-            font-size: .85rem;
-            color: #666;
-            margin-top: 2px;
-        }
-
-        .notification-footer {
-            border-top: 1px solid #eee;
-            padding: 10px 16px;
-            text-align: center;
-        }
-
-        .notification-footer .view-all {
+        .mark-all-read {
+            color: #1b5e20;
             text-decoration: none;
-            color: #0b6;
-            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .mark-all-read:hover {
+            text-decoration: underline;
         }
 
         @media (max-width: 992px) {
@@ -970,7 +988,6 @@ function fmt_dt($ts)
                     <a href="incoming.php" class="dropdown-item active-page">
                         <i class="fas fa-seedling"></i>
                         <span class="item-text">Seedlings Received</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_received']; ?></span>
                     </a>
 
 
@@ -988,50 +1005,62 @@ function fmt_dt($ts)
             </div>
 
             <!-- Notifications (Seedling + Tree Cutting) -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge" style="<?= ($unreadTotal > 0) ? '' : 'display:none;' ?>"><?= (int)$unreadTotal ?></span>
+                    <span class="badge"><?= (int)$unreadSeedling ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
+                    <div class="notification-list" id="seedlingNotifList">
+                        <?php
+                        $combined = [];
 
-                    <?php if (count($allNotifs) === 0): ?>
-                        <div class="notification-item">
-                            <div class="notification-link" href="javascript:void(0)">
-                                <div class="notification-icon">
-                                    <i class="far fa-bell"></i>
-                                </div>
+                        // Permits / notifications
+                        foreach ($seedlingNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a seedling request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'seedlingsprofile.php' : (!empty($nf['approval_id']) ? 'user_requestseedlings.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'seedlingsnotification.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
                                 <div class="notification-content">
-                                    <div class="notification-title">No notifications</div>
-                                    <div class="notification-message">You’re all caught up.</div>
+                                    <div class="notification-title">No seedling notifications</div>
                                 </div>
                             </div>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($allNotifs as $it): ?>
-                            <?php $iconClass = $it['is_read'] ? 'far fa-bell' : 'fas fa-bell'; ?>
-                            <div class="notification-item <?= $it['is_read'] ? '' : 'unread' ?>" data-id="<?= e($it['id']) ?>" data-src="<?= e($it['source']) ?>">
-                                <a class="notification-link" href="javascript:void(0)">
-                                    <div class="notification-icon">
-                                        <i class="<?= $iconClass ?>"></i>
-                                    </div>
-                                    <div class="notification-content">
-                                        <div class="notification-title"><?= e($it['title']) ?></div>
-                                        <div class="notification-message"><?= e($it['message']) ?></div>
-                                        <div class="notification-time"><?= e(fmt_dt($it['created_at'])) ?></div>
-                                    </div>
-                                </a>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-
-                    <div class="notification-footer">
-                        <a href="seedlingsnotification.php" class="view-all">View All Notifications</a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Seedling Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
+
+                    <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 
@@ -1073,14 +1102,14 @@ function fmt_dt($ts)
 
         <div class="controls">
             <div class="filter">
-                <select class="filter-month">
-                    <option value="">Select Month</option>
-                    <?php foreach (range(1, 12) as $m): $mm = str_pad((string)$m, 2, '0', STR_PAD_LEFT); ?>
-                        <option value="<?= $mm ?>"><?= date('F', mktime(0, 0, 0, $m, 1)) ?></option>
-                    <?php endforeach; ?>
+                <select class="filter-status" style="height: 38px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 0 12px;" id="status-filter">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Not Released</option>
+                    <option value="released">Released</option>
                 </select>
-                <input type="number" class="filter-year" placeholder="Enter Year">
-                <button class="filter-button"><i class="fas fa-filter"></i><span>Filter</span></button>
             </div>
 
             <div class="search">
@@ -1088,10 +1117,7 @@ function fmt_dt($ts)
                 <i class="fas fa-search" style="font-size:18px"></i>
             </div>
 
-            <div class="export">
-                <button class="export-button" id="export-csv" title="Export as CSV"><i class="fas fa-file-export"></i></button>
-                <span class="export-label">Export as CSV</span>
-            </div>
+
         </div>
 
         <div class="table-container">
@@ -1104,7 +1130,7 @@ function fmt_dt($ts)
                         <th>QUANTITY</th>
                         <th>DATE RECEIVED</th>
                         <th>STATUS</th>
-                        <th style="width:220px">ACTIONS</th>
+                        <th style="width:150px">ACTIONS</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1135,7 +1161,7 @@ function fmt_dt($ts)
                                         <button class="btn-icon btn-release" title="Release"><i class="fas fa-leaf"></i>&nbsp;Release</button>
                                     <?php endif; ?>
                                     <?php if (!$alreadyReleased): ?>
-                                        <button class="btn-icon btn-delete" title="Delete"><i class="fas fa-trash"></i>&nbsp;Delete</button>
+                                        <!-- <button class="btn-icon btn-delete" title="Delete"><i class="fas fa-trash"></i>&nbsp;Delete</button> -->
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -1303,28 +1329,41 @@ function fmt_dt($ts)
             loaderEl.style.display = 'none';
         }
 
-        // Search
-        document.getElementById('search')?.addEventListener('input', (e) => {
-            const q = e.target.value.toLowerCase();
-            table.querySelectorAll('tbody tr').forEach(tr => {
-                const t = tr.innerText.toLowerCase();
-                tr.style.display = t.includes(q) ? '' : 'none';
-            });
-        });
+        // Combined search + status filter
+        const searchInput = document.getElementById('search');
+        const statusSelect = document.getElementById('status-filter');
 
-        // Export CSV
-        document.getElementById('export-csv')?.addEventListener('click', () => {
-            const rows = [...table.querySelectorAll('tr')]
-                .map(tr => [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""')}"`).join(','))
-                .join('\n');
-            const blob = new Blob([rows], {
-                type: 'text/csv;charset=utf-8;'
+        function performFilter() {
+            const q = (searchInput?.value || '').toLowerCase().trim();
+            const status = (statusSelect?.value || '').toLowerCase();
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(tr => {
+                // keep the server-side "No records found." row visible when no actual data rows exist;
+                const cols = tr.querySelectorAll('td');
+                if (!cols || cols.length === 0) return;
+
+                // Determine status for the row
+                const badge = tr.querySelector('.status-badge');
+                const rowStatus = badge ? (badge.classList.contains('status-released') ? 'released' : 'pending') : '';
+
+                let matchesStatus = true;
+                if (status) {
+                    if (status === 'released') matchesStatus = (rowStatus === 'released');
+                    else if (status === 'pending') matchesStatus = (rowStatus !== 'released');
+                }
+
+                let matchesSearch = true;
+                if (q) {
+                    matchesSearch = tr.innerText.toLowerCase().includes(q);
+                }
+
+                tr.style.display = (matchesStatus && matchesSearch) ? '' : 'none';
             });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'seedling_intakes.csv';
-            a.click();
-        });
+        }
+
+        searchInput?.addEventListener('input', performFilter);
+        statusSelect?.addEventListener('change', performFilter);
 
         // ---------- RELEASE MODAL ----------
         const releaseModal = document.getElementById('release-modal');

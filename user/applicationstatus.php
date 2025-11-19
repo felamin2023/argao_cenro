@@ -156,6 +156,26 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                     }
                 }
 
+                // For wood/wpp requests, skip the generic 'ownership' field
+                // since we use 'form_of_ownership' radio buttons instead
+                // Also skip fields that are being shown via extraFields (structured display)
+                if (($requestTypeRow === 'wood' || $requestTypeRow === 'wpp')) {
+                    $lk_field = strtolower($k);
+                    if (
+                        $lk_field === 'ownership' ||
+                        $lk_field === 'form_of_ownership' ||
+                        $lk_field === 'kind_of_wood_processing_plant' ||
+                        $lk_field === 'present_address' ||
+                        $lk_field === 'plant_location' ||
+                        $lk_field === 'contact_number' ||
+                        $lk_field === 'email_address' ||
+                        $lk_field === 'daily_rated_capacity_per8_hour_shift' ||
+                        $lk_field === 'source_of_power_supply'
+                    ) {
+                        continue;
+                    }
+                }
+
                 $appFields[] = [
                     'label' => $label,
                     'value' => (string)$v,
@@ -424,8 +444,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                 $treecutAppDetails[$k] = $v;
             }
 
-            // species_rows_json stored as JSON string in application_form
+            // species_rows stored in additional_information JSON or as dedicated column
             $speciesList = [];
+
+            // First try to get from dedicated column if it exists
             if (!empty($appValues['species_rows_json'])) {
                 $decoded = json_decode((string)$appValues['species_rows_json'], true);
                 if (is_array($decoded)) {
@@ -436,6 +458,24 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                             'count' => trim((string)($entry['count'] ?? '')),
                             'volume' => trim((string)($entry['volume'] ?? '')),
                         ];
+                    }
+                }
+            }
+
+            // If not found, try to get from additional_information JSON blob
+            if (empty($speciesList) && !empty($appValues['additional_information'])) {
+                $additionalInfo = json_decode((string)$appValues['additional_information'], true);
+                if (is_array($additionalInfo) && isset($additionalInfo['species_rows'])) {
+                    $speciesRaws = $additionalInfo['species_rows'];
+                    if (is_array($speciesRaws)) {
+                        foreach ($speciesRaws as $entry) {
+                            if (!is_array($entry)) continue;
+                            $speciesList[] = [
+                                'name' => trim((string)($entry['name'] ?? '')),
+                                'count' => trim((string)($entry['count'] ?? '')),
+                                'volume' => trim((string)($entry['volume'] ?? '')),
+                            ];
+                        }
                     }
                 }
             }
@@ -459,6 +499,145 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
                     'approved_docs' => $approvedDocs,
                 ];
             }
+        }
+
+        // Wood (WPP) details: parse machinery and supply-contract rows and present readable fields
+        $woodDetails = null;
+        if ($reqTypeNormalized === 'wood' || $reqTypeNormalized === 'wpp') {
+            $appValues = $app ?? [];
+
+            // Extract additional_information JSON if present
+            $additionalInfo = [];
+            if (!empty($appValues['additional_information'])) {
+                $decoded = json_decode((string)$appValues['additional_information'], true);
+                if (is_array($decoded)) $additionalInfo = $decoded;
+            }
+
+            // helper to read multiple possible keys
+            $pick = function (array $keys) use ($appValues) {
+                foreach ($keys as $k) {
+                    if (isset($appValues[$k]) && trim((string)$appValues[$k]) !== '') return $appValues[$k];
+                }
+                return '';
+            };
+
+            $businessAddress = trim((string)$pick(['present_address', 'business_address', 'legitimate_business_address', 'new_business_address']));
+            $plantLocation   = trim((string)$pick(['plant_location', 'new_plant_location', 'r_plant_location']));
+            $contactNumber   = trim((string)$pick(['contact_number', 'new_contact_number', 'r_contact_number']));
+            $emailAddress    = trim((string)$pick(['email_address', 'new_email_address', 'r_email_address']));
+            $ownershipType   = trim((string)$pick(['form_of_ownership', 'ownership_type', 'new_ownership_type', 'r_ownership_type']));
+            $plantType       = trim((string)$pick(['kind_of_wood_processing_plant', 'plant_type']));
+            $dailyCapacity   = trim((string)$pick(['daily_rated_capacity_per8_hour_shift', 'daily_capacity']));
+            $powerSource     = trim((string)($pick(['source_of_power_supply', 'power_source']) ?: ($additionalInfo['power_source'] ?? '')));
+
+            // Parse machinery rows from a few possible field names
+            $machineryRaw = $pick(['machineries_and_equipment_to_be_used_with_specifications', 'machinery_rows_json', 'machinery_rows', 'machineries', 'machinery']);
+            $machineryList = [];
+            if (is_string($machineryRaw) && $machineryRaw !== '') {
+                $decoded = @json_decode($machineryRaw, true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $entry) {
+                        if (!is_array($entry)) continue;
+                        // normalize keys
+                        $type = trim((string)($entry['type'] ?? $entry[0] ?? $entry['equipment'] ?? ''));
+                        $brand = trim((string)($entry['brand'] ?? $entry[1] ?? $entry['model'] ?? ''));
+                        $power = trim((string)($entry['power'] ?? $entry[2] ?? $entry['capacity'] ?? ''));
+                        $qty = trim((string)($entry['qty'] ?? $entry[3] ?? $entry['quantity'] ?? ''));
+                        if ($type === '' && $brand === '' && $power === '' && $qty === '') continue;
+                        $machineryList[] = [
+                            'type' => $type,
+                            'brand' => $brand,
+                            'power' => $power,
+                            'qty' => $qty,
+                        ];
+                    }
+                }
+            }
+
+            // Parse suppliers / supply rows
+            $supRaw = $pick(['suppliers_json', 'supply_rows_json', 'suppliers', 'supplies']);
+            $supplyList = [];
+            if (is_string($supRaw) && $supRaw !== '') {
+                $decoded = @json_decode($supRaw, true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $entry) {
+                        if (!is_array($entry)) continue;
+                        $supplier = trim((string)($entry['supplier'] ?? $entry['name'] ?? $entry[0] ?? ''));
+                        $species = trim((string)($entry['species'] ?? $entry[1] ?? ''));
+                        $volume = trim((string)($entry['volume'] ?? $entry['contracted_vol'] ?? $entry[2] ?? ''));
+                        if ($supplier === '' && $species === '' && $volume === '') continue;
+                        $supplyList[] = [
+                            'supplier' => $supplier,
+                            'species' => $species,
+                            'volume' => $volume,
+                        ];
+                    }
+                }
+            }
+
+            // Build small summary lines for viewing
+            $woodApp = [
+                'businessAddress' => $businessAddress,
+                'plantLocation'   => $plantLocation,
+                'contactNumber'   => $contactNumber,
+                'emailAddress'    => $emailAddress,
+                'ownershipType'   => $ownershipType,
+                'plantType'       => $plantType,
+                'dailyCapacity'   => $dailyCapacity,
+                'powerSource'     => $powerSource,
+            ];
+
+            // prepend readable fields to generic application fields so they show on the left panel
+            $extraFields = [];
+            $nameParts = [];
+            foreach (['first_name', 'middle_name', 'last_name'] as $n) {
+                $v = trim((string)($row[$n] ?? ''));
+                if ($v !== '') $nameParts[] = $v;
+            }
+            if ($nameParts) {
+                $extraFields[] = ['label' => 'Applicant', 'value' => implode(' ', $nameParts), 'field' => null, 'origin' => 'client'];
+            }
+            $mapping = [
+                ['label' => 'Complete Business Address', 'value' => $businessAddress, 'field' => 'present_address'],
+                ['label' => 'Plant Location', 'value' => $plantLocation, 'field' => 'plant_location'],
+                ['label' => 'Contact Number', 'value' => $contactNumber, 'field' => 'contact_number'],
+                ['label' => 'Email Address', 'value' => $emailAddress, 'field' => 'email_address'],
+                ['label' => 'Type of Ownership', 'value' => $ownershipType, 'field' => 'form_of_ownership'],
+                ['label' => 'Kind of Wood Processing Plant', 'value' => $plantType, 'field' => 'kind_of_wood_processing_plant'],
+                ['label' => 'Daily Rated Capacity', 'value' => $dailyCapacity, 'field' => 'daily_rated_capacity_per8_hour_shift'],
+                ['label' => 'Source of Power Supply', 'value' => $powerSource, 'field' => 'source_of_power_supply'],
+            ];
+            foreach ($mapping as $ef) {
+                if (trim((string)$ef['value']) !== '') {
+                    $extraFields[] = ['label' => $ef['label'], 'value' => (string)$ef['value'], 'field' => $ef['field'], 'origin' => 'application_form'];
+                }
+            }
+
+            // Add machinery readable rows as a single readable block (one per row)
+            if ($machineryList) {
+                foreach ($machineryList as $m) {
+                    $txt = trim(sprintf('%s — %s — %s — %s', $m['type'], $m['brand'], $m['power'], $m['qty']), " ");
+                    $extraFields[] = ['label' => 'Machinery', 'value' => $txt, 'field' => null, 'origin' => 'application_form'];
+                }
+            }
+            // Add supplier rows
+            if ($supplyList) {
+                foreach ($supplyList as $s) {
+                    $txt = trim(sprintf('%s — %s — %s', $s['supplier'], $s['species'], $s['volume']), " ");
+                    $extraFields[] = ['label' => 'Supply Contract', 'value' => $txt, 'field' => null, 'origin' => 'application_form'];
+                }
+            }
+
+            if ($extraFields) {
+                // place them at the front
+                $appFields = array_merge($extraFields, $appFields);
+            }
+
+            $woodDetails = [
+                'application' => $woodApp,
+                'machinery' => $machineryList,
+                'supplies' => $supplyList,
+            ];
         }
 
         // Wildlife details: parse application_form.additional_information and requirements
@@ -618,6 +797,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
             ],
             'lumber_details' => $lumberDetails,
             'treecut_details' => $treecutDetails,
+            'wood_details' => $woodDetails ?? null,
             'wildlife_details' => $wildlifeDetails,
             'application' => $appFields,
             'files'       => $files
@@ -1611,6 +1791,114 @@ try {
             color: #111827;
         }
 
+        /* Machinery and Supply editors styling */
+        .machinery-rows-wrap,
+        .supply-rows-wrap {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 14px;
+            background: #f9fafb;
+            margin: 12px 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .machinery-rows-wrap table,
+        .supply-rows-wrap table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .machinery-rows-wrap thead,
+        .supply-rows-wrap thead {
+            background: #f3f4f6;
+        }
+
+        .machinery-rows-wrap th,
+        .machinery-rows-wrap td,
+        .supply-rows-wrap th,
+        .supply-rows-wrap td {
+            padding: 10px 8px;
+            text-align: left;
+            border: 1px solid #e5e7eb;
+            font-size: 0.9rem;
+        }
+
+        .machinery-rows-wrap th,
+        .supply-rows-wrap th {
+            font-weight: 600;
+            color: #374151;
+            background: #f3f4f6;
+        }
+
+        .machinery-rows-wrap input,
+        .supply-rows-wrap input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px 6px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .machinery-rows-wrap input:focus,
+        .supply-rows-wrap input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .remove-row-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 6px;
+            border: 1px solid #dc2626;
+            background: #fff;
+            color: #dc2626;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .remove-row-btn:hover {
+            background: #fee2e2;
+            border-color: #991b1b;
+            color: #991b1b;
+        }
+
+        .add-row-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: 1.5px solid #10b981;
+            background: #fff;
+            color: #10b981;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .add-row-btn:hover {
+            background: #ecfdf5;
+            border-color: #059669;
+            color: #059669;
+        }
+
+        .add-row-btn:active {
+            transform: scale(0.98);
+        }
+
         .field-image {
             border: 1px solid #e5e7eb;
             border-radius: 10px;
@@ -2003,6 +2291,17 @@ try {
             to {
                 transform: rotate(1turn)
             }
+        }
+
+        /* Hide download controls: remove Download / Open UI elements from view */
+        #btnDownloadIssued,
+        #previewDownload,
+        [data-action="download"],
+        .download-btn,
+        .file-item [data-action="download"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
     </style>
 </head>
@@ -2450,6 +2749,7 @@ try {
             const editPane = document.getElementById('editPane');
             const editForm = document.getElementById('editForm');
             const editFieldsWrap = document.getElementById('editFields');
+            let uniqueRenderedGroups = new Set();
             const editFilesWrap = document.getElementById('editFiles');
             const editMessage = document.getElementById('editMessage');
             const seedlingActions = document.getElementById('seedlingActions');
@@ -2529,12 +2829,14 @@ try {
                 speciesJsonField = null;
                 speciesRows = [];
                 editForm?.reset();
+                uniqueRenderedGroups = new Set();
             }
 
             function exitEditMode(silent = false) {
                 if (!editPane) return;
                 editMode = false;
                 resetEditFormContents();
+                uniqueRenderedGroups = new Set();
                 editPane.classList.add('hidden');
                 if (!silent && modalContent) modalContent.classList.remove('hidden');
                 const meta = (cachedDetails && cachedDetails.meta) || {};
@@ -2577,7 +2879,8 @@ try {
                 'application_id', 'application id',
                 'application_for', 'application for',
                 'type_of_permit', 'type of permit',
-                'first_name', 'middle_name', 'last_name'
+                'first_name', 'middle_name', 'last_name',
+                'complete_name', 'declaration_name'
             ]);
 
             function isBlocked(field) {
@@ -2769,6 +3072,48 @@ try {
                     }
                 }
 
+                // For wood/wpp, skip machinery and supply JSON fields since they are
+                // edited using the structured editors below (renderMachineryRows, renderSupplyRows)
+                // Also skip the generic 'ownership' field to avoid duplicate with 'form_of_ownership'
+                if (currentRequestType === 'wood' || currentRequestType === 'wpp') {
+                    const ff = (field.field || '').toLowerCase();
+                    const labelLower = (field.label || '').toLowerCase();
+
+                    // Skip the structured JSON fields and the generic ownership field
+                    if (ff === 'machinery_rows_json' || ff === 'supply_rows_json' || ff.includes('machineries_and_equipment') || ff === 'ownership') {
+                        return;
+                    }
+
+                    // Prevent duplicate display of grouped address-like fields.
+                    // We keep single-render semantics by tracking `uniqueRenderedGroups`.
+                    // Map fields/labels to a small set of groups: 'business' and 'plant'.
+                    let group = null;
+                    const businessKeys = new Set(['present_address', 'business_address', 'legitimate_business_address', 'complete_business_address', 'complete business address']);
+                    if (businessKeys.has(ff) || labelLower.includes('business address') || labelLower.includes('legitimate')) {
+                        group = 'business';
+                    }
+                    if (ff === 'plant_location' || ff.startsWith('plant_location') || labelLower.includes('plant location')) {
+                        group = 'plant';
+                    }
+
+                    // For loose client address pieces (sitio_street, barangay, municipality, city)
+                    // avoid rendering them if we've already rendered a business/plant group.
+                    const clientParts = new Set(['sitio_street', 'barangay', 'municipality', 'city']);
+                    if (clientParts.has(ff)) {
+                        if (uniqueRenderedGroups.has('business') || uniqueRenderedGroups.has('plant') || uniqueRenderedGroups.has('client_addr')) {
+                            return;
+                        }
+                        // mark that we've shown a client address block so subsequent parts don't duplicate
+                        uniqueRenderedGroups.add('client_addr');
+                    }
+
+                    // If this field belongs to a named group (business/plant), ensure it renders only once
+                    if (group) {
+                        if (uniqueRenderedGroups.has(group)) return;
+                        uniqueRenderedGroups.add(group);
+                    }
+                }
+
                 // For wildlife, the structured animals editor will handle the
                 // `additional_information` JSON payload; don't render the raw
                 // additional_information field as a text input.
@@ -2844,23 +3189,145 @@ try {
                     row.appendChild(hidden);
                 } else {
                     let inputEl;
-                    if (longText) {
-                        inputEl = document.createElement('textarea');
-                        inputEl.value = value ?? '';
-                    } else {
-                        inputEl = document.createElement('input');
-                        let type = 'text';
-                        if (lower.includes('date')) type = 'date';
-                        else if (lower.includes('email')) type = 'email';
-                        else if (lower.includes('contact') || lower.includes('phone')) type = 'tel';
-                        else if (lower.includes('age')) type = 'number';
-                        inputEl.type = type;
-                        inputEl.value = (type === 'date') ? normalizeDateValue(value) : (value ?? '');
-                    }
 
-                    inputEl.id = inputId;
-                    inputEl.name = `fields[${fieldName}]`;
-                    row.appendChild(inputEl);
+                    // Special wood request radio groups
+                    const currentRequestTypeForRadios = (cachedDetails?.meta?.request_type || '').toLowerCase();
+                    if ((currentRequestTypeForRadios === 'wood' || currentRequestTypeForRadios === 'wpp') &&
+                        (fieldName === 'form_of_ownership' || fieldName === 'kind_of_wood_processing_plant' || fieldName === 'source_of_power_supply')) {
+
+                        // Override label for form_of_ownership to show "Type of Ownership"
+                        if (fieldName === 'form_of_ownership') {
+                            labelEl.textContent = 'Type of Ownership';
+                        }
+
+                        // Hidden canonical input that will actually be submitted
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = `fields[${fieldName}]`;
+                        hidden.id = inputId;
+                        hidden.value = value ?? '';
+
+                        const optionsMap = {
+                            'form_of_ownership': ['Single Proprietorship', 'Partnership', 'Corporation', 'Cooperative'],
+                            'kind_of_wood_processing_plant': ['Resawmill', 'Saw Mill', 'Veneer Plant', 'Plywood Plant', 'Others'],
+                            'source_of_power_supply': ['Electricity', 'Generator', 'Others']
+                        };
+
+                        const opts = optionsMap[fieldName] || [];
+                        const wrap = document.createElement('div');
+                        wrap.className = 'radio-group';
+                        const currentVal = (value ?? '').toString();
+
+                        // For "Kind of Wood Processing Plant", handle the "Others" case specially
+                        const isKindOfPlant = fieldName === 'kind_of_wood_processing_plant';
+                        let matchedKnownOption = opts.includes(currentVal);
+
+                        // Create radio buttons with proper grouping by field name (not temporary names)
+                        opts.forEach((opt) => {
+                            const idOpt = createInputId(fieldName + '_' + opt.replace(/\s+/g, '_'));
+                            const rb = document.createElement('input');
+                            rb.type = 'radio';
+                            rb.name = `radio_${fieldName}`; // Use field name for proper radio grouping
+                            rb.value = opt;
+                            rb.id = idOpt;
+
+                            const lbl = document.createElement('label');
+                            lbl.setAttribute('for', idOpt);
+                            lbl.style.marginRight = '10px';
+                            lbl.style.marginLeft = '6px';
+                            lbl.textContent = opt;
+
+                            // Check if this option matches the current value
+                            if (opt === currentVal) {
+                                rb.checked = true;
+                            }
+
+                            rb.addEventListener('change', () => {
+                                if (rb.checked) {
+                                    if (opt === 'Others') {
+                                        hidden.value = otherInput.value || 'Others';
+                                        otherInput.style.display = 'inline-block';
+                                    } else {
+                                        hidden.value = opt;
+                                        otherInput.style.display = 'none';
+                                    }
+                                }
+                            });
+
+                            wrap.appendChild(rb);
+                            wrap.appendChild(lbl);
+                        });
+
+                        // other-text input for 'Others' option (for fields that support custom values)
+                        const otherInput = document.createElement('input');
+                        otherInput.type = 'text';
+                        otherInput.placeholder = 'If Others, specify';
+                        otherInput.style.marginLeft = '8px';
+                        otherInput.style.display = 'none';
+
+                        // Check if this field should show the "Others" input
+                        const supportsOtherInput = isKindOfPlant || fieldName === 'source_of_power_supply';
+
+                        // For kind_of_wood_processing_plant: show input if "Others" is selected or value not in options
+                        if (isKindOfPlant) {
+                            const othersRb = wrap.querySelector(`input[value="Others"]`);
+                            if (!matchedKnownOption && currentVal !== '') {
+                                // Value is not in the standard options, so it's a custom "Others" value
+                                otherInput.value = currentVal;
+                                otherInput.style.display = 'inline-block';
+                                if (othersRb) othersRb.checked = true;
+                                hidden.value = currentVal;
+                            } else if (othersRb && othersRb.checked) {
+                                otherInput.style.display = 'inline-block';
+                            }
+                        }
+
+                        // For source_of_power_supply: show input if "Others" is selected or value not in options
+                        if (fieldName === 'source_of_power_supply') {
+                            const othersRb = wrap.querySelector(`input[value="Others"]`);
+                            if (!matchedKnownOption && currentVal !== '') {
+                                // Value is not in the standard options, so it's a custom "Others" value
+                                otherInput.value = currentVal;
+                                otherInput.style.display = 'inline-block';
+                                if (othersRb) othersRb.checked = true;
+                                hidden.value = currentVal;
+                            } else if (othersRb && othersRb.checked) {
+                                otherInput.style.display = 'inline-block';
+                            }
+                        }
+
+                        otherInput.addEventListener('input', (e) => {
+                            // Only update if "Others" is currently checked
+                            const othersRb = wrap.querySelector(`input[value="Others"]`);
+                            if (othersRb && othersRb.checked) {
+                                hidden.value = e.target.value || 'Others';
+                            }
+                        });
+
+                        row.appendChild(wrap);
+                        if (supportsOtherInput) {
+                            row.appendChild(otherInput);
+                        }
+                        row.appendChild(hidden);
+                    } else {
+                        if (longText) {
+                            inputEl = document.createElement('textarea');
+                            inputEl.value = value ?? '';
+                        } else {
+                            inputEl = document.createElement('input');
+                            let type = 'text';
+                            if (lower.includes('date')) type = 'date';
+                            else if (lower.includes('email')) type = 'email';
+                            else if (lower.includes('contact') || lower.includes('phone')) type = 'tel';
+                            else if (lower.includes('age')) type = 'number';
+                            inputEl.type = type;
+                            inputEl.value = (type === 'date') ? normalizeDateValue(value) : (value ?? '');
+                        }
+
+                        inputEl.id = inputId;
+                        inputEl.name = `fields[${fieldName}]`;
+                        row.appendChild(inputEl);
+                    }
                 }
 
                 const originInput = document.createElement('input');
@@ -2945,6 +3412,46 @@ try {
                 addEstField('telephone', 'Establishment Telephone Number');
                 container.appendChild(estWrap);
 
+                // Categories (Zoo / Botanical Garden / Private Collection)
+                const cats = originalAdditionalInfo.categories && typeof originalAdditionalInfo.categories === 'object' ?
+                    originalAdditionalInfo.categories : {
+                        zoo: false,
+                        botanical_garden: false,
+                        private_collection: false
+                    };
+
+                const catWrap = document.createElement('div');
+                catWrap.style.marginTop = '8px';
+                catWrap.style.display = 'flex';
+                catWrap.style.gap = '12px';
+                catWrap.style.alignItems = 'center';
+
+                function makeCatCheck(key, labelText) {
+                    const item = document.createElement('label');
+                    item.style.display = 'inline-flex';
+                    item.style.alignItems = 'center';
+                    item.style.gap = '6px';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = !!cats[key];
+                    cb.addEventListener('change', () => {
+                        cats[key] = !!cb.checked;
+                        syncHidden();
+                    });
+
+                    const txt = document.createElement('span');
+                    txt.textContent = labelText;
+                    item.appendChild(cb);
+                    item.appendChild(txt);
+                    return item;
+                }
+
+                catWrap.appendChild(makeCatCheck('zoo', 'Zoo'));
+                catWrap.appendChild(makeCatCheck('botanical_garden', 'Botanical Garden'));
+                catWrap.appendChild(makeCatCheck('private_collection', 'Private Collection'));
+                container.appendChild(catWrap);
+
                 // Small label above animals table
                 const tableLabel = document.createElement('div');
                 tableLabel.style.marginTop = '10px';
@@ -3006,6 +3513,11 @@ try {
                         establishment_name: establishment.name || '',
                         establishment_address: establishment.address || '',
                         establishment_telephone: establishment.telephone || '',
+                        categories: {
+                            zoo: !!cats.zoo,
+                            botanical_garden: !!cats.botanical_garden,
+                            private_collection: !!cats.private_collection,
+                        },
                         animals: animals.map((a) => ({
                             commonName: a.commonName || '',
                             scientificName: a.scientificName || '',
@@ -3460,6 +3972,94 @@ try {
                 }
             }
 
+            let machineryTableBody = null;
+            let machineryWrap = null;
+
+            function createMachineryRow(row, idx) {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #eee';
+                tr.dataset.machineryIdx = idx;
+
+                const tdType = document.createElement('td');
+                const inType = document.createElement('input');
+                inType.type = 'text';
+                inType.value = row.type || '';
+                inType.placeholder = 'Type of Equipment';
+                inType.style.width = '100%';
+                inType.addEventListener('input', () => {
+                    machineryRows[idx].type = inType.value;
+                    updateMachineryJsonField();
+                });
+                tdType.appendChild(inType);
+
+                const tdBrand = document.createElement('td');
+                const inBrand = document.createElement('input');
+                inBrand.type = 'text';
+                inBrand.value = row.brand || '';
+                inBrand.placeholder = 'Brand / Model';
+                inBrand.style.width = '100%';
+                inBrand.addEventListener('input', () => {
+                    machineryRows[idx].brand = inBrand.value;
+                    updateMachineryJsonField();
+                });
+                tdBrand.appendChild(inBrand);
+
+                const tdPower = document.createElement('td');
+                const inPower = document.createElement('input');
+                inPower.type = 'text';
+                inPower.value = row.power || '';
+                inPower.placeholder = 'HP / Capacity';
+                inPower.style.width = '100%';
+                inPower.addEventListener('input', () => {
+                    machineryRows[idx].power = inPower.value;
+                    updateMachineryJsonField();
+                });
+                tdPower.appendChild(inPower);
+
+                const tdQty = document.createElement('td');
+                const inQty = document.createElement('input');
+                inQty.type = 'number';
+                inQty.min = '0';
+                inQty.value = row.qty || '';
+                inQty.style.width = '80px';
+                inQty.addEventListener('input', () => {
+                    machineryRows[idx].qty = inQty.value;
+                    updateMachineryJsonField();
+                });
+                tdQty.appendChild(inQty);
+
+                const tdCtrl = document.createElement('td');
+                const btnRem = document.createElement('button');
+                btnRem.type = 'button';
+                btnRem.className = 'remove-row-btn';
+                btnRem.innerHTML = '<i class="fas fa-trash-alt" aria-hidden="true"></i>';
+                btnRem.title = 'Remove';
+                btnRem.addEventListener('click', () => {
+                    if (machineryRows.length <= 1) {
+                        machineryRows[0] = {
+                            type: '',
+                            brand: '',
+                            power: '',
+                            qty: ''
+                        };
+                        tr.querySelector('input').value = '';
+                        tr.querySelectorAll('input').forEach(inp => inp.value = '');
+                    } else {
+                        machineryRows.splice(idx, 1);
+                        tr.remove();
+                    }
+                    updateMachineryJsonField();
+                });
+                tdCtrl.appendChild(btnRem);
+
+                tr.appendChild(tdType);
+                tr.appendChild(tdBrand);
+                tr.appendChild(tdPower);
+                tr.appendChild(tdQty);
+                tr.appendChild(tdCtrl);
+                return tr;
+            }
+
             function renderMachineryRows(data = []) {
                 machineryRows = Array.isArray(data) ? data.slice() : [];
                 if (!machineryRows.length) machineryRows.push({
@@ -3469,113 +4069,63 @@ try {
                     qty: ''
                 });
 
-                const wrap = document.createElement('div');
-                wrap.className = 'machinery-rows-wrap';
+                // If already initialized, just clear and re-add rows
+                if (machineryWrap && machineryTableBody) {
+                    machineryTableBody.innerHTML = '';
+                    machineryRows.forEach((row, idx) => {
+                        machineryTableBody.appendChild(createMachineryRow(row, idx));
+                    });
+                    updateMachineryJsonField();
+                    return;
+                }
+
+                // First time initialization
+                machineryWrap = document.createElement('div');
+                machineryWrap.className = 'machinery-rows-wrap';
 
                 const table = document.createElement('table');
                 table.style.width = '100%';
                 table.style.borderCollapse = 'collapse';
-                const tbody = document.createElement('tbody');
+
+                // Table header with column titles for machinery inputs
+                const thead = document.createElement('thead');
+                thead.innerHTML = `
+                    <tr style="background:#f3f4f6;border-bottom:1px solid #d1d5db;">
+                        <th style="text-align:left;padding:8px;border:1px solid #eee;">Type of Equipment</th>
+                        <th style="text-align:left;padding:8px;border:1px solid #eee;">Brand / Model</th>
+                        <th style="text-align:left;padding:8px;border:1px solid #eee;">HP / Capacity</th>
+                        <th style="text-align:center;padding:8px;border:1px solid #eee;">Qty</th>
+                        <th style="text-align:center;padding:8px;border:1px solid #eee;">Action</th>
+                    </tr>
+                `;
+                table.appendChild(thead);
+                machineryTableBody = document.createElement('tbody');
 
                 machineryRows.forEach((row, idx) => {
-                    const tr = document.createElement('tr');
-                    tr.style.borderBottom = '1px solid #eee';
-
-                    const tdType = document.createElement('td');
-                    const inType = document.createElement('input');
-                    inType.type = 'text';
-                    inType.value = row.type || '';
-                    inType.placeholder = 'Type of Equipment';
-                    inType.style.width = '100%';
-                    inType.addEventListener('input', () => {
-                        machineryRows[idx].type = inType.value;
-                        updateMachineryJsonField();
-                    });
-                    tdType.appendChild(inType);
-
-                    const tdBrand = document.createElement('td');
-                    const inBrand = document.createElement('input');
-                    inBrand.type = 'text';
-                    inBrand.value = row.brand || '';
-                    inBrand.placeholder = 'Brand / Model';
-                    inBrand.style.width = '100%';
-                    inBrand.addEventListener('input', () => {
-                        machineryRows[idx].brand = inBrand.value;
-                        updateMachineryJsonField();
-                    });
-                    tdBrand.appendChild(inBrand);
-
-                    const tdPower = document.createElement('td');
-                    const inPower = document.createElement('input');
-                    inPower.type = 'text';
-                    inPower.value = row.power || '';
-                    inPower.placeholder = 'HP / Capacity';
-                    inPower.style.width = '100%';
-                    inPower.addEventListener('input', () => {
-                        machineryRows[idx].power = inPower.value;
-                        updateMachineryJsonField();
-                    });
-                    tdPower.appendChild(inPower);
-
-                    const tdQty = document.createElement('td');
-                    const inQty = document.createElement('input');
-                    inQty.type = 'number';
-                    inQty.min = '0';
-                    inQty.value = row.qty || '';
-                    inQty.style.width = '80px';
-                    inQty.addEventListener('input', () => {
-                        machineryRows[idx].qty = inQty.value;
-                        updateMachineryJsonField();
-                    });
-                    tdQty.appendChild(inQty);
-
-                    const tdCtrl = document.createElement('td');
-                    const btnRem = document.createElement('button');
-                    btnRem.type = 'button';
-                    btnRem.className = 'remove-row-btn';
-                    btnRem.textContent = 'Remove';
-                    btnRem.addEventListener('click', () => {
-                        if (machineryRows.length <= 1) {
-                            machineryRows[0] = {
-                                type: '',
-                                brand: '',
-                                power: '',
-                                qty: ''
-                            };
-                        } else {
-                            machineryRows.splice(idx, 1);
-                        }
-                        renderMachineryRows(machineryRows);
-                        updateMachineryJsonField();
-                    });
-                    tdCtrl.appendChild(btnRem);
-
-                    tr.appendChild(tdType);
-                    tr.appendChild(tdBrand);
-                    tr.appendChild(tdPower);
-                    tr.appendChild(tdQty);
-                    tr.appendChild(tdCtrl);
-                    tbody.appendChild(tr);
+                    machineryTableBody.appendChild(createMachineryRow(row, idx));
                 });
 
-                table.appendChild(tbody);
+                table.appendChild(machineryTableBody);
 
                 const addWrap = document.createElement('div');
                 addWrap.style.display = 'flex';
                 addWrap.style.justifyContent = 'center';
-                addWrap.style.margin = '8px auto 12px';
+                addWrap.style.margin = '12px auto';
                 const addBtn = document.createElement('button');
                 addBtn.type = 'button';
                 addBtn.className = 'add-row-btn';
                 addBtn.textContent = 'Add equipment';
-                addBtn.addEventListener('click', () => {
+                addBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const newIdx = machineryRows.length;
                     machineryRows.push({
                         type: '',
                         brand: '',
                         power: '',
                         qty: ''
                     });
-                    renderMachineryRows(machineryRows);
+                    machineryTableBody.appendChild(createMachineryRow(machineryRows[newIdx], newIdx));
                     updateMachineryJsonField();
                 });
                 addWrap.appendChild(addBtn);
@@ -3585,12 +4135,20 @@ try {
                 hidden.name = 'fields[machinery_rows_json]';
                 machineryJsonField = hidden;
 
-                wrap.appendChild(addWrap);
-                wrap.appendChild(table);
-                wrap.appendChild(hidden);
+                if (typeof editForm !== 'undefined' && editForm) {
+                    const prev = document.getElementById('machineryJsonField');
+                    if (prev) prev.remove();
+                    hidden.id = 'machineryJsonField';
+                    editForm.appendChild(hidden);
+                } else {
+                    machineryWrap.appendChild(hidden);
+                }
+
+                machineryWrap.appendChild(addWrap);
+                machineryWrap.appendChild(table);
 
                 updateMachineryJsonField();
-                if (editFieldsWrap) editFieldsWrap.appendChild(wrap);
+                if (editFieldsWrap) editFieldsWrap.appendChild(machineryWrap);
             }
 
             function updateSupplyJsonField() {
@@ -3602,6 +4160,79 @@ try {
                 }
             }
 
+            let supplyTableBody = null;
+            let supplyWrap = null;
+
+            function createSupplyRow(row, idx) {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #eee';
+                tr.dataset.supplyIdx = idx;
+
+                const tdName = document.createElement('td');
+                const inName = document.createElement('input');
+                inName.type = 'text';
+                inName.value = row.supplier || '';
+                inName.placeholder = 'Supplier Name';
+                inName.style.width = '100%';
+                inName.addEventListener('input', () => {
+                    supplyRows[idx].supplier = inName.value;
+                    updateSupplyJsonField();
+                });
+                tdName.appendChild(inName);
+
+                const tdSpecies = document.createElement('td');
+                const inSpecies = document.createElement('input');
+                inSpecies.type = 'text';
+                inSpecies.value = row.species || '';
+                inSpecies.placeholder = 'Species';
+                inSpecies.style.width = '100%';
+                inSpecies.addEventListener('input', () => {
+                    supplyRows[idx].species = inSpecies.value;
+                    updateSupplyJsonField();
+                });
+                tdSpecies.appendChild(inSpecies);
+
+                const tdVol = document.createElement('td');
+                const inVol = document.createElement('input');
+                inVol.type = 'text';
+                inVol.value = row.volume || '';
+                inVol.placeholder = 'Contracted Vol';
+                inVol.style.width = '120px';
+                inVol.addEventListener('input', () => {
+                    supplyRows[idx].volume = inVol.value;
+                    updateSupplyJsonField();
+                });
+                tdVol.appendChild(inVol);
+
+                const tdCtrl = document.createElement('td');
+                const btnRem = document.createElement('button');
+                btnRem.type = 'button';
+                btnRem.className = 'remove-row-btn';
+                btnRem.innerHTML = '<i class="fas fa-trash-alt" aria-hidden="true"></i>';
+                btnRem.title = 'Remove';
+                btnRem.addEventListener('click', () => {
+                    if (supplyRows.length <= 1) {
+                        supplyRows[0] = {
+                            supplier: '',
+                            species: '',
+                            volume: ''
+                        };
+                        tr.querySelectorAll('input').forEach(inp => inp.value = '');
+                    } else {
+                        supplyRows.splice(idx, 1);
+                        tr.remove();
+                    }
+                    updateSupplyJsonField();
+                });
+                tdCtrl.appendChild(btnRem);
+
+                tr.appendChild(tdName);
+                tr.appendChild(tdSpecies);
+                tr.appendChild(tdVol);
+                tr.appendChild(tdCtrl);
+                return tr;
+            }
+
             function renderSupplyRows(data = []) {
                 supplyRows = Array.isArray(data) ? data.slice() : [];
                 if (!supplyRows.length) supplyRows.push({
@@ -3610,92 +4241,61 @@ try {
                     volume: ''
                 });
 
-                const wrap = document.createElement('div');
-                wrap.className = 'supply-rows-wrap';
+                // If already initialized, just clear and re-add rows
+                if (supplyWrap && supplyTableBody) {
+                    supplyTableBody.innerHTML = '';
+                    supplyRows.forEach((row, idx) => {
+                        supplyTableBody.appendChild(createSupplyRow(row, idx));
+                    });
+                    updateSupplyJsonField();
+                    return;
+                }
+
+                // First time initialization
+                supplyWrap = document.createElement('div');
+                supplyWrap.className = 'supply-rows-wrap';
 
                 const table = document.createElement('table');
                 table.style.width = '100%';
                 table.style.borderCollapse = 'collapse';
-                const tbody = document.createElement('tbody');
+
+                // Table header with column titles for supplier inputs
+                const thead = document.createElement('thead');
+                thead.innerHTML = `
+                    <tr style="background:#f3f4f6;border-bottom:1px solid #d1d5db;">
+                        <th style="text-align:left;padding:8px;border:1px solid #eee;">Supplier Name / Company</th>
+                        <th style="text-align:left;padding:8px;border:1px solid #eee;">Species</th>
+                        <th style="text-align:center;padding:8px;border:1px solid #eee;">Contracted Vol</th>
+                        <th style="text-align:center;padding:8px;border:1px solid #eee;">Action</th>
+                    </tr>
+                `;
+                table.appendChild(thead);
+                supplyTableBody = document.createElement('tbody');
 
                 supplyRows.forEach((row, idx) => {
-                    const tr = document.createElement('tr');
-                    tr.style.borderBottom = '1px solid #eee';
-                    const tdName = document.createElement('td');
-                    const inName = document.createElement('input');
-                    inName.type = 'text';
-                    inName.value = row.supplier || '';
-                    inName.placeholder = 'Supplier Name';
-                    inName.style.width = '100%';
-                    inName.addEventListener('input', () => {
-                        supplyRows[idx].supplier = inName.value;
-                        updateSupplyJsonField();
-                    });
-                    tdName.appendChild(inName);
-                    const tdSpecies = document.createElement('td');
-                    const inSpecies = document.createElement('input');
-                    inSpecies.type = 'text';
-                    inSpecies.value = row.species || '';
-                    inSpecies.placeholder = 'Species';
-                    inSpecies.style.width = '100%';
-                    inSpecies.addEventListener('input', () => {
-                        supplyRows[idx].species = inSpecies.value;
-                        updateSupplyJsonField();
-                    });
-                    tdSpecies.appendChild(inSpecies);
-                    const tdVol = document.createElement('td');
-                    const inVol = document.createElement('input');
-                    inVol.type = 'text';
-                    inVol.value = row.volume || '';
-                    inVol.placeholder = 'Contracted Vol';
-                    inVol.style.width = '120px';
-                    inVol.addEventListener('input', () => {
-                        supplyRows[idx].volume = inVol.value;
-                        updateSupplyJsonField();
-                    });
-                    tdVol.appendChild(inVol);
-                    const tdCtrl = document.createElement('td');
-                    const btnRem = document.createElement('button');
-                    btnRem.type = 'button';
-                    btnRem.className = 'remove-row-btn';
-                    btnRem.textContent = 'Remove';
-                    btnRem.addEventListener('click', () => {
-                        if (supplyRows.length <= 1) {
-                            supplyRows[0] = {
-                                supplier: '',
-                                species: '',
-                                volume: ''
-                            };
-                        } else {
-                            supplyRows.splice(idx, 1);
-                        }
-                        renderSupplyRows(supplyRows);
-                        updateSupplyJsonField();
-                    });
-                    tdCtrl.appendChild(btnRem);
-                    tr.appendChild(tdName);
-                    tr.appendChild(tdSpecies);
-                    tr.appendChild(tdVol);
-                    tr.appendChild(tdCtrl);
-                    tbody.appendChild(tr);
+                    supplyTableBody.appendChild(createSupplyRow(row, idx));
                 });
 
-                table.appendChild(tbody);
+                table.appendChild(supplyTableBody);
+
                 const addWrap = document.createElement('div');
                 addWrap.style.display = 'flex';
                 addWrap.style.justifyContent = 'center';
-                addWrap.style.margin = '8px auto 12px';
+                addWrap.style.margin = '12px auto';
                 const addBtn = document.createElement('button');
                 addBtn.type = 'button';
                 addBtn.className = 'add-row-btn';
                 addBtn.textContent = 'Add supplier';
-                addBtn.addEventListener('click', () => {
+                addBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const newIdx = supplyRows.length;
                     supplyRows.push({
                         supplier: '',
                         species: '',
                         volume: ''
                     });
-                    renderSupplyRows(supplyRows);
+                    supplyTableBody.appendChild(createSupplyRow(supplyRows[newIdx], newIdx));
                     updateSupplyJsonField();
                 });
                 addWrap.appendChild(addBtn);
@@ -3704,11 +4304,20 @@ try {
                 hidden.type = 'hidden';
                 hidden.name = 'fields[supply_rows_json]';
                 supplyJsonField = hidden;
-                wrap.appendChild(addWrap);
-                wrap.appendChild(table);
-                wrap.appendChild(hidden);
+
+                if (typeof editForm !== 'undefined' && editForm) {
+                    const prev = document.getElementById('supplyJsonField');
+                    if (prev) prev.remove();
+                    hidden.id = 'supplyJsonField';
+                    editForm.appendChild(hidden);
+                } else {
+                    supplyWrap.appendChild(hidden);
+                }
+
+                supplyWrap.appendChild(addWrap);
+                supplyWrap.appendChild(table);
                 updateSupplyJsonField();
-                if (editFieldsWrap) editFieldsWrap.appendChild(wrap);
+                if (editFieldsWrap) editFieldsWrap.appendChild(supplyWrap);
             }
 
             // Wildlife details rendering
@@ -4079,31 +4688,53 @@ try {
                 // machinery and supply-contract editors so they are editable.
                 if (requestType === 'wood' || requestType === 'wpp') {
                     try {
-                        // Find a JSON machinery field in cachedDetails.application
+                        // Find machinery and supply data from wood_details or application fields
                         let machinery = [];
                         let supplies = [];
-                        if (Array.isArray(cachedDetails.application)) {
+
+                        // Try to get from wood_details first (normalized structured data from AJAX response)
+                        if (cachedDetails?.wood_details?.machinery && Array.isArray(cachedDetails.wood_details.machinery)) {
+                            machinery = cachedDetails.wood_details.machinery.map(m => ({
+                                type: m.type || '',
+                                brand: m.brand || '',
+                                power: m.power || m.hp || '',
+                                qty: m.qty || m.quantity || ''
+                            }));
+                        }
+                        if (cachedDetails?.wood_details?.supplies && Array.isArray(cachedDetails.wood_details.supplies)) {
+                            supplies = cachedDetails.wood_details.supplies.map(s => ({
+                                supplier: s.supplier || '',
+                                species: s.species || '',
+                                volume: s.volume || s.vol || ''
+                            }));
+                        }
+
+                        // Fallback: try parsing from application fields if wood_details didn't have them
+                        if (!machinery.length && Array.isArray(cachedDetails.application)) {
                             const appRows = cachedDetails.application;
                             const machCandidate = appRows.find(r => {
                                 const f = (r?.field || '').toLowerCase();
-                                const l = (r?.label || '').toLowerCase();
-                                return f.includes('machin') || l.includes('machin') || f.includes('equipment') || l.includes('equipment');
-                            });
-                            const supCandidate = appRows.find(r => {
-                                const f = (r?.field || '').toLowerCase();
-                                const l = (r?.label || '').toLowerCase();
-                                return f.includes('supply') || l.includes('supply') || f.includes('supplier') || l.includes('supplier') || f.includes('raw');
+                                return f === 'machinery_rows_json' || f.includes('machineries_and_equipment');
                             });
                             if (machCandidate && machCandidate.value) {
                                 try {
-                                    machinery = JSON.parse(machCandidate.value);
+                                    const parsed = JSON.parse(machCandidate.value);
+                                    if (Array.isArray(parsed)) machinery = parsed;
                                 } catch (e) {
                                     machinery = [];
                                 }
                             }
+                        }
+                        if (!supplies.length && Array.isArray(cachedDetails.application)) {
+                            const appRows = cachedDetails.application;
+                            const supCandidate = appRows.find(r => {
+                                const f = (r?.field || '').toLowerCase();
+                                return f === 'supply_rows_json' || f.includes('suppliers');
+                            });
                             if (supCandidate && supCandidate.value) {
                                 try {
-                                    supplies = JSON.parse(supCandidate.value);
+                                    const parsed = JSON.parse(supCandidate.value);
+                                    if (Array.isArray(parsed)) supplies = parsed;
                                 } catch (e) {
                                     supplies = [];
                                 }

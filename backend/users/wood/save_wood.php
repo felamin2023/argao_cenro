@@ -484,8 +484,9 @@ try {
 
     // AFTER (new block)
     $bucket = bucket_name();
-    $nowStamp = date('Ymd_His');
-    $basePath = "wpp/{$user_uuid}/{$nowStamp}/"; // folder layout for all uploads in this request
+    $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
+    $permitFolder = ($permit_type === 'renewal') ? 'renewal permit' : 'new permit';
+    $prefix = "wood/{$permitFolder}/{$client_id}/{$run}/"; // folder layout for all uploads in this request
 
     $uploaded_map = [];
     $signature_url = null;
@@ -495,7 +496,7 @@ try {
         $file  = $_FILES['application_doc'];
         $ext   = pick_ext($file, '.doc');
         $fname = 'application' . $ext;
-        $path  = $basePath . $fname;
+        $path  = $prefix . $fname;
         $mime  = $file['type'] ?: 'application/msword';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map['application_doc'] = $url;
@@ -506,7 +507,7 @@ try {
         $file  = $_FILES['signature_file'];
         $ext   = pick_ext($file, '.png');
         $fname = 'signature' . $ext;
-        $path  = $basePath . $fname;
+        $path  = $prefix . $fname;
         $mime  = $file['type'] ?: 'image/png';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map['signature_file'] = $signature_url = $url;
@@ -536,7 +537,7 @@ try {
             $safeName .= $ext;
         }
 
-        $storagePath = $basePath . $field . '_' . $safeName;
+        $storagePath = $prefix . $field . '_' . $safeName;
         $mime = $f['type'] ?: 'application/octet-stream';
 
         $publicUrl = supa_upload($bucket, $storagePath, $f['tmp_name'], $mime);
@@ -565,7 +566,7 @@ try {
 
         $ext   = pick_ext($file, '.bin');
         $fname = slugify_name($key) . $ext;
-        $path  = $basePath . $fname;
+        $path  = $prefix . $fname;
         $mime  = $file['type'] ?: 'application/octet-stream';
         $url   = supa_upload($bucket, $path, $file['tmp_name'], $mime);
         $uploaded_map[$key] = $url;

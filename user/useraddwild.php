@@ -2024,10 +2024,16 @@ if (!empty($_SESSION['user_id'])) {
             background: white;
         }
 
+        /* Ensure any signature canvas inside the container fills available width
+           and has an appropriate CSS height so the resize logic uses correct
+           clientWidth/clientHeight. This targets the default id and any other
+           canvases placed inside `.signature-pad-container` (eg. renewal). */
+        .signature-pad-container canvas,
         #signature-pad {
             width: 100%;
             height: 150px;
             cursor: crosshair;
+            display: block;
         }
 
         .signature-actions {
@@ -3231,6 +3237,7 @@ if (!empty($_SESSION['user_id'])) {
     <script>
         window.__WFP_RECORDS__ = <?= $wfpRecordsJson ?? '{}' ?>;
     </script>
+
     <script>
         (() => {
             // ====== CONFIG ======
@@ -3713,33 +3720,21 @@ if (!empty($_SESSION['user_id'])) {
             }
 
             function makeMHTML(html, parts = []) {
-                const boundary = '----=_NextPart_' + Date.now().toString(16);
-                const header = [
-                    'MIME-Version: 1.0',
-                    `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"`,
-                    'X-MimeOLE: Produced By Microsoft MimeOLE',
-                    '',
-                    `--${boundary}`,
-                    'Content-Type: text/html; charset="utf-8"',
-                    'Content-Transfer-Encoding: 8bit',
-                    '',
-                    html
-                ].join('\r\n');
+                // For images/files embedded in the document, convert base64 to data URIs in HTML
+                // This allows LibreOffice to properly render embedded images in the PDF
+                let processedHtml = html;
 
-                const bodyParts = parts.map((p) => {
-                    const wrapped = p.base64.replace(/.{1,76}/g, '$&\r\n');
-                    return [
-                        '',
-                        `--${boundary}`,
-                        `Content-Location: ${p.location}`,
-                        'Content-Transfer-Encoding: base64',
-                        `Content-Type: ${p.contentType}`,
-                        '',
-                        wrapped
-                    ].join('\r\n');
-                }).join('');
+                parts.forEach((p) => {
+                    // Replace the location reference with a data URI
+                    const dataUri = `data:${p.contentType};base64,${p.base64}`;
+                    // Replace src="signature.png" with the actual data URI
+                    processedHtml = processedHtml.replace(
+                        new RegExp(`src=['"](${p.location}|${p.location.replace(/\//g, '\\/')})['"]`, 'g'),
+                        `src="${dataUri}"`
+                    );
+                });
 
-                return header + bodyParts + `\r\n--${boundary}--`;
+                return processedHtml;
             }
 
             function resetForm() {
@@ -3915,10 +3910,16 @@ if (!empty($_SESSION['user_id'])) {
                     canvas.width = Math.floor(cssWidth * ratio);
                     canvas.height = Math.floor(cssHeight * ratio);
                     const ctx = canvas.getContext('2d');
-                    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                    // Use an identity transform and draw using bitmap coordinates.
+                    // We'll map pointer events to bitmap pixels so coordinates line up
+                    // regardless of devicePixelRatio or CSS scaling.
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
                     ctx.fillStyle = '#fff';
-                    ctx.fillRect(0, 0, cssWidth, cssHeight);
-                    ctx.lineWidth = 2;
+                    // Fill the full bitmap area
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    // Scale line width so strokes look consistent on high-DPI
+                    const scale = canvas.width / (cssWidth || 1);
+                    ctx.lineWidth = 2 * scale;
                     ctx.lineCap = 'round';
                     ctx.strokeStyle = '#111';
                 }
@@ -3928,9 +3929,12 @@ if (!empty($_SESSION['user_id'])) {
                     const touch = e.touches ? e.touches[0] : null;
                     const clientX = touch ? touch.clientX : e.clientX;
                     const clientY = touch ? touch.clientY : e.clientY;
+                    // Map CSS pixels to canvas bitmap pixels to avoid offsets
+                    const scaleX = canvas.width / rect.width;
+                    const scaleY = canvas.height / rect.height;
                     return {
-                        x: clientX - rect.left,
-                        y: clientY - rect.top
+                        x: (clientX - rect.left) * scaleX,
+                        y: (clientY - rect.top) * scaleY
                     };
                 }
 
@@ -4718,7 +4722,8 @@ if (!empty($_SESSION['user_id'])) {
                 const docEstablishmentAddress = titleCase(establishmentAddress);
                 const docPostalAddress = titleCase(postalAddress);
                 const fullName = [docFirstName, docMiddleName, docLastName].filter(Boolean).join(' ');
-                const check = (b) => b ? '☒' : '☐';
+                // Use Unicode checkbox characters so generated .doc renders marks
+                const check = (b) => b ? '☑' : '☐';
 
                 // Build HTML content for the application (New vs Renewal)
                 const isRenewal = type === 'renewal';
@@ -4757,16 +4762,13 @@ if (!empty($_SESSION['user_id'])) {
 <meta charset="UTF-8">
 <title>${isRenewal ? 'Wildlife Registration Renewal Application' : 'Wildlife Registration Application'}</title>
 <style>
-  body, div, p { line-height:1.6; font-family:Arial; font-size:11pt; margin:0; padding:0; }
-  .bold{ font-weight:bold; }
-  .checkbox{ font-family:"Wingdings 2"; font-size:14pt; vertical-align:middle; }
-  .underline{ display:inline-block; border-bottom:1px solid #000; min-width:260px; padding:0 5px; margin:0 5px; }
-  .underline-small{ display:inline-block; border-bottom:1px solid #000; min-width:150px; padding:0 5px; margin:0 5px; }
-  .indent{ margin-left:40px; }
-  .info-line{ margin:12pt 0; }
-  table{ width:100%; border-collapse:collapse; margin:15pt 0; }
-  table, th, td { border:1px solid #000; }
-  th, td { padding:8px; text-align:left; }
+    body, div, p { line-height:1.6; font-family:Arial; font-size:11pt; margin:0; padding:0; }
+    .bold{ font-weight:bold; }
+    .checkbox{ font-family: 'Segoe UI Symbol', 'Arial Unicode MS', 'DejaVu Sans', Arial, sans-serif; font-size:14pt; vertical-align:middle; }
+    .underline{ display:inline-block; border-bottom:1px solid #000; min-width:260px; padding:0 5px; margin:0 5px; }
+    .underline-small{ display:inline-block; border-bottom:1px solid #000; min-width:150px; padding:0 5px; margin:0 5px; }
+    .indent{ margin-left:40px; }
+    .info-line{ margin:12pt 0; }
 </style>
 </head>
 <body>
@@ -4809,14 +4811,14 @@ ${
   `
 }
 
-<table>
-  <tr>
-    <th>Common Name</th>
-    <th>Scientific Name</th>
-    <th>Quantity</th>
-    ${isRenewal ? '<th>Remarks (Alive/Deceased)</th>' : ''}
-  </tr>
-  ${animalsTableRows}
+<table style="width:100%; border-collapse:collapse; margin:15pt 0;">
+    <tr>
+        <th style="border:1px solid #000; padding:8px; text-align:left;">Common Name</th>
+        <th style="border:1px solid #000; padding:8px; text-align:left;">Scientific Name</th>
+        <th style="border:1px solid #000; padding:8px; text-align:left;">Quantity</th>
+        ${isRenewal ? '<th style="border:1px solid #000; padding:8px; text-align:left;">Remarks (Alive/Deceased)</th>' : ''}
+    </tr>
+    ${animalsTableRows.replace(/<td>/g, '<td style="border:1px solid #000; padding:8px; text-align:left;">')}
 </table>
 
 <p class="info-line">
@@ -4827,13 +4829,13 @@ ${
   }
 </p>
 
-<div style="margin-top:28px;">
-  ${
-    hasSignature
-      ? `<img src="${sigLocation}" style="max-height:60px;display:block;margin-top:8pt;border:1px solid #000;" alt="Signature"/>`
-      : `<div style="margin-top:40px;border-top:1px solid #000;width:50%;padding-top:3pt;"></div>`
-  }
-  <p>Signature of Applicant</p>
+<div style="margin-top:28px; text-align:left;">
+    ${
+        hasSignature
+            ? `<img src="${sigLocation}" alt="Signature" style="display:block; margin:12px 0 0 0; max-width:100px; max-height:30px; border:none;" />`
+            : `<div style="margin-top:40px;border-top:1px solid #000;width:100px;padding-top:3pt;"></div>`
+    }
+    <p style="margin-top:4px;">Signature of Applicant</p>
 </div>
 
 <p class="info-line">Postal Address: <span class="underline">${docPostalAddress}</span></p>
@@ -5907,6 +5909,84 @@ ${
                 if (!/^(INPUT|SELECT|TEXTAREA)$/i.test(el.tagName)) return;
                 touched.add(el);
                 revalidateField(el);
+            }, true);
+
+            // ===== simple file-type category validation =====
+            // If an input's `accept` contains only image types (jpg/jpeg/png) -> enforce image only
+            // If `accept` contains only doc/pdf types -> enforce docs only
+            // If `accept` contains both or is not present, skip category enforcement (mixed allowed)
+            function isImageMime(mime) {
+                return typeof mime === 'string' && mime.startsWith('image/');
+            }
+
+            function isDocMime(mime) {
+                return ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mime);
+            }
+
+            document.addEventListener('change', (ev) => {
+                const t = ev.target;
+                if (!(t instanceof HTMLInputElement) || t.type !== 'file') return;
+                const file = t.files?.[0];
+                // no file selected -> nothing to validate here
+                if (!file) return;
+
+                // mark touched so setErr will paint immediately
+                try {
+                    touched.add(t);
+                } catch (e) {}
+
+                const accept = (t.getAttribute('accept') || '').toLowerCase();
+
+                // detect explicit accept-only cases first
+                const acceptHasImage = /\.jpe?g|\.png|image\//.test(accept);
+                const acceptHasDoc = /\.pdf|\.docx?|application\//.test(accept);
+                const acceptOnlyImage = acceptHasImage && !acceptHasDoc;
+                const acceptOnlyDoc = acceptHasDoc && !acceptHasImage;
+
+                // heuristic: if accept is mixed (both image and doc allowed) try to infer expected type
+                function detectExpectedType(inputEl) {
+                    if (!inputEl) return null;
+                    if (acceptOnlyImage) return 'image';
+                    if (acceptOnlyDoc) return 'doc';
+
+                    // look for surrounding requirement text/title
+                    const item = inputEl.closest('.requirement-item') || inputEl.closest('.sub-requirement') || inputEl.closest('.file-upload');
+                    let ctx = '';
+                    if (item) {
+                        const titleEl = item.querySelector('.requirement-title') || item.querySelector('h4') || item;
+                        ctx = (titleEl && (titleEl.textContent || '') || '').toLowerCase();
+                    }
+
+                    const imageKeywords = ['photo', 'photo of', 'facility design', 'sketch', 'map', 'picture', 'image', 'photo of facility'];
+                    const docKeywords = ['registration', 'certificate', 'receipt', 'report', 'clearance', 'deed', 'proof', 'wfp', 'cda', 'sec', 'dti', 'dtI', 'permit', 'application', 'bank', 'financial', 'inspection', 'quarterly', 'monthly', 'original', 'official'];
+
+                    for (const k of imageKeywords)
+                        if (ctx.includes(k)) return 'image';
+                    for (const k of docKeywords)
+                        if (ctx.includes(k)) return 'doc';
+                    return null;
+                }
+
+                const expected = detectExpectedType(t);
+
+                if ((acceptOnlyImage || expected === 'image') && !isImageMime(file.type)) {
+                    setErr(t, null, 'JPG/PNG only');
+                    try {
+                        t.value = '';
+                    } catch (e) {}
+                    return;
+                }
+
+                if ((acceptOnlyDoc || expected === 'doc') && !isDocMime(file.type)) {
+                    setErr(t, null, 'PDF/DOC/DOCX only.');
+                    try {
+                        t.value = '';
+                    } catch (e) {}
+                    return;
+                }
+
+                // otherwise clear any previous file-type errors
+                clearErr(t);
             }, true);
 
             // ===== permit switch clears errors =====

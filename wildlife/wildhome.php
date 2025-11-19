@@ -15,37 +15,22 @@ if (isset($_GET['ajax'])) {
     header('Content-Type: application/json; charset=utf-8');
     try {
         if ($_GET['ajax'] === 'mark_read') {
-            $notifId    = $_POST['notif_id']    ?? '';
-            $incidentId = $_POST['incident_id'] ?? '';
-            if (!$notifId && !$incidentId) {
-                echo json_encode(['ok' => false, 'error' => 'missing ids']);
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
                 exit;
             }
 
-            if ($notifId) {
-                $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
-                $st->execute([':id' => $notifId]);
-            }
-            if ($incidentId) {
-                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
-                $st->execute([':id' => $incidentId]);
-            }
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
             echo json_encode(['ok' => true]);
             exit;
         }
 
         if ($_GET['ajax'] === 'mark_all_read') {
             $pdo->beginTransaction();
-            $pdo->exec("
-                UPDATE public.notifications
-                   SET is_read = true
-                 WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
-            ");
-            $pdo->exec("
-                UPDATE public.incident_report
-                   SET is_read = true
-                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
-            ");
+            $pdo->exec("\n                UPDATE public.notifications\n                   SET is_read = true\n                 WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false\n            ");
             $pdo->commit();
             echo json_encode(['ok' => true]);
             exit;
@@ -72,7 +57,9 @@ if (!function_exists('time_elapsed_string')) {
     {
         if (!$datetime) return '';
         $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        // DB stores timestamps in UTC without timezone info, so parse as UTC then convert
+        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
         $diff = $now->diff($ago);
         $weeks = (int)floor($diff->d / 7);
         $days  = $diff->d % 7;
@@ -108,27 +95,12 @@ try {
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $incRows = $pdo->query("
-        SELECT incident_id,
-               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
-               status, is_read, created_at
-        FROM public.incident_report
-        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
-        ORDER BY created_at DESC
-        LIMIT 100
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
     $unreadPermits = (int)$pdo->query("
         SELECT COUNT(*) FROM public.notifications
         WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
     ")->fetchColumn();
 
-    $unreadIncidents = (int)$pdo->query("
-        SELECT COUNT(*) FROM public.incident_report
-        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
-    ")->fetchColumn();
-
-    $unreadWildlife = $unreadPermits + $unreadIncidents;
+    $unreadWildlife = $unreadPermits;
 } catch (Throwable $e) {
     error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
     $wildNotifs = [];
@@ -145,26 +117,19 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 
 require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Postgres)
 
-/* ========= AJAX: mark a single notification/incident as read ========= */
+/* ========= AJAX: mark a single notification as read ========= */
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'mark_read') {
     header('Content-Type: application/json');
-    $notifId    = $_POST['notif_id'] ?? '';
-    $incidentId = $_POST['incident_id'] ?? '';
+    $notifId = $_POST['notif_id'] ?? '';
 
-    if (!$notifId && !$incidentId) {
-        echo json_encode(['ok' => false, 'error' => 'missing notif_id or incident_id']);
+    if (!$notifId) {
+        echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
         exit();
     }
 
     try {
-        if ($notifId) {
-            $u = $pdo->prepare("UPDATE public.notifications SET is_read = true WHERE notif_id = :id");
-            $u->execute([':id' => $notifId]);
-        }
-        if ($incidentId) {
-            $u2 = $pdo->prepare("UPDATE public.incident_report SET is_read = true WHERE incident_id = :id");
-            $u2->execute([':id' => $incidentId]);
-        }
+        $u = $pdo->prepare("UPDATE public.notifications SET is_read = true WHERE notif_id = :id");
+        $u->execute([':id' => $notifId]);
         echo json_encode(['ok' => true]);
     } catch (Throwable $e) {
         error_log('[WILDHOME MARK_READ] ' . $e->getMessage());
@@ -207,7 +172,9 @@ function h(?string $s): string
 function time_elapsed_string($datetime, $full = false): string
 {
     $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    // DB stores timestamps in UTC without timezone info, so parse as UTC then convert
+    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
     $diff = $now->diff($ago);
 
     $weeks = (int)floor($diff->d / 7);
@@ -243,7 +210,8 @@ try {
             LOWER(COALESCE(a.request_type,''))                        AS request_type,
             c.first_name  AS client_first,
             c.last_name   AS client_last,
-            NULL::text    AS incident_id
+            n.incident_id,
+            n.reqpro_id
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
         LEFT JOIN public.client   c ON c.client_id = a.client_id
@@ -259,54 +227,8 @@ try {
           AND n.is_read = false
     ")->fetchColumn();
 
-    // B) incidents list (same UI shape)
-    $incRows = $pdo->query("
-        SELECT
-            incident_id,
-            COALESCE(NULLIF(btrim(more_description), ''),
-                     COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
-            status,
-            is_read,
-            created_at
-        FROM public.incident_report
-        WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
-        ORDER BY created_at DESC
-        LIMIT 100
-    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-    $incidentRows = array_map(function ($r) {
-        return [
-            'notif_id'        => null,
-            'message'         => 'WildLife Monitoring incident: ' . (string)$r['body_text'],
-            'is_read'         => $r['is_read'],
-            'created_at'      => $r['created_at'],
-            'notif_from'      => null,
-            'notif_to'        => 'wildlife',
-            'approval_id'     => null,
-            'permit_type'     => null,
-            'approval_status' => $r['status'], // reused for icon/text styling
-            'request_type'    => 'wildlife',
-            'client_first'    => null,
-            'client_last'     => null,
-            'incident_id'     => $r['incident_id'],
-        ];
-    }, $incRows);
-
-    $unreadInc = (int)$pdo->query("
-        SELECT COUNT(*)
-        FROM public.incident_report
-        WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
-          AND is_read = false
-    ")->fetchColumn();
-    $unreadWildlife += $unreadInc;
-
-    // merge + sort by created_at desc (UI unchanged)
-    $wildNotifs = array_merge($notifRows, $incidentRows);
-    usort($wildNotifs, function ($a, $b) {
-        $ta = strtotime((string)($a['created_at'] ?? 'now'));
-        $tb = strtotime((string)($b['created_at'] ?? 'now'));
-        return $tb <=> $ta;
-    });
+    // Only notifications are used now
+    $wildNotifs = $notifRows;
 } catch (Throwable $e) {
     error_log('[WILDHOME NOTIFS] ' . $e->getMessage());
     $wildNotifs = [];
@@ -411,6 +333,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             display: flex;
             text-decoration: none;
             color: inherit;
+            width: 100%;
         }
 
         .notification-title {
@@ -483,29 +406,22 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <?php
                         $combined = [];
 
-                        // Permits
+                        // Permits / notifications
                         foreach ($wildNotifs as $nf) {
                             $combined[] = [
-                                'id'      => $nf['notif_id'],
-                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-                                'type'    => 'permit',
-                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
-                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
-                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'wildprofile.php' : (!empty($nf['approval_id']) ? 'wildpermit.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'wildnotification.php'))
                             ];
                         }
 
-                        // Incidents
-                        foreach ($incRows as $ir) {
-                            $combined[] = [
-                                'id'      => $ir['incident_id'],
-                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
-                                'type'    => 'incident',
-                                'message' => trim((string)$ir['body_text']),
-                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
-                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
-                            ];
-                        }
+                        // incident reports removed
 
                         if (empty($combined)): ?>
                             <div class="notification-item">
@@ -515,12 +431,23 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             </div>
                             <?php else:
                             foreach ($combined as $item):
-                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
+                                $hasIncident = isset($item['incident_id']) && $item['incident_id'] !== null && trim((string)$item['incident_id']) !== '';
+                                $hasApproval = isset($item['approval_id']) && $item['approval_id'] !== null && trim((string)$item['approval_id']) !== '';
+                                $hasReqpro   = isset($item['reqpro_id'])   && $item['reqpro_id']   !== null && trim((string)$item['reqpro_id'])   !== '';
+
+                                if ($hasIncident) {
+                                    $title = 'Incident report';
+                                } elseif ($hasApproval) {
+                                    $title = 'Permit request';
+                                } elseif ($hasReqpro) {
+                                    $title = 'Profile request';
+                                } else {
+                                    $title = 'Permit request';
+                                }
                                 $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
                                 <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
-                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
-                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
+                                    data-notif-id="<?= h($item['id']) ?>" <?php if ($hasIncident): ?> data-incident-id="<?= h($item['incident_id']) ?>" <?php endif; ?>>
                                     <a href="<?= h($item['link']) ?>" class="notification-link">
                                         <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
@@ -607,13 +534,15 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     else close();
                 });
                 document.addEventListener('click', (e) => {
-                    if (!e.target.closest('#notifDropdown')) close();
+                    // Only close if clicking outside notifDropdown AND not on other nav items
+                    if (!e.target.closest('#notifDropdown') && !e.target.closest('.nav-item')) close();
                 });
             }
 
             // Mark ALL as read
             document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
                 e.preventDefault();
+                e.stopPropagation();
 
                 // optimistic UI
                 document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
@@ -641,16 +570,15 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 const link = e.target.closest('.notification-link');
                 if (!link) return;
                 e.preventDefault();
+                e.stopPropagation();
 
                 const item = link.closest('.notification-item');
                 const notifId = item?.getAttribute('data-notif-id') || '';
-                const incidentId = item?.getAttribute('data-incident-id') || '';
                 const href = link.getAttribute('href') || '#';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
-                    if (incidentId) form.set('incident_id', incidentId);
                     await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
                         method: 'POST',
                         headers: {
@@ -791,12 +719,10 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 e.preventDefault();
                 const href = link.getAttribute('href') || 'wildnotification.php';
                 const notifId = item.getAttribute('data-notif-id') || '';
-                const incidentId = item.getAttribute('data-incident-id') || '';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
-                    if (incidentId) form.set('incident_id', incidentId);
 
                     await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
                         method: 'POST',

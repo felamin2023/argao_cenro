@@ -4825,380 +4825,202 @@ function format_treecut_client_option(array $client): string
                 <div class="requirements-list" style="margin-top:18px;">
 
                     <!-- 1 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">1</span>
-
                                 Certificate of Verification (COV)- for CENRO signature or OIC
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-1" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-1">PDF/DOC/DOCX only.</div>
                             <div class="uploaded-files" id="uploaded-files-1"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 2 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">2</span>
-
                                 Memorandom Report ( signed by inspecting officer subscribed by register forester)
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-3" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-3" class="file-input" accept=".pdf,.doc,.docx">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-3">PDF/DOC/DOCX only.</div>
                             <div class="uploaded-files" id="uploaded-files-3"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 3 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">3</span>
-
                                 Tally sheets (inventory sheet of forest product)- signed by inspecting officer subscribed by registered forester
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-4" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-4">PDF/DOC/DOCX only.</div>
                             <div class="uploaded-files" id="uploaded-files-4"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 4 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">4</span>
-
                                 Geo-tagged photos of forest products ( signed by inspecting officer subscribed by registered forester)
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-5" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-5" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-5" class="file-input" accept=".jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-5">JPG/PNG only.</div>
                             <div class="uploaded-files" id="uploaded-files-5"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 5 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">5</span>
-
                                 Sworn Statement ( signed by inspecting officer subscribed by registered forester)
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-6" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-6" class="file-input" accept=".pdf,.doc,.docx">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-6">PDF/DOC/DOCX only.</div>
                             <div class="uploaded-files" id="uploaded-files-6"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 6 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">6</span>
-
                                 Certificate of Transport Agreement duly notarized
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="sub-requirement">
-
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of OR/CR of conveyance</p>
-
                                 <div class="file-input-container">
-
                                     <label for="file-7a" class="file-input-label">
-
                                         <i class="fas fa-upload"></i> Upload File
-
                                     </label>
-
-                                    <input type="file" id="file-7a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                    <input type="file" id="file-7a" class="file-input" accept=".jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
-
                                 </div>
-
+                                <div class="field-hint" id="hint-file-7a">JPG/PNG only.</div>
                                 <div class="uploaded-files" id="uploaded-files-7a"></div>
-
                             </div>
-
                             <div class="sub-requirement" style="margin-top: 15px;">
-
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Photocopy of Drivers License</p>
-
                                 <div class="file-input-container">
-
                                     <label for="file-7b" class="file-input-label">
-
                                         <i class="fas fa-upload"></i> Upload File
-
                                     </label>
-
-                                    <input type="file" id="file-7b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                    <input type="file" id="file-7b" class="file-input" accept=".jpg,.jpeg,.png">
                                     <span class="file-name">No file chosen</span>
-
                                 </div>
-
+                                <div class="field-hint" id="hint-file-7b">JPG/PNG only.</div>
                                 <div class="uploaded-files" id="uploaded-files-7b"></div>
-
                             </div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 7 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">7</span>
-
                                 Purchase Order(Signed by the Consignee )
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="file-input-container">
-
                                 <label for="file-8" class="file-input-label">
-
                                     <i class="fas fa-upload"></i> Upload File
-
                                 </label>
-
-                                <input type="file" id="file-8" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                <input type="file" id="file-8" class="file-input" accept=".pdf,.doc,.docx">
                                 <span class="file-name">No file chosen</span>
-
                             </div>
-
+                            <div class="field-hint" id="hint-file-8">PDF/DOC/DOCX only.</div>
                             <div class="uploaded-files" id="uploaded-files-8"></div>
-
                         </div>
-
                     </div>
-
-
 
                     <!-- 8 -->
-
                     <div class="requirement-item">
-
                         <div class="requirement-header">
-
                             <div class="requirement-title">
-
                                 <span class="requirement-number">8</span>
-
                                 Photocopy of approved TCP/ SPTLP/ PLTP/ STCP
-
                             </div>
-
                         </div>
-
                         <div class="file-upload">
-
                             <div class="sub-requirement">
-
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Tally sheets and stand/ stock table</p>
-
                                 <div class="file-input-container">
-
                                     <label for="file-10a" class="file-input-label">
-
                                         <i class="fas fa-upload"></i> Upload File
-
                                     </label>
-
-                                    <input type="file" id="file-10a" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                    <input type="file" id="file-10a" class="file-input" accept=".pdf,.doc,.docx">
                                     <span class="file-name">No file chosen</span>
-
                                 </div>
-
+                                <div class="field-hint" id="hint-file-10a">PDF/DOC/DOCX only.</div>
                                 <div class="uploaded-files" id="uploaded-files-10a"></div>
-
                             </div>
-
                             <div class="sub-requirement" style="margin-top: 15px;">
-
                                 <p style="margin-bottom: 10px; font-weight: 500;">- Tree Charting</p>
-
                                 <div class="file-input-container">
-
                                     <label for="file-10b" class="file-input-label">
-
                                         <i class="fas fa-upload"></i> Upload File
-
                                     </label>
-
-                                    <input type="file" id="file-10b" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-
+                                    <input type="file" id="file-10b" class="file-input" accept=".pdf,.doc,.docx">
                                     <span class="file-name">No file chosen</span>
-
                                 </div>
-
+                                <div class="field-hint" id="hint-file-10b">PDF/DOC/DOCX only.</div>
                                 <div class="uploaded-files" id="uploaded-files-10b"></div>
-
                             </div>
-
                         </div>
-
                     </div>
-
-
 
                 </div>
 
@@ -5712,33 +5534,74 @@ function format_treecut_client_option(array $client): string
 
             let selectedFiles = {};
 
+            // Allowed extensions per field (lowercase, without dot)
+            const allowedMap = {
+                'file-1': ['pdf', 'doc', 'docx'],
+                'file-3': ['pdf', 'doc', 'docx'],
+                'file-4': ['pdf', 'doc', 'docx'],
+                'file-5': ['jpg', 'jpeg', 'png'],
+                'file-6': ['pdf', 'doc', 'docx'],
+                'file-7a': ['jpg', 'jpeg', 'png'],
+                'file-7b': ['jpg', 'jpeg', 'png'],
+                'file-8': ['pdf', 'doc', 'docx'],
+                'file-10a': ['pdf', 'doc', 'docx'],
+                'file-10b': ['pdf', 'doc', 'docx']
+            };
+
+            const allowedMsg = (id) => allowedMap[id] && allowedMap[id].includes('jpg') ? 'JPG/PNG only.' : 'PDF/DOC/DOCX only.';
+
             fileInputs.forEach(cfg => {
                 const inp = document.getElementById(cfg.id);
                 const target = document.getElementById(cfg.uploaded);
+                const hintEl = document.getElementById('hint-' + cfg.id);
                 if (!inp) return;
 
                 inp.addEventListener('change', function() {
                     if (target) target.innerHTML = '';
 
-                    const file = this.files[0];
+                    const file = this.files[0] || null;
                     const nameEl = this.parentElement.querySelector('.file-name');
+                    const group = this.closest('.file-upload');
 
-                    if (file) {
-                        // ✅ Has file: show filename, normal styling
-                        selectedFiles[cfg.id] = file;
-                        if (nameEl) {
-                            nameEl.textContent = file.name;
-                            nameEl.style.color = '';
-                            nameEl.style.fontWeight = '';
-                        }
-                    } else {
-                        // ❌ No file: show red “Please attach file”
+                    // reset previous error state
+                    this.classList.remove('input-error');
+                    if (group) group.classList.remove('has-error');
+                    if (hintEl) hintEl.style.display = 'none';
+
+                    if (!file) {
                         selectedFiles[cfg.id] = null;
                         if (nameEl) {
                             nameEl.textContent = 'Please attach file';
                             nameEl.style.color = '#dc2626';
                             nameEl.style.fontWeight = '600';
                         }
+                        return;
+                    }
+
+                    const parts = (file.name || '').split('.');
+                    const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                    const allowed = allowedMap[cfg.id] || null;
+
+                    if (allowed && ext && !allowed.includes(ext)) {
+                        // invalid type
+                        selectedFiles[cfg.id] = null;
+                        if (nameEl) {
+                            nameEl.textContent = allowedMsg(cfg.id);
+                            nameEl.style.color = '#dc2626';
+                            nameEl.style.fontWeight = '600';
+                        }
+                        this.classList.add('input-error');
+                        if (group) group.classList.add('has-error');
+                        if (hintEl) hintEl.style.display = 'block';
+                        return;
+                    }
+
+                    // valid
+                    selectedFiles[cfg.id] = file;
+                    if (nameEl) {
+                        nameEl.textContent = file.name;
+                        nameEl.style.color = '';
+                        nameEl.style.fontWeight = '';
                     }
                 });
             });
@@ -6636,7 +6499,7 @@ function format_treecut_client_option(array $client): string
                         const input = document.getElementById(id);
                         if (!input) return;
 
-                        const file = selectedFiles[id] || input.files[0] || null;
+                        const file = selectedFiles[id] || null;
                         const nameEl = input.parentElement.querySelector('.file-name');
 
                         if (!file) {

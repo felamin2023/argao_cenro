@@ -12,6 +12,70 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 
 require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Postgres)
 
+/* ---- AJAX: mark single / mark all read (handled by this same page) ---- */
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+                exit;
+            }
+
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("UPDATE public.notifications SET is_read = true WHERE LOWER(COALESCE(\"to\", ''))='marine' AND is_read=false");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[MARINE NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit;
+}
+
+/* ---- helpers used by the UI snippet ---- */
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        // DB stores timestamps in UTC without timezone info, so parse as UTC then convert
+        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
+
 // Current user (UUID)
 $user_id = (string)$_SESSION['user_id'];
 
@@ -39,6 +103,86 @@ try {
     header('Location: ../superlogin.php');
     exit();
 }
+
+/* ---- data needed by your notification UI (badge + lists) ---- */
+$marineNotifs = [];
+$unreadMarine = 0;
+
+try {
+    $marineNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'marine'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadMarine = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'marine'
+          AND n.is_read = false
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[MARINE NOTIFS] ' . $e->getMessage());
+    $marineNotifs = [];
+    $unreadMarine = 0;
+}
+
+// Build combined array for notifications
+$combined = [];
+foreach ($marineNotifs as $nf) {
+    $isRead = ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1');
+    $hasIncident = !empty($nf['incident_id']);
+    $hasApproval = !empty($nf['approval_id']);
+    $hasReqpro   = !empty($nf['reqpro_id']);
+    $titleMsg = trim((string)$nf['message'] ?: ((($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a marine request.'));
+
+    // Route based on incident_id or reqpro_id
+    $link = $hasIncident
+        ? 'reportaccident.php?focus=' . urlencode((string)$nf['incident_id'])
+        : ($hasReqpro
+            ? 'marineprofile.php?reqpro_id=' . urlencode((string)$nf['reqpro_id'])
+            : ($hasApproval
+                ? '#'
+                : '#'));
+
+    $combined[] = [
+        'id'         => $nf['notif_id'],
+        'is_read'    => $isRead,
+        'type'       => $hasIncident ? 'incident' : 'permit',
+        'message'    => $titleMsg,
+        'ago'        => time_elapsed_string($nf['created_at'] ?? date('c')),
+        'created_at' => $nf['created_at'] ?? null,
+        'raw'        => $nf,
+        'link'       => $link
+    ];
+}
+
+// sort newest first by created_at
+usort($combined, function ($a, $b) {
+    $ta = $a['created_at'] ?? '';
+    $tb = $b['created_at'] ?? '';
+    return strcmp($tb, $ta);
+});
+
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -104,33 +248,62 @@ try {
 
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+                    <span class="badge"><?= (int)$unreadMarine ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
+                    </div>
+                    <div class="notification-list" id="marineNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits / notifications
+                        foreach ($marineNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a marine request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'marineprofile.php' : (!empty($nf['approval_id']) ? 'mpa-management.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'marinenotif.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No marine notifications</div>
+                                </div>
+                            </div>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Marine Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
 
-                    <div class="notification-item unread">
-                        <a href="marineeach.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
-                            </div>
-                            <div class="notification-content">
-                                <div class="notification-title">Marine Pollution Alert</div>
-                                <div class="notification-message">Community member reported plastic waste dumping in Lawis Beach.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                        </a>
-                    </div>
-
-                    <div class="notification-footer">
-                        <a href="marinenotif.php" class="view-all">View All Notifications</a>
-                    </div>
+                    <div class="notification-footer"><a href="marinenotif.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
 

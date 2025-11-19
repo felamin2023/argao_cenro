@@ -91,4 +91,15 @@ if (!getenv('SUPABASE_ANON_KEY')) {
     putenv('SUPABASE_ANON_KEY=' . SUPABASE_SERVICE_KEY);
     $_ENV['SUPABASE_ANON_KEY'] = SUPABASE_SERVICE_KEY;
     $_SERVER['SUPABASE_ANON_KEY'] = SUPABASE_SERVICE_KEY;
+
+    // LibreOffice soffice command for PDF conversion
+    if (!defined('SOFFICE_CMD')) {
+        // Windows path
+        if (DIRECTORY_SEPARATOR === '\\') {
+            define('SOFFICE_CMD', 'C:\\Program Files\\LibreOffice\\program\\soffice.exe');
+        } else {
+            // Linux/macOS path (adjust if needed)
+            define('SOFFICE_CMD', '/usr/bin/soffice');
+        }
+    }
 }

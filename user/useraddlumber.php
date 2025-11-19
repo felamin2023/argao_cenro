@@ -1040,6 +1040,17 @@ try {
             max-width: 200px;
         }
 
+        .file-type-error {
+            font-size: 0.85rem;
+            color: #dc3545;
+            margin-top: 6px;
+            display: none;
+        }
+
+        .file-type-error.show {
+            display: block;
+        }
+
         .uploaded-files {
             margin-top: 10px;
             display: flex;
@@ -2353,6 +2364,7 @@ try {
                                 </label>
                                 <input type="file" id="file-1" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2373,6 +2385,7 @@ try {
                                 </label>
                                 <input type="file" id="file-2" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2393,6 +2406,7 @@ try {
                                 </label>
                                 <input type="file" id="file-4" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2432,6 +2446,7 @@ try {
                                 <input type="file" id="file-6" name="lumber_mayors_permit"
                                     class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
 
                         </div>
@@ -2454,6 +2469,7 @@ try {
                                 </label>
                                 <input type="file" id="file-7" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2473,6 +2489,7 @@ try {
                                 </label>
                                 <input type="file" id="file-8" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2492,6 +2509,7 @@ try {
                                 </label>
                                 <input type="file" id="file-9" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                                 <span class="file-name">No file chosen</span>
+                                <span class="file-type-error"></span>
                             </div>
                         </div>
                     </div>
@@ -2544,6 +2562,10 @@ try {
             </div>
         </div>
     </div>
+
+    <!-- Hidden file inputs for type-specific uploads -->
+    <input type="file" id="uploadImg" accept=".jpg,.jpeg,.png" style="display:none;">
+    <input type="file" id="uploadDoc" accept=".doc,.docx,.pdf" style="display:none;">
 
 
     <script>
@@ -3524,20 +3546,174 @@ try {
             ========================== */
             const fileIds = ['file-1', 'file-2', 'file-4', 'file-5', 'file-6', 'file-7', 'file-8', 'file-9'];
 
+            // File type requirements: 'doc' = PDF/DOC/DOCX, 'img' = JPG/PNG
+            const fileTypeMap = {
+                'file-1': 'doc', // Complete Staff Work (CSW)
+                'file-2': 'img', // Geo-tagged pictures
+                'file-4': 'doc', // Log/Lumber Supply Contract
+                'file-5': 'doc', // Business Management Plan
+                'file-6': 'doc', // Mayor's Permit
+                'file-7': 'doc', // Certificate of Registration
+                'file-8': 'doc', // Latest Annual Income Tax Return
+                'file-9': 'doc' // Monthly and Quarterly Reports
+            };
+
+            function getFileExtension(filename) {
+                if (!filename) return '';
+                return filename.split('.').pop().toLowerCase();
+            }
+
+            function validateFileType(fileId, file) {
+                const expectedType = fileTypeMap[fileId];
+                if (!expectedType || !file) return {
+                    valid: true,
+                    error: ''
+                };
+
+                const ext = getFileExtension(file.name);
+                const docExts = ['pdf', 'doc', 'docx'];
+                const imgExts = ['jpg', 'jpeg', 'png'];
+
+                if (expectedType === 'doc') {
+                    if (!docExts.includes(ext)) {
+                        return {
+                            valid: false,
+                            error: 'PDF/DOC/DOCX only.'
+                        };
+                    }
+                } else if (expectedType === 'img') {
+                    if (!imgExts.includes(ext)) {
+                        return {
+                            valid: false,
+                            error: 'JPG/PNG only.'
+                        };
+                    }
+                }
+
+                return {
+                    valid: true,
+                    error: ''
+                };
+            }
+
+            // Get the hidden file inputs
+            const uploadImg = document.getElementById('uploadImg');
+            const uploadDoc = document.getElementById('uploadDoc');
+
+            // MIME type validation
+            const allowedMimeTypes = {
+                'img': ['image/jpeg', 'image/png'],
+                'doc': ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+            };
+
+            function validateMimeType(file, expectedType) {
+                if (!file) return {
+                    valid: true,
+                    error: ''
+                };
+                const allowed = allowedMimeTypes[expectedType] || [];
+                if (!allowed.includes(file.type)) {
+                    const errorMsg = expectedType === 'img' ? 'JPG/PNG only.' : 'PDF/DOC/DOCX only.';
+                    return {
+                        valid: false,
+                        error: errorMsg
+                    };
+                }
+                return {
+                    valid: true,
+                    error: ''
+                };
+            }
+
+            // Add MIME validation to hidden image input
+            uploadImg?.addEventListener('change', function() {
+                const file = this.files?.[0];
+                if (file) {
+                    const validation = validateMimeType(file, 'img');
+                    if (!validation.valid) {
+                        alert(validation.error);
+                        this.value = '';
+                    }
+                }
+            });
+
+            // Add MIME validation to hidden document input
+            uploadDoc?.addEventListener('change', function() {
+                const file = this.files?.[0];
+                if (file) {
+                    const validation = validateMimeType(file, 'doc');
+                    if (!validation.valid) {
+                        alert(validation.error);
+                        this.value = '';
+                    }
+                }
+            });
+
             fileIds.forEach(id => {
                 const input = document.getElementById(id);
                 if (!input) return;
-                input.addEventListener('change', () => {
-                    if (remoteFileFallback[id]) delete remoteFileFallback[id];
-                    if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
-                    const nameEl = input.parentElement?.querySelector('.file-name');
-                    if (nameEl) nameEl.textContent = input.files?.[0]?.name ?? 'No file chosen';
-                });
+
+                // Handle label click - trigger appropriate hidden input based on file type
                 document.querySelector(`label[for="${id}"]`)?.addEventListener('click', (e) => {
                     e.preventDefault();
-                    input.click();
+                    const expectedType = fileTypeMap[id];
+
+                    if (expectedType === 'img' && uploadImg) {
+                        // Reset and trigger image input
+                        uploadImg.value = '';
+                        uploadImg.onchange = (evt) => {
+                            if (uploadImg.files?.[0]) {
+                                input.files = uploadImg.files;
+                                triggerInputChange(input, id);
+                            }
+                        };
+                        uploadImg.click();
+                    } else if (expectedType === 'doc' && uploadDoc) {
+                        // Reset and trigger document input
+                        uploadDoc.value = '';
+                        uploadDoc.onchange = (evt) => {
+                            if (uploadDoc.files?.[0]) {
+                                input.files = uploadDoc.files;
+                                triggerInputChange(input, id);
+                            }
+                        };
+                        uploadDoc.click();
+                    } else {
+                        // Fallback: use regular file input
+                        input.click();
+                    }
+                });
+
+                // Direct file input change handler (for manual changes or fallback)
+                input.addEventListener('change', () => {
+                    triggerInputChange(input, id);
                 });
             });
+
+            function triggerInputChange(input, id) {
+                if (remoteFileFallback[id]) delete remoteFileFallback[id];
+                if (input.dataset && input.dataset.loadedUrl) delete input.dataset.loadedUrl;
+                const nameEl = input.parentElement?.querySelector('.file-name');
+                const errorEl = input.parentElement?.querySelector('.file-type-error');
+                const fileName = input.files?.[0]?.name ?? 'No file chosen';
+
+                if (nameEl) nameEl.textContent = fileName;
+
+                // Validate file type
+                if (input.files?.[0]) {
+                    const validation = validateFileType(id, input.files[0]);
+                    if (!validation.valid && errorEl) {
+                        errorEl.textContent = validation.error;
+                        errorEl.classList.add('show');
+                    } else if (errorEl) {
+                        errorEl.classList.remove('show');
+                        errorEl.textContent = '';
+                    }
+                } else if (errorEl) {
+                    errorEl.classList.remove('show');
+                    errorEl.textContent = '';
+                }
+            }
 
             /* =========================
                Signature NEW
@@ -5121,13 +5297,26 @@ try {
                 $('#add-supplier-row')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table', false), 0));
                 $('#add-supplier-row-ren')?.addEventListener('click', () => setTimeout(() => hookRows('#suppliers-table-ren', true), 0));
                 // NEW: live validation for file inputs
+                // When a single file input changes, validate only that input instead
+                // of running full `validateFiles` which would show errors for all
+                // other required file inputs immediately.
                 FILE_IDS.forEach(id => {
                     const el = document.getElementById(id);
                     if (!el) return;
                     el.addEventListener('change', () => {
                         const mode = (typeof activePermitType === 'function' ? activePermitType() : 'new');
                         const isRenewal = mode === 'renewal';
-                        validateFiles(isRenewal);
+
+                        const container = el.closest('.file-input-container') || el.parentElement;
+                        // If the requirement row is hidden for current mode, clear any message and skip
+                        const reqRow = container?.closest('.requirement-item') || container;
+                        if (reqRow && !isDisplayed(reqRow)) {
+                            setFileError(container, '');
+                            return;
+                        }
+
+                        const good = hasFile(el);
+                        setFileError(container, good ? '' : 'This file is required.');
                     });
                 });
 

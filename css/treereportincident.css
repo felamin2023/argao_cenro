@@ -187,6 +187,7 @@ header {
   transition: var(--transition);
   display: flex;
   align-items: flex-start;
+  border: 10px solid black;
 }
 
 .notification-item.unread {

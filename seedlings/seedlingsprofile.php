@@ -31,6 +31,92 @@ if (!$user || strtolower((string)$user['department']) !== 'seedling') {
     exit();
 }
 
+/* ---- data needed by your pasted UI (badge + lists) ---- */
+$seedlingNotifs = [];
+$unreadSeedling = 0;
+
+try {
+    $seedlingNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadSeedling = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+          AND n.is_read = false
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[SEEDLING NOTIFS] ' . $e->getMessage());
+    $seedlingNotifs = [];
+    $unreadSeedling = 0;
+}
+
+
+
+// -------------------------
+// helpers (for header HTML)
+// -------------------------
+function e($s)
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function h(?string $s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function time_elapsed_string($datetime, $full = false): string
+{
+    if (!$datetime) return '';
+    $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+    $diff = $now->diff($ago);
+    $weeks = (int)floor($diff->d / 7);
+    $days  = $diff->d % 7;
+    $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+    $parts = [];
+    foreach ($map as $k => $label) {
+        $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+        if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+    }
+    if (!$full) $parts = array_slice($parts, 0, 1);
+    return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+}
+
+function fmt_dt($ts)
+{
+    if (!$ts) return '';
+    try {
+        $d = new DateTime($ts);
+        return $d->format('M d, Y g:i A');
+    } catch (Throwable $e) {
+        return (string)$ts;
+    }
+}
+
 // If the stored image is a URL, use it; else fallback to default.
 $imgVal = trim((string)($user['image'] ?? ''));
 $isUrl  = (bool)preg_match('~^https?://~i', $imgVal);
@@ -99,6 +185,203 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             height: 60px;
             transition: width .5s, height .5s
         }
+
+        .dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: #fff;
+            min-width: 300px;
+            border-radius: 8px;
+            box-shadow: var(--box-shadow);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: .2s
+        }
+
+        .dropdown:hover .dropdown-menu,
+        .dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0)
+        }
+
+        .dropdown-menu.center {
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%) translateY(10px)
+        }
+
+        .dropdown-menu.center:hover,
+        .dropdown:hover .dropdown-menu.center {
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .dropdown-item {
+            padding: 15px 25px;
+            display: flex;
+            gap: 10px;
+            text-decoration: none;
+            color: #333
+        }
+
+        .dropdown-item.active-page {
+            background: rgb(225, 255, 220);
+            font-weight: 700;
+            border-left: 4px solid var(--primary-color)
+        }
+
+        .quantity-badge {
+            margin-left: auto;
+            font-weight: 700;
+            color: var(--primary-color)
+        }
+
+        .badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            background: #ff4757;
+            color: #fff;
+            border-radius: 50%;
+            width: 14px;
+            height: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        /* Notifications dropdown */
+        .notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff;
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none;
+        }
+
+        .notification-item {
+            padding: 18px;
+            background: #f8faf7;
+        }
+
+        .notification-item.unread {
+            background: #eef7ee;
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1;
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20;
+        }
+
+        .notification-link {
+            display: flex;
+            text-decoration: none;
+            color: inherit;
+            width: 100%;
+        }
+
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px;
+        }
+
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px;
+        }
+
+        .notification-message {
+            color: #234;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .mark-all-read {
+            color: #1b5e20;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .mark-all-read:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 992px) {
+            .mobile-toggle {
+                display: inline-flex;
+            }
+
+            .nav-container {
+                display: none;
+            }
+
+            .nav-container.active {
+                display: flex;
+            }
+
+            .dropdown-menu {
+                position: static;
+                opacity: 1;
+                visibility: visible;
+                transform: none;
+                box-shadow: none;
+            }
+        }
     </style>
 </head>
 
@@ -131,23 +414,62 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
                 </div>
             </div>
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadSeedling ?></span>
+                </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="treeeach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Illegal Logging Alert</div>
-                                <div class="notification-message">Report of unauthorized tree cutting activity in protected area.</div>
-                                <div class="notification-time">15 minutes ago</div>
+                    <div class="notification-list" id="seedlingNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits / notifications
+                        foreach ($seedlingNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a seedling request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'seedlingsprofile.php' : (!empty($nf['approval_id']) ? 'user_requestseedlings.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'seedlingsnotification.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No seedling notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Seedling Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
+
+                    <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>
             <div class="nav-item dropdown">

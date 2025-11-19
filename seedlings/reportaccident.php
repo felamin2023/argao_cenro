@@ -12,7 +12,72 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((strin
 
 require_once __DIR__ . '/../backend/connection.php'; // exposes $pdo (PDO -> Supabase/Postgres)
 
+/* ---- AJAX: mark single / mark all read (handled by this same page) ---- */
+if (isset($_GET['ajax'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($_GET['ajax'] === 'mark_read') {
+            $notifId = $_POST['notif_id'] ?? '';
+            if (!$notifId) {
+                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+                exit;
+            }
+
+            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+            $st->execute([':id' => $notifId]);
+
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        if ($_GET['ajax'] === 'mark_all_read') {
+            $pdo->beginTransaction();
+            $pdo->exec("UPDATE public.notifications SET is_read = true WHERE LOWER(COALESCE(\"to\", ''))='seedling' AND is_read=false");
+            $pdo->commit();
+            echo json_encode(['ok' => true]);
+            exit;
+        }
+
+        echo json_encode(['ok' => false, 'error' => 'unknown action']);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('[SEEDLING NOTIF AJAX] ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'server error']);
+    }
+    exit;
+}
+
+date_default_timezone_set('Asia/Manila');
+
 $user_id = (string)$_SESSION['user_id'];
+
+/* ---- Helper functions ---- */
+if (!function_exists('h')) {
+    function h(?string $s): string
+    {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+if (!function_exists('time_elapsed_string')) {
+    function time_elapsed_string($datetime, $full = false): string
+    {
+        if (!$datetime) return '';
+        $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($ago);
+        $weeks = (int)floor($diff->d / 7);
+        $days  = $diff->d % 7;
+        $map   = ['y' => 'year', 'm' => 'month', 'w' => 'week', 'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second'];
+        $parts = [];
+        foreach ($map as $k => $label) {
+            $v = ($k === 'w') ? $weeks : (($k === 'd') ? $days : $diff->$k);
+            if ($v > 0) $parts[] = $v . ' ' . $label . ($v > 1 ? 's' : '');
+        }
+        if (!$full) $parts = array_slice($parts, 0, 1);
+        return $parts ? implode(', ', $parts) . ' ago' : 'just now';
+    }
+}
 
 try {
     // Ensure this admin belongs to SEEDLING
@@ -35,6 +100,47 @@ try {
     error_log('[SEEDLING-GUARD] ' . $e->getMessage());
     header('Location: ../superlogin.php');
     exit();
+}
+
+/* ---- NOTIFS for header ---- */
+$seedlingNotifs = [];
+$unreadSeedling = 0;
+
+try {
+    $seedlingNotifs = $pdo->query("
+        SELECT
+            n.notif_id,
+            n.message,
+            n.is_read,
+            n.created_at,
+            n.\"from\" AS notif_from,
+            n.\"to\"   AS notif_to,
+            a.approval_id,
+            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+            LOWER(COALESCE(a.request_type,''))                        AS request_type,
+            c.first_name  AS client_first,
+            c.last_name   AS client_last,
+            n.incident_id,
+            n.reqpro_id
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadSeedling = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.notifications n
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'seedling'
+          AND n.is_read = false
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[SEEDLING NOTIFS] ' . $e->getMessage());
+    $seedlingNotifs = [];
+    $unreadSeedling = 0;
 }
 
 /** Load Seedlings incident reports (PDO) */
@@ -76,6 +182,119 @@ $quantities = [
     <link rel="stylesheet" href="/denr/superadmin/css/reportaccident.css">
     <!-- Fix: this is JS, not CSS -->
     <script defer src="/denr/superadmin/js/reportaccident.js"></script>
+
+    <style>
+        .nav-item .badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+        }
+
+        .nav-item.dropdown.open .badge {
+            display: none;
+        }
+
+        .dropdown-menu.notifications-dropdown {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: min(460px, 92vw);
+            max-height: 72vh;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .notifications-dropdown .notification-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .notifications-dropdown .notification-list {
+            overflow: auto;
+            padding: 8px 0;
+            background: #fff;
+        }
+
+        .notifications-dropdown .notification-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+        }
+
+        .notifications-dropdown .view-all {
+            font-weight: 600;
+            color: #1b5e20;
+            text-decoration: none;
+        }
+
+        .notification-item {
+            padding: 18px;
+            background: #f8faf7;
+        }
+
+        .notification-item.unread {
+            background: #eef7ee;
+        }
+
+        .notification-item+.notification-item {
+            border-top: 1px solid #eef2f1;
+        }
+
+        .notification-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            color: #1b5e20;
+        }
+
+        .notification-link {
+            display: flex;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .notification-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 6px;
+        }
+
+        .notification-time {
+            color: #6b7280;
+            font-size: .9rem;
+            margin-top: 8px;
+        }
+
+        .notification-message {
+            color: #234;
+        }
+
+        .mark-all-read {
+            color: #1b5e20;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .mark-all-read:hover {
+            text-decoration: underline;
+        }
+    </style>
 </head>
 
 <body>
@@ -92,7 +311,6 @@ $quantities = [
                 <div class="dropdown-menu center">
                     <a href="incoming.php" class="dropdown-item">
                         <i class="fas fa-seedling"></i><span class="item-text">Seedlings Received</span>
-                        <span class="quantity-badge"><?= (int)$quantities['total_received'] ?></span>
                     </a>
 
 
@@ -108,21 +326,59 @@ $quantities = [
 
 
 
-            <div class="nav-item dropdown">
-                <div class="nav-icon"><i class="fas fa-bell"></i><span class="badge">1</span></div>
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge"><?= (int)$unreadSeedling ?></span>
+                </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3><a href="#" class="mark-all-read">Mark all as read</a>
+                        <h3 style="margin:0;">Notifications</h3>
+                        <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-item unread">
-                        <a href="seedlingseach.php?id=1" class="notification-link">
-                            <div class="notification-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                            <div class="notification-content">
-                                <div class="notification-title">Seedlings Disposal Alert</div>
-                                <div class="notification-message">Report of seedlings being improperly discarded.</div>
-                                <div class="notification-time">15 minutes ago</div>
+                    <div class="notification-list" id="seedlingNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Permits / notifications
+                        foreach ($seedlingNotifs as $nf) {
+                            $combined[] = [
+                                'id'          => $nf['notif_id'],
+                                'notif_id'    => $nf['notif_id'],
+                                'approval_id' => $nf['approval_id'] ?? null,
+                                'incident_id' => $nf['incident_id'] ?? null,
+                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
+                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a seedling request.')),
+                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'        => !empty($nf['reqpro_id']) ? 'seedlingsprofile.php' : (!empty($nf['approval_id']) ? 'user_requestseedlings.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'seedlingsnotification.php'))
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
+                            <div class="notification-item">
+                                <div class="notification-content">
+                                    <div class="notification-title">No seedling notifications</div>
+                                </div>
                             </div>
-                        </a>
+                            <?php else:
+                            foreach ($combined as $item):
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
+                                $notifTitle = !empty($item['incident_id']) ? 'Incident report' : (!empty($item['reqpro_id']) ? 'Profile update' : 'Seedling Request');
+                            ?>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
+                                        <div class="notification-content">
+                                            <div class="notification-title"><?= $notifTitle ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
+                                        </div>
+                                    </a>
+                                </div>
+                        <?php endforeach;
+                        endif; ?>
                     </div>
                     <div class="notification-footer"><a href="seedlingsnotification.php" class="view-all">View All Notifications</a></div>
                 </div>
@@ -147,59 +403,33 @@ $quantities = [
             </div>
 
             <!-- Controls -->
-            <div class="controls" style="background-color:#ffffff !important;">
-                <div class="filter">
-                    <select class="filter-month">
-                        <option value="">All months</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
+            <div class="controls" style="background-color:#ffffff !important;display:flex;align-items:center;gap:12px; justify-content: flex-start;">
+                <div class="status-filter">
+                    <label for="status-filter-select" style="margin-right:6px;font-weight:600;color:#005117;">Status</label>
+                    <select id="status-filter-select" style="padding:6px;border-radius:4px;border:1px solid #ccc;">
+                        <option value="all">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="rejected">Rejected</option>
                     </select>
-                    <input type="number" class="filter-year" placeholder="Year" list="year-suggestions">
-                    <datalist id="year-suggestions">
-                        <option value="2020">
-                        <option value="2021">
-                        <option value="2022">
-                        <option value="2023">
-                        <option value="2024">
-                        <option value="2025">
-                        <option value="2026">
-                    </datalist>
-                    <button class="filter-button" aria-label="Filter">
-                        <i class="fas fa-filter" style="font-size:18px;color:#005117;margin-right:6px;"></i> Filter
-                    </button>
                 </div>
-
                 <div class="search">
                     <input type="text" placeholder="SEARCH HERE" class="search-input" id="search-input">
                     <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon" id="search-icon">
                 </div>
 
-                <div class="export">
+
+
+                <!-- <div class="export">
                     <button class="export-button" id="export-button">
                         <img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon">
                     </button>
                     <span class="export-label">Export as CSV</span>
-                </div>
+                </div> -->
             </div>
 
-            <!-- Status buttons -->
-            <div class="status-buttons">
-                <button class="status-btn all-btn" data-status="all">ALL</button>
-                <button class="status-btn pending-btn" data-status="pending">PENDING</button>
-                <button class="status-btn approved-btn" data-status="approved">APPROVED</button>
-                <button class="status-btn resolved-btn" data-status="resolved">RESOLVED</button>
-                <button class="status-btn rejected-btn" data-status="rejected">REJECTED</button>
-            </div>
+            <!-- Status filter (select) placed above -->
 
             <!-- Table -->
             <div class="table-container">
@@ -256,9 +486,12 @@ $quantities = [
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
+                            <!-- Removed table-row placeholder. A full-width div below the table will show instead. -->
                         <?php endif; ?>
                     </tbody>
                 </table>
+                <!-- Full-width no-results placeholder (hidden by default). Shown when no records match filters/search -->
+                <div id="no-results-full" style="display:none;padding:18px;background:#f5f5f5;border-radius:6px;margin-top:10px;color:#333;text-align:center;font-weight:600;">No record found</div>
             </div>
         </div>
     </div>
@@ -584,6 +817,7 @@ $quantities = [
                     const row = e.target.closest("tr");
                     row?.parentNode?.removeChild(row);
                     showNotification("Incident deleted");
+                    updateNoResults();
                 } catch (err) {
                     console.error(err);
                     showNotification("Error deleting report");
@@ -618,22 +852,34 @@ $quantities = [
                 if (event.target === imageModal) closeModal(imageModal);
             });
 
-            // ===== Status filter buttons =====
-            const statusButtons = document.querySelectorAll(".status-btn");
-            const tableRows = document.querySelectorAll(".accident-table tbody tr");
-            statusButtons.forEach((button) => {
-                button.addEventListener("click", () => {
-                    const status = button.dataset.status || "all"; // uses data-status
-                    tableRows.forEach((row) => {
-                        if (status === "all") {
-                            row.style.display = "";
+            // ===== Status filter (select) =====
+            const statusSelectFilter = document.getElementById('status-filter-select');
+            const noResultsDiv = document.getElementById('no-results-full');
+
+            function updateNoResults() {
+                // Collect data rows inside tbody (ignore rows that are not actual data if any)
+                const dataRows = Array.from(document.querySelectorAll('.accident-table tbody tr'))
+                    .filter(r => !r.classList.contains('no-results-row'));
+                const anyVisible = dataRows.some(r => r.style.display !== 'none');
+                if (noResultsDiv) noResultsDiv.style.display = anyVisible ? 'none' : 'block';
+            }
+
+            if (statusSelectFilter) {
+                statusSelectFilter.addEventListener('change', () => {
+                    const status = (statusSelectFilter.value || 'all').toLowerCase();
+                    const dataRows = Array.from(document.querySelectorAll('.accident-table tbody tr'))
+                        .filter(r => !r.classList.contains('no-results-row'));
+                    dataRows.forEach((row) => {
+                        if (status === 'all') {
+                            row.style.display = '';
                         } else {
-                            const rowStatus = (row.cells[6]?.textContent || "").trim().toLowerCase();
-                            row.style.display = rowStatus === status ? "" : "none";
+                            const rowStatus = (row.cells[6]?.textContent || '').trim().toLowerCase();
+                            row.style.display = rowStatus === status ? '' : 'none';
                         }
                     });
+                    updateNoResults();
                 });
-            });
+            }
 
             // ===== Search (icon click or Enter) =====
             const searchInput = document.getElementById("search-input");
@@ -641,21 +887,42 @@ $quantities = [
 
             function performSearch() {
                 const term = (searchInput.value || "").toLowerCase();
-                tableRows.forEach((row) => {
+                const activeStatus = (statusSelectFilter && statusSelectFilter.value) ? statusSelectFilter.value.toLowerCase() : 'all';
+                const rows = Array.from(document.querySelectorAll('.accident-table tbody tr'))
+                    .filter(r => !r.classList.contains('no-results-row'));
+                rows.forEach((row) => {
+                    // Only search relevant columns: who(1), what(2), where(3), when(4), why(5)
                     let match = false;
-                    for (let i = 0; i < row.cells.length - 1; i++) {
-                        if ((row.cells[i]?.textContent || "").toLowerCase().includes(term)) {
+                    const indices = [1, 2, 3, 4, 5];
+                    for (let idx of indices) {
+                        if ((row.cells[idx]?.textContent || '').toLowerCase().includes(term)) {
                             match = true;
                             break;
                         }
                     }
-                    row.style.display = match ? "" : "none";
+
+                    // Apply status filter as well
+                    if (match) {
+                        if (activeStatus === 'all') {
+                            row.style.display = '';
+                        } else {
+                            const rowStatus = (row.cells[6]?.textContent || '').trim().toLowerCase();
+                            row.style.display = rowStatus === activeStatus ? '' : 'none';
+                        }
+                    } else {
+                        row.style.display = 'none';
+                    }
                 });
+                updateNoResults();
             }
             if (searchIcon) searchIcon.addEventListener("click", performSearch);
-            if (searchInput) searchInput.addEventListener("keypress", (e) => {
-                if (e.key === "Enter") performSearch();
-            });
+            if (searchInput) {
+                searchInput.addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") performSearch();
+                });
+                // Update table on every keystroke
+                searchInput.addEventListener("input", performSearch);
+            }
 
             // ===== Date filter (month/year) =====
             const filterButton = document.querySelector(".filter-button");
@@ -666,7 +933,9 @@ $quantities = [
                 filterButton.addEventListener("click", () => {
                     const m = filterMonth.value;
                     const y = filterYear.value;
-                    tableRows.forEach((row) => {
+                    const rows = Array.from(document.querySelectorAll('.accident-table tbody tr'))
+                        .filter(r => !r.classList.contains('no-results-row'));
+                    rows.forEach((row) => {
                         const cell = row.cells[4];
                         if (!cell) return;
                         const txt = (cell.textContent || "").trim(); // expects YYYY-MM-DD...
@@ -677,6 +946,7 @@ $quantities = [
                         const yearOk = y ? yy === y : true;
                         row.style.display = monthOk && yearOk ? "" : "none";
                     });
+                    updateNoResults();
                 });
             }
 
@@ -709,6 +979,114 @@ $quantities = [
                     document.body.removeChild(a);
                 });
             }
+
+            /* ===== NOTIFICATION BELL FUNCTIONALITY ===== */
+            /* Dropdowns */
+            const dropdowns = document.querySelectorAll('[data-dropdown]');
+            const isTouch = matchMedia('(pointer: coarse)').matches;
+            dropdowns.forEach(dd => {
+                const trigger = dd.querySelector('.nav-icon');
+                const menu = dd.querySelector('.dropdown-menu');
+                if (!trigger || !menu) return;
+
+                const open = () => {
+                    dd.classList.add('open');
+                    trigger?.setAttribute('aria-expanded', 'true');
+                    if (menu) {
+                        menu.style.opacity = '1';
+                        menu.style.visibility = 'visible';
+                    }
+                };
+                const close = () => {
+                    dd.classList.remove('open');
+                    trigger?.setAttribute('aria-expanded', 'false');
+                    if (menu) {
+                        menu.style.opacity = '0';
+                        menu.style.visibility = 'hidden';
+                    }
+                };
+
+                if (!isTouch) {
+                    dd.addEventListener('mouseenter', open);
+                    dd.addEventListener('mouseleave', close);
+                } else {
+                    trigger.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (dd.classList.contains('open')) close();
+                        else open();
+                    });
+                }
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-dropdown]')) {
+                    document.querySelectorAll('[data-dropdown].open').forEach(dd => {
+                        const menu = dd.querySelector('.dropdown-menu');
+                        dd.classList.remove('open');
+                        if (menu) {
+                            menu.style.opacity = '0';
+                            menu.style.visibility = 'hidden';
+                        }
+                    });
+                }
+            });
+
+            /* MARK ALL AS READ */
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                document.querySelectorAll('#seedlingNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    badge.textContent = '0';
+                    badge.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch (_) {
+                    location.reload();
+                }
+            });
+
+            /* Click any single notification → mark read */
+            document.getElementById('seedlingNotifList')?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.notification-link');
+                if (!link) return;
+                const item = link.closest('.notification-item');
+                if (!item) return;
+                e.preventDefault();
+                const href = link.getAttribute('href') || 'reportaccident.php';
+                const notifId = item.getAttribute('data-notif-id') || '';
+
+                try {
+                    const form = new URLSearchParams();
+                    if (notifId) form.set('notif_id', notifId);
+                    await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: form.toString()
+                    });
+                } catch (_) {}
+
+                item.classList.remove('unread');
+                const badge = document.querySelector('#notifDropdown .badge');
+                if (badge) {
+                    const n = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, n - 1);
+                    badge.textContent = String(next);
+                    if (next <= 0) badge.style.display = 'none';
+                }
+                window.location.href = href;
+            });
         });
     </script>
 

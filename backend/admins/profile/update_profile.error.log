@@ -33,3 +33,5 @@ LINE 6: ...'Jovaniegggggggggggggggg', 'Felamingggggggggggg', '222222222...
 [13-Oct-2025 20:52:33 Europe/Berlin] [PROFILE/REQUEST INSERT or UPLOAD] SQLSTATE[42703]: Undefined column: 7 ERROR:  column "request_id" does not exist
 LINE 8:       RETURNING request_id
                         ^
+[19-Nov-2025 01:25:04 Europe/Berlin] [PROFILE/IMAGE UPLOAD] Invalid image type.
+[19-Nov-2025 01:25:08 Europe/Berlin] [PROFILE/IMAGE UPLOAD] Invalid image type.

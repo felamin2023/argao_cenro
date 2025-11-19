@@ -349,6 +349,12 @@ try {
         $afVals[] = ':contained_area';
     }
 
+    // NEW: include species_rows_json if column exists
+    if (column_exists($pdo, 'public', 'application_form', 'species_rows_json')) {
+        $afCols[] = 'species_rows_json';
+        $afVals[] = ':species_json';
+    }
+
     $sql = "INSERT INTO public.application_form (" . implode(',', $afCols) . ")
             VALUES (" . implode(',', $afVals) . ")
             RETURNING application_id";
@@ -369,6 +375,7 @@ try {
         ':tax_declaration' => $tax_declaration ?: null,
         ':lot_no'          => $lot_no ?: null,
         ':contained_area'  => $contained_area ?: null,
+        ':species_json'    => $species_json ?: null, // structured species rows JSON
     ]);
     $application_id = $af->fetchColumn();
     if (!$application_id) throw new Exception('Failed to create application form.');

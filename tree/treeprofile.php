@@ -57,7 +57,13 @@ if (!function_exists('time_elapsed_string')) {
     {
         if (!$datetime) return '';
         $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        // Parse DB timestamps as UTC then convert to Asia/Manila
+        try {
+            $ago = new DateTime($datetime, new DateTimeZone('UTC'));
+            $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        } catch (Exception $e) {
+            $ago = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+        }
         $diff = $now->diff($ago);
         $weeks = (int)floor($diff->d / 7);
         $days  = $diff->d % 7;
@@ -73,47 +79,39 @@ if (!function_exists('time_elapsed_string')) {
 }
 
 // Fetch notifications and incidents for header (tree cutting)
-$combined = [];
+$treeNotifs = [];
 $unreadTree = 0;
+
 try {
-    $notifRows = $pdo->query("SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to, a.approval_id, COALESCE(NULLIF(btrim(a.permit_type), ''), 'none') AS permit_type, COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status, LOWER(COALESCE(a.request_type,'')) AS request_type, c.first_name AS client_first, c.last_name AS client_last FROM public.notifications n LEFT JOIN public.approval a ON a.approval_id = n.approval_id LEFT JOIN public.client c ON c.client_id = a.client_id WHERE LOWER(COALESCE(n.\"to\", '')) = 'tree cutting' ORDER BY n.is_read ASC, n.created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    // Fetch notifications addressed to 'Tree Cutting' only from the notifications table.
+    // Include any linked ids that may be present on the notification row so we can route appropriately.
+    $notifRows = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               n.incident_id, n.reqpro_id,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name  AS client_first, c.last_name AS client_last
+        FROM public.notifications n
+        LEFT JOIN public.approval a ON a.approval_id = n.approval_id
+        LEFT JOIN public.client   c ON c.client_id = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", '')) = 'tree cutting'
+        ORDER BY n.is_read ASC, n.created_at DESC
+        LIMIT 100
+    ");
+    $treeNotifs = $notifRows ? $notifRows->fetchAll(PDO::FETCH_ASSOC) : [];
 
-    $incRows = $pdo->query("SELECT incident_id, COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text, status, is_read, created_at FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' ORDER BY created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-    $unreadPermits = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications WHERE LOWER(COALESCE(\"to\", ''))='tree cutting' AND is_read=false")->fetchColumn();
-    $unreadIncidents = (int)$pdo->query("SELECT COUNT(*) FROM public.incident_report WHERE LOWER(COALESCE(category,''))='tree cutting' AND is_read=false")->fetchColumn();
-    $unreadTree = $unreadPermits + $unreadIncidents;
-
-    foreach ($notifRows as $nf) {
-        $combined[] = [
-            'id' => $nf['notif_id'],
-            'type' => 'permit',
-            'message' => trim((string)$nf['message'] ?: (($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '') . ' submitted a request.')),
-            'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-            'created_at' => $nf['created_at'] ?? null,
-            'raw' => $nf
-        ];
-    }
-    foreach ($incRows as $ir) {
-        $combined[] = [
-            'id' => $ir['incident_id'],
-            'type' => 'incident',
-            'message' => trim((string)$ir['body_text']),
-            'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
-            'created_at' => $ir['created_at'] ?? null,
-            'raw' => $ir
-        ];
-    }
-    usort($combined, function ($a, $b) {
-        $ta = $a['created_at'] ?? '';
-        $tb = $b['created_at'] ?? '';
-        return strcmp($tb, $ta);
-    });
+    // Unread count calculated only from notifications table (do not query incident_report table here).
+    $unreadTree = (int)$pdo->query("SELECT COUNT(*) FROM public.notifications n WHERE LOWER(COALESCE(n.\"to\", ''))='tree cutting' AND n.is_read=false")->fetchColumn();
 } catch (Throwable $e) {
-    error_log('[TREE PROFILE NOTIFS] ' . $e->getMessage());
-    $combined = [];
+    error_log('[TREE HEADER NOTIFS] ' . $e->getMessage());
+    $treeNotifs = [];
     $unreadTree = 0;
 }
+
+// Used by the profile icon "active" state
+$current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -183,6 +181,146 @@ try {
             border-color: red !important;
             outline-color: red !important;
         }
+
+        /* Notification / dropdown styles (copy into your CSS or inline <style>) */
+        .dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: #fff;
+            min-width: 300px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s ease;
+            padding: 0;
+        }
+
+        .notifications-dropdown {
+            min-width: 350px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .notification-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .notification-header h3 {
+            margin: 0;
+            color: #2b6625;
+            font-size: 1.2rem;
+        }
+
+        .mark-all-read {
+            color: #2b6625;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-decoration: none;
+        }
+
+        .notification-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .notification-item.unread {
+            background-color: rgba(43, 102, 37, 0.05);
+        }
+
+        .notification-icon {
+            margin-right: 15px;
+            color: #2b6625;
+            font-size: 1.2rem;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #2b6625;
+        }
+
+        .notification-message {
+            color: #2b6625;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .notification-time {
+            color: #999;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .notification-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+
+        .view-all {
+            color: #2b6625;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            padding: 5px 0;
+        }
+
+        .notification-link {
+            display: flex;
+            align-items: flex-start;
+            text-decoration: none;
+            color: inherit;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            transition: all 0.2s ease;
+        }
+
+        .badge {
+            position: absolute;
+            top: 2px;
+            right: 8px;
+            background: #ff4757;
+            color: white;
+            border-radius: 50%;
+            width: 14px;
+            height: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
     </style>
 </head>
 
@@ -223,52 +361,93 @@ try {
 
 
             <!-- Notifications -->
-            <div class="nav-item dropdown" id="notifDropdown" style="position:relative;">
+            <div class="nav-item dropdown" data-dropdown id="notifDropdown" style="position:relative;">
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false" style="position:relative;">
                     <i class="fas fa-bell"></i>
                     <span class="badge"><?= (int)$unreadTree ?></span>
                 </div>
                 <div class="dropdown-menu notifications-dropdown">
                     <div class="notification-header">
-                        <h3>Notifications</h3>
+                        <h3 style="margin:0;">Notifications</h3>
                         <a href="#" class="mark-all-read" id="markAllRead">Mark all as read</a>
                     </div>
-                    <div class="notification-list" id="notifDropdownList">
-                        <?php if (empty($combined)): ?>
+                    <div class="notification-list" id="treeNotifList">
+                        <?php
+                        $combined = [];
+
+                        // Build combined list from notifications table only.
+                        foreach ($treeNotifs as $nf) {
+                            $is_read = ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1');
+                            $message = trim((string)$nf['message']);
+                            if ($message === '') {
+                                $message = (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' submitted a request.');
+                            }
+
+                            // Determine destination based on which id is present on the notification row.
+                            $type = 'generic';
+                            $link = 'treenotification.php';
+                            $metaId = null;
+                            if (!empty($nf['approval_id'])) {
+                                $type = 'permit';
+                                $metaId = $nf['approval_id'];
+                                $link = 'requestpermits.php?approval_id=' . urlencode((string)$nf['approval_id']);
+                            } elseif (!empty($nf['incident_id'])) {
+                                $type = 'incident';
+                                $metaId = $nf['incident_id'];
+                                $link = 'reportaccident.php?focus=' . urlencode((string)$nf['incident_id']);
+                            } elseif (!empty($nf['reqpro_id'])) {
+                                $type = 'profile';
+                                $metaId = $nf['reqpro_id'];
+                                $link = 'treeprofile.php?reqpro_id=' . urlencode((string)$nf['reqpro_id']);
+                            }
+
+                            $combined[] = [
+                                'id' => $nf['notif_id'],
+                                'is_read' => $is_read,
+                                'type' => $type,
+                                'message' => $message,
+                                'ago' => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link' => $link,
+                                'created_at' => $nf['created_at'] ?? null,
+                                'meta_id' => $metaId,
+                            ];
+                        }
+
+                        if (empty($combined)): ?>
                             <div class="notification-item">
                                 <div class="notification-content">
-                                    <div class="notification-title">No notifications</div>
-                                    <div class="notification-message">You're all caught up.</div>
+                                    <div class="notification-title">No tree cutting notifications</div>
                                 </div>
                             </div>
                             <?php else:
-                            $count = 0;
-                            foreach ($combined as $nf):
-                                if ($count++ >= 8) break;
-                                $isUnread = empty($nf['is_read']) ? true : false;
-                                $icon = $nf['type'] === 'incident' ? 'fa-exclamation-triangle' : 'fa-bell';
-                                $href = '#';
-                                if ($nf['type'] === 'incident') {
-                                    $href = 'treeeach.php?id=' . urlencode((string)$nf['id']);
-                                } elseif (!empty($nf['raw']['approval_id'])) {
-                                    $href = 'requestpermits.php?approval_id=' . urlencode((string)$nf['raw']['approval_id']);
-                                } else {
-                                    $href = 'requestpermits.php';
-                                }
+                            // Sort newest-first using created_at if available
+                            usort($combined, function ($a, $b) {
+                                $ta = $a['created_at'] ? strtotime($a['created_at']) : 0;
+                                $tb = $b['created_at'] ? strtotime($b['created_at']) : 0;
+                                return $tb <=> $ta;
+                            });
+                            foreach ($combined as $item):
+                                $title = $item['type'] === 'permit' ? 'Permit request' : ($item['type'] === 'incident' ? 'Incident report' : ($item['type'] === 'profile' ? 'Profile' : 'Notification'));
+                                $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
-                                <div class="notification-item <?= $isUnread ? 'unread' : '' ?>" data-notif-id="<?= h((string)($nf['raw']['notif_id'] ?? '')) ?>" data-incident-id="<?= h((string)($nf['raw']['incident_id'] ?? ($nf['type'] === 'incident' ? $nf['id'] : ''))) ?>">
-                                    <a href="<?= h($href) ?>" class="notification-link">
-                                        <div class="notification-icon"><i class="fas <?= $icon ?>"></i></div>
+                                <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
+                                    data-notif-id="<?= h($item['id']) ?>"
+                                    data-approval-id="<?= $item['type'] === 'permit' ? h($item['meta_id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['meta_id']) : '' ?>"
+                                    data-reqpro-id="<?= $item['type'] === 'profile' ? h($item['meta_id']) : '' ?>">
+                                    <a href="<?= h($item['link']) ?>" class="notification-link">
+                                        <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
-                                            <div class="notification-title"><?= h(substr((string)$nf['message'], 0, 120)) ?></div>
-                                            <div class="notification-message"><?= h(substr((string)$nf['message'], 0, 240)) ?></div>
-                                            <div class="notification-time"><?= h(time_elapsed_string($nf['created_at'] ?? null)) ?></div>
+                                            <div class="notification-title"><?= h($title) ?></div>
+                                            <div class="notification-message"><?= h($item['message']) ?></div>
+                                            <div class="notification-time"><?= h($item['ago']) ?></div>
                                         </div>
                                     </a>
                                 </div>
                         <?php endforeach;
                         endif; ?>
                     </div>
+
                     <div class="notification-footer"><a href="treenotification.php" class="view-all">View All Notifications</a></div>
                 </div>
             </div>

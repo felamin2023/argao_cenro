@@ -390,6 +390,148 @@ function supa_delete_object(string $bucket, string $path): void
     }
 }
 
+function regenerate_chainsaw_application_form(PDO $pdo, string $clientId, string $applicationId, string $requirementId, string $permitType, string $oldUrl): ?string
+{
+    $clientId = trim($clientId);
+    $applicationId = trim($applicationId);
+    $requirementId = trim($requirementId);
+    $permitType = strtolower(trim($permitType));
+    if ($clientId === '' || $applicationId === '' || $requirementId === '') return null;
+
+    // Fetch client
+    $clientStmt = $pdo->prepare('SELECT client_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, city, signature FROM public.client WHERE client_id = :cid LIMIT 1');
+    $clientStmt->execute([':cid' => $clientId]);
+    $client = $clientStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$client) throw new Exception('Client data missing for regenerated chainsaw application doc.');
+
+    // Fetch application form
+    $appStmt = $pdo->prepare('SELECT * FROM public.application_form WHERE application_id = :id LIMIT 1');
+    $appStmt->execute([':id' => $applicationId]);
+    $app = $appStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$app) throw new Exception('Application form data missing for regenerated chainsaw document.');
+    $app = array_change_key_case($app, CASE_LOWER);
+
+    // Build name and address
+    $first = trim((string)($app['first_name'] ?? $client['first_name'] ?? ''));
+    $middle = trim((string)($app['middle_name'] ?? $client['middle_name'] ?? ''));
+    $last = trim((string)($app['last_name'] ?? $client['last_name'] ?? ''));
+    $fullName = trim(preg_replace('/\s+/', ' ', ($first . ' ' . $middle . ' ' . $last)));
+
+    $sitio = letter_escape($app['sitio_street'] ?? $client['sitio_street'] ?? '');
+    $barangay = letter_escape($app['barangay'] ?? $client['barangay'] ?? '');
+    $municipality = letter_escape($app['municipality'] ?? $client['municipality'] ?? '');
+    $province = letter_escape($app['province'] ?? $client['city'] ?? $app['province'] ?? '');
+    $addrParts = array_filter([$app['present_address'] ?? '', $sitio, $barangay, $municipality, $province]);
+    $addressLine = letter_escape(implode(', ', $addrParts));
+
+    $contact = letter_escape($app['contact_number'] ?? $client['contact_number'] ?? '');
+
+    // Chainsaw-specific fields
+    $permitNo = letter_escape($app['permit_number'] ?? $app['previous_permit_number'] ?? '');
+    $issuance = letter_escape($app['issuance_date'] ?? $app['date_issued'] ?? '');
+    $expiry = letter_escape($app['expiry_date'] ?? $app['expires_on'] ?? '');
+    $purpose = letter_escape($app['purpose'] ?? '');
+    $brand = letter_escape($app['brand'] ?? '');
+    $model = letter_escape($app['model'] ?? '');
+    $dateAcq = letter_escape($app['date_of_acquisition'] ?? $app['acquisition_date'] ?? '');
+    $serial = letter_escape($app['serial_number'] ?? '');
+    $hp = letter_escape($app['horsepower'] ?? '');
+    $bar = letter_escape($app['maximum_length_of_guide_bar'] ?? $app['guide_bar_length'] ?? '');
+
+    // Signature
+    $sigValue = trim((string)($app['signature_of_applicant'] ?? $client['signature'] ?? ''));
+    $sigBase64 = signature_base64_from_value($sigValue);
+
+    // Build doc HTML similar to client-side template
+    $titleLine = $permitType === 'renewal' ? 'Application for Renewal of Chainsaw Permit' : 'Application for New Chainsaw Permit';
+    // Use CID reference so embedded image in MHTML is displayed by Word/Outlook
+    $signatureBlock = $sigBase64 ? '<div style="margin-top:28px;"><img src="cid:sigimg" width="300" height="110" style="display:block;border:1px solid #ddd;padding:4px;border-radius:4px;" alt="Signature"/><p style="margin-top:6px;">Signature of Applicant</p></div>' : '<div style="margin-top:40px;"><div style="border-top:1px solid #000;width:50%;padding-top:3pt;"></div><p>Signature of Applicant</p></div>';
+
+    $docHTML = '<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><title>Chainsaw Registration Form</title></head><body>';
+    $docHTML .= '<div style="text-align:center"><p><b>Republic of the Philippines</b></p><p><b>Department of Environment and Natural Resources</b></p><p>Community Environment and Natural Resources Office (CENRO)</p><p>Argao, Cebu</p></div>';
+    $docHTML .= '<h3 style="text-align:center;">' . $titleLine . '</h3>';
+    $docHTML .= '<p><b>I. APPLICANT INFORMATION</b></p>';
+    $docHTML .= '<p>Name: <u>' . letter_escape($fullName) . '</u></p>';
+    $docHTML .= '<p>Address: <u>' . $addressLine . '</u></p>';
+    $docHTML .= '<p>Contact Number: <u>' . $contact . '</u></p>';
+    if ($permitType === 'renewal') {
+        $docHTML .= '<p><b>II. EXISTING CHAINSAW PERMIT INFORMATION</b></p>';
+        $docHTML .= '<p>Permit Number: <u>' . $permitNo . '</u></p>';
+        $docHTML .= '<p>Date of Original Issuance: <u>' . $issuance . '</u></p>';
+        $docHTML .= '<p>Expiry Date: <u>' . $expiry . '</u></p>';
+    }
+    $docHTML .= '<p><b>' . ($permitType === 'renewal' ? 'III' : 'II') . '. CHAINSAW INFORMATION AND DESCRIPTION</b></p>';
+    $docHTML .= '<p>Purpose of Use: <u>' . $purpose . '</u></p>';
+    $docHTML .= '<p>Brand: <u>' . $brand . '</u></p>';
+    $docHTML .= '<p>Model: <u>' . $model . '</u></p>';
+    $docHTML .= '<p>Date of Acquisition: <u>' . $dateAcq . '</u></p>';
+    $docHTML .= '<p>Serial Number: <u>' . $serial . '</u></p>';
+    $docHTML .= '<p>Horsepower: <u>' . $hp . '</u></p>';
+    $docHTML .= '<p>Maximum Length of Guide Bar: <u>' . $bar . '</u></p>';
+    $docHTML .= '<p><b>' . ($permitType === 'renewal' ? 'IV' : 'III') . '. DECLARATION AND SUBMISSION</b></p>';
+    $docHTML .= $signatureBlock;
+    $docHTML .= '</body></html>';
+
+    // Build MHTML
+    $boundary = '----=_NextPart_' . bin2hex(random_bytes(8));
+    $mhtml = "MIME-Version: 1.0\r\n";
+    $mhtml .= "Content-Type: multipart/related; boundary=\"$boundary\"; type=\"text/html\"\r\n\r\n";
+    $mhtml .= "--$boundary\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\nContent-Location: file:///index.html\r\n\r\n" . $docHTML . "\r\n\r\n";
+    $mhtml .= "--$boundary\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <sigimg>\r\nContent-Location: file:///signature.png\r\n\r\n";
+    if ($sigBase64) {
+        $mhtml .= chunk_split($sigBase64, 76, "\r\n");
+    } else {
+        $mhtml .= chunk_split('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 76, "\r\n");
+    }
+    $mhtml .= "\r\n--$boundary--";
+
+    // Upload using chainsaw prefix similar to save_chainsaw.php
+    $bucket = bucket_name();
+    $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
+    $permitFolder = ($permitType === 'renewal') ? 'renewal permit' : 'new permit';
+    $prefix = "chainsaw/{$permitFolder}/{$clientId}/{$run}/";
+
+    $sanLast = preg_replace('/[^A-Za-z0-9]+/', '_', ($client['last_name'] ?? '') ?: 'Applicant');
+    $shortId = substr($clientId, 0, 8);
+    $ymd = date('Ymd');
+    $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
+    $newUrl = '';
+    $attempt = 0;
+    while (true) {
+        $fname = ($permitType === 'renewal' ? 'Chainsaw_Renewal' : 'Chainsaw_New') . "_{$sanLast}_{$ymd}_{$shortId}_{$uniq}.doc";
+        $objectPath = $prefix . $fname;
+        try {
+            $newUrl = supa_upload_binary($bucket, $objectPath, 'application/msword', $mhtml);
+            break;
+        } catch (Throwable $uploadErr) {
+            $attempt++;
+            if ($attempt >= 3 || strpos($uploadErr->getMessage(), '(409)') === false) {
+                throw $uploadErr;
+            }
+            $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
+        }
+    }
+
+    // Update DB
+    $updateReq = $pdo->prepare('UPDATE public.requirements SET application_form = :file WHERE requirement_id = :id');
+    $updateReq->execute([':file' => $newUrl, ':id' => $requirementId]);
+
+    // Delete old file if different
+    if ($oldUrl !== '') {
+        $oldInfo = parse_storage_reference($oldUrl);
+        $newInfo = parse_storage_reference($newUrl);
+        if ($oldInfo && (!$newInfo || $oldInfo['bucket'] !== $newInfo['bucket'] || $oldInfo['path'] !== $newInfo['path'])) {
+            try {
+                supa_delete_object($oldInfo['bucket'], $oldInfo['path']);
+            } catch (Throwable $deleteErr) {
+                error_log('[UPDATE APPLICATION] failed to delete old chainsaw application_form object: ' . $deleteErr->getMessage());
+            }
+        }
+    }
+
+    return $newUrl;
+}
+
 function fetch_storage_object_base64(string $bucket, string $path): string
 {
     $encoded = encode_path_segments($path);
@@ -917,7 +1059,7 @@ function regenerate_treecut_application_form(PDO $pdo, string $clientId, string 
     $contAr = letter_escape($app['contained_area'] ?? '');
     $ownership = letter_escape($app['ownership'] ?? '');
 
-    // species rows stored as JSON in application form
+    // species rows stored as JSON in application form or additional_information
     $species = [];
     if (!empty($app['species_rows_json'])) {
         $decoded = json_decode((string)$app['species_rows_json'], true);
@@ -929,6 +1071,24 @@ function regenerate_treecut_application_form(PDO $pdo, string $clientId, string 
                     'count' => letter_escape(trim((string)($entry['count'] ?? ''))),
                     'volume' => letter_escape(trim((string)($entry['volume'] ?? ''))),
                 ];
+            }
+        }
+    }
+
+    // If not found in dedicated column, try to get from additional_information JSON blob
+    if (empty($species) && !empty($app['additional_information'])) {
+        $additionalInfo = json_decode((string)$app['additional_information'], true);
+        if (is_array($additionalInfo) && isset($additionalInfo['species_rows'])) {
+            $speciesRaws = $additionalInfo['species_rows'];
+            if (is_array($speciesRaws)) {
+                foreach ($speciesRaws as $entry) {
+                    if (!is_array($entry)) continue;
+                    $species[] = [
+                        'name' => letter_escape(trim((string)($entry['name'] ?? ''))),
+                        'count' => letter_escape(trim((string)($entry['count'] ?? ''))),
+                        'volume' => letter_escape(trim((string)($entry['volume'] ?? ''))),
+                    ];
+                }
             }
         }
     }
@@ -1051,13 +1211,218 @@ function regenerate_treecut_application_form(PDO $pdo, string $clientId, string 
     }
 }
 
-function regenerate_wood_application_form(PDO $pdo, string $clientId, string $applicationId, string $requirementId, string $permitType, string $oldUrl): void
+function buildNewDocHTMLWood(array $F, string $machineryRowsHTML, string $supplyRowsHTML, string $sigBlock): string
+{
+    $applicantName = letter_escape($F['applicantName'] ?? '');
+    $businessAddress = letter_escape($F['businessAddress'] ?? '');
+    $plantLocation = letter_escape($F['plantLocation'] ?? '');
+    $contactNumber = letter_escape($F['contactNumber'] ?? '');
+    $emailAddress = letter_escape($F['emailAddress'] ?? '');
+    $ownershipType = letter_escape($F['ownershipType'] ?? '');
+    $plantType = letter_escape($F['plantType'] ?? '');
+    $dailyCapacity = letter_escape($F['dailyCapacity'] ?? '');
+    $powerSource = letter_escape($F['powerSource'] ?? '');
+    $declarationName = letter_escape($F['declarationName'] ?? $applicantName);
+    $declarationAddress = letter_escape($F['declarationAddress'] ?? '');
+
+    return <<<HTML
+<html xmlns:o="urn:schemas-microsoft-com:office:office" 
+      xmlns:w="urn:schemas-microsoft-com:office:word" 
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<title>Wood Processing Plant Permit Application</title>
+<style>
+  body, div, p { line-height: 1.8; font-family: Arial; font-size: 11pt; margin: 0; padding: 0; }
+  .section-title { font-weight: normal; margin: 15pt 0 6pt 0; }
+  .info-line { margin: 12pt 0; }
+  .underline { display: inline-block; min-width: 300px; border-bottom: 1px solid #000; padding: 0 5px; margin: 0 5px; }
+  .bold { font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin: 12pt 0; }
+  table, th, td { border: 1px solid #000; }
+  th, td { padding: 8px; text-align: left; }
+  th { background-color: #f2f2f2; }
+  .signature-line { margin-top: 12pt; border-top: 1px solid #000; width: 50%; padding-top: 3pt; }
+</style>
+</head>
+<body>
+  <div style="text-align:center;">
+    <p class="bold">Republic of the Philippines</p>
+    <p class="bold">Department of Environment and Natural Resources</p>
+    <p>Community Environment and Natural Resources Office (CENRO)</p>
+    <p>Argao, Cebu</p>
+  </div>
+
+  <h3 style="text-align:center; margin-bottom: 20px;">Application for Wood Processing Plant Permit</h3>
+
+  <p class="section-title">I. GENERAL INFORMATION</p>
+  <p class="info-line">Name of Applicant / Company: <span class="underline">{$applicantName}</span></p>
+  <p class="info-line">Complete Business Address: <span class="underline">{$businessAddress}</span></p>
+  <p class="info-line">Plant Location (Barangay/Municipality/Province): <span class="underline">{$plantLocation}</span></p>
+  <p class="info-line">Contact Number(s): <span class="underline">{$contactNumber}</span> Email Address: <span class="underline">{$emailAddress}</span></p>
+  <p class="info-line">Type of Ownership: <span class="underline">{$ownershipType}</span></p>
+
+  <p class="section-title">II. PLANT DESCRIPTION AND OPERATION</p>
+  <p class="info-line">Kind of Wood Processing Plant: <span class="underline">{$plantType}</span></p>
+  <p class="info-line">Daily Rated Capacity (per 8-hour shift): <span class="underline">{$dailyCapacity}</span></p>
+
+  <p class="info-line">Machineries and Equipment to be Used (with specifications):</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type of Equipment/Machinery</th>
+        <th>Brand/Model</th>
+        <th>Horsepower/Capacity</th>
+        <th>Quantity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {$machineryRowsHTML}
+    </tbody>
+  </table>
+
+  <p class="info-line">Source of Power Supply: <span class="underline">{$powerSource}</span></p>
+
+  <p class="section-title">III. SUPPLY CONTRACTS AND RAW MATERIAL REQUIREMENTS</p>
+  <p class="info-line">The applicant has Log/Lumber Supply Contracts for a minimum period of five (5) years.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Supplier Name</th>
+        <th>Species</th>
+        <th>Contracted Vol.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {$supplyRowsHTML}
+    </tbody>
+  </table>
+
+  <p class="section-title">IV. DECLARATION AND SIGNATURE</p>
+  <div class="declaration">
+    <p>I, <span class="underline">{$declarationName}</span>, of legal age, a citizen of the Philippines, with residence at <span class="underline">{$declarationAddress}</span>, do hereby certify that the foregoing information and documents are true and correct to the best of my knowledge.</p>
+    <p>I further understand that any false statement or misrepresentation shall be ground for denial, cancellation, or revocation of the permit, without prejudice to legal actions that may be filed against me.</p>
+    <div style="margin-top: 16px;">
+      {$sigBlock}
+      <div class="signature-line"></div>
+      <p>Signature of Applicant</p>
+    </div>
+  </div>
+</body>
+</html>
+HTML;
+}
+
+function buildRenewalDocHTMLWood(array $F, string $machineryRowsHTML, string $supplyRowsHTML, string $sigBlock): string
+{
+    $applicantName = letter_escape($F['applicantName'] ?? '');
+    $address = letter_escape($F['address'] ?? '');
+    $plantLocation = letter_escape($F['plantLocation'] ?? '');
+    $contactNumber = letter_escape($F['contactNumber'] ?? '');
+    $emailAddress = letter_escape($F['emailAddress'] ?? '');
+    $ownershipType = letter_escape($F['ownershipType'] ?? '');
+    $previousPermit = letter_escape($F['previousPermit'] ?? '');
+    $expiryDate = letter_escape($F['expiryDate'] ?? '');
+    $plantType = letter_escape($F['plantType'] ?? '');
+    $dailyCapacity = letter_escape($F['dailyCapacity'] ?? '');
+    $powerSource = letter_escape($F['powerSource'] ?? '');
+    $declarationName = letter_escape($F['declarationName'] ?? $applicantName);
+
+    return <<<HTML
+<html xmlns:o="urn:schemas-microsoft-com:office:office" 
+      xmlns:w="urn:schemas-microsoft-com:office:word" 
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<title>Renewal of Wood Processing Plant Permit Application</title>
+<style>
+  body, div, p { line-height: 1.8; font-family: Arial; font-size: 11pt; margin: 0; padding: 0; }
+  .section-title { font-weight: normal; margin: 15pt 0 6pt 0; }
+  .info-line { margin: 12pt 0; }
+  .underline { display: inline-block; min-width: 300px; border-bottom: 1px solid #000; padding: 0 5px; margin: 0 5px; }
+  .bold { font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin: 12pt 0; }
+  table, th, td { border: 1px solid #000; }
+  th, td { padding: 8px; text-align: left; }
+  th { background-color: #f2f2f2; }
+  .signature-line { margin-top: 12pt; border-top: 1px solid #000; width: 50%; padding-top: 3pt; }
+</style>
+</head>
+<body>
+  <div style="text-align:center;">
+    <p class="bold">Republic of the Philippines</p>
+    <p class="bold">Department of Environment and Natural Resources</p>
+    <p>Community Environment and Natural Resources Office (CENRO)</p>
+    <p>Argao, Cebu</p>
+  </div>
+
+  <h3 style="text-align: center; margin-bottom: 20px;">Application for Renewal of Wood Processing Plant Permit</h3>
+
+  <p class="section-title">I. GENERAL INFORMATION</p>
+  <p class="info-line">Name of Applicant / Company: <span class="underline">{$applicantName}</span></p>
+  <p class="info-line">Address: <span class="underline">{$address}</span></p>
+  <p class="info-line">Plant Location: <span class="underline">{$plantLocation}</span></p>
+  <p class="info-line">Contact Number: <span class="underline">{$contactNumber}</span> Email: <span class="underline">{$emailAddress}</span></p>
+  <p class="info-line">Type of Ownership: <span class="underline">{$ownershipType}</span></p>
+  <p class="info-line">Previous Permit No.: <span class="underline">{$previousPermit}</span> Expiry Date: <span class="underline">{$expiryDate}</span></p>
+
+  <p class="section-title">II. PLANT DESCRIPTION AND OPERATION</p>
+  <p class="info-line">Kind of Wood Processing Plant: <span class="underline">{$plantType}</span></p>
+  <p class="info-line">Daily Rated Capacity (per 8-hour shift): <span class="underline">{$dailyCapacity}</span></p>
+
+  <p class="info-line">Machineries and Equipment to be Used (with specifications):</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type of Equipment/Machinery</th>
+        <th>Brand/Model</th>
+        <th>Horsepower/Capacity</th>
+        <th>Quantity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {$machineryRowsHTML}
+    </tbody>
+  </table>
+
+  <p class="info-line">Source of Power Supply: <span class="underline">{$powerSource}</span></p>
+
+  <p class="section-title">III. SUPPLY CONTRACTS AND RAW MATERIAL REQUIREMENTS</p>
+  <p class="info-line">The applicant has Log/Lumber Supply Contracts for a minimum period of five (5) years.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Supplier Name</th>
+        <th>Species</th>
+        <th>Contracted Vol.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {$supplyRowsHTML}
+    </tbody>
+  </table>
+
+  <p class="section-title">IV. DECLARATION</p>
+  <div class="declaration">
+    <p>I, <span class="underline">{$declarationName}</span>, hereby certify that the above information is true and correct, and all requirements for renewal are submitted.</p>
+    <div style="margin-top: 16px;">
+      {$sigBlock}
+      <div class="signature-line"></div>
+      <p>Signature of Applicant</p>
+    </div>
+  </div>
+</body>
+</html>
+HTML;
+}
+
+function regenerate_wood_application_form(PDO $pdo, string $clientId, string $applicationId, string $requirementId, string $permitType, string $oldUrl): ?string
 {
     $clientId = trim($clientId);
     $applicationId = trim($applicationId);
     $requirementId = trim($requirementId);
     $permitType = strtolower(trim($permitType));
-    if ($clientId === '' || $applicationId === '' || $requirementId === '') return;
+    if ($clientId === '' || $applicationId === '' || $requirementId === '') return null;
 
     // Fetch client
     $clientStmt = $pdo->prepare('SELECT client_id, first_name, middle_name, last_name, sitio_street, barangay, municipality, city, signature FROM public.client WHERE client_id = :cid LIMIT 1');
@@ -1072,94 +1437,99 @@ function regenerate_wood_application_form(PDO $pdo, string $clientId, string $ap
     if (!$app) throw new Exception('Application form data missing for regenerated wood document.');
     $app = array_change_key_case($app, CASE_LOWER);
 
-    // Prepare fields
-    $fullName = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
-    $F = [
-        'first_name' => $client['first_name'] ?? '',
-        'middle_name' => $client['middle_name'] ?? '',
-        'last_name' => $client['last_name'] ?? '',
-        'businessAddress' => $app['present_address'] ?? $app['legitimate_business_address'] ?? '',
-        'plantLocation' => $app['plant_location'] ?? '',
-        'contactNumber' => $app['contact_number'] ?? '',
-        'emailAddress' => $app['email_address'] ?? '',
-        'ownershipType' => $app['form_of_ownership'] ?? '',
-        'dailyCapacity' => $app['daily_rated_capacity_per8_hour_shift'] ?? '',
-    ];
-
-    // Parse machinery and suppliers
-    $machinery = [];
+    // Prepare machinery rows HTML
+    $machineryRowsHTML = '<tr><td colspan="4"></td></tr>';
     if (!empty($app['machineries_and_equipment_to_be_used_with_specifications'])) {
         $decoded = json_decode($app['machineries_and_equipment_to_be_used_with_specifications'], true);
-        if (is_array($decoded)) {
+        if (is_array($decoded) && count($decoded) > 0) {
+            $machineryRowsHTML = '';
             foreach ($decoded as $m) {
                 if (is_array($m)) {
-                    $machinery[] = [
-                        'type' => $m['type'] ?? ($m['name'] ?? ''),
-                        'brand' => $m['brand'] ?? ($m['model'] ?? ''),
-                        'power' => $m['power'] ?? ($m['capacity'] ?? ''),
-                        'qty' => $m['qty'] ?? ($m['quantity'] ?? ''),
-                    ];
+                    $type = letter_escape($m['type'] ?? ($m['name'] ?? ''));
+                    $brand = letter_escape($m['brand'] ?? ($m['model'] ?? ''));
+                    $power = letter_escape($m['power'] ?? ($m['capacity'] ?? ''));
+                    $qty = letter_escape($m['qty'] ?? ($m['quantity'] ?? ''));
+                    $machineryRowsHTML .= "<tr><td>{$type}</td><td>{$brand}</td><td>{$power}</td><td>{$qty}</td></tr>";
                 }
             }
         }
     }
 
-    $suppliers = [];
+    // Prepare supply rows HTML
+    $supplyRowsHTML = '<tr><td colspan="3"></td></tr>';
     if (!empty($app['suppliers_json'])) {
         $decoded = json_decode($app['suppliers_json'], true);
-        if (is_array($decoded)) {
+        if (is_array($decoded) && count($decoded) > 0) {
+            $supplyRowsHTML = '';
             foreach ($decoded as $s) {
                 if (is_array($s)) {
-                    $suppliers[] = [
-                        'supplier' => $s['supplier'] ?? $s['name'] ?? '',
-                        'species' => $s['species'] ?? '',
-                        'volume' => $s['volume'] ?? ($s['contracted_vol'] ?? ''),
-                    ];
+                    $supplier = letter_escape($s['supplier'] ?? ($s['name'] ?? ''));
+                    $species = letter_escape($s['species'] ?? '');
+                    $volume = letter_escape($s['volume'] ?? ($s['contracted_vol'] ?? ''));
+                    $supplyRowsHTML .= "<tr><td>{$supplier}</td><td>{$species}</td><td>{$volume}</td></tr>";
                 }
             }
         }
     }
 
-    // Signature
+    // Extract additional_information JSON if present
+    $additionalInfo = [];
+    if (!empty($app['additional_information'])) {
+        $decoded = json_decode($app['additional_information'], true);
+        if (is_array($decoded)) $additionalInfo = $decoded;
+    }
+
+    // Prepare fields array
+    $F = [];
+    if ($permitType === 'renewal') {
+        $F = [
+            'applicantName' => letter_escape(trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''))),
+            'address' => letter_escape($app['present_address'] ?? ''),
+            'plantLocation' => letter_escape($app['plant_location'] ?? ''),
+            'contactNumber' => letter_escape($app['contact_number'] ?? ''),
+            'emailAddress' => letter_escape($app['email_address'] ?? ''),
+            'ownershipType' => letter_escape($app['form_of_ownership'] ?? ''),
+            'previousPermit' => letter_escape($app['previous_certificate_of_registration_no'] ?? $app['previous_permit_no'] ?? ''),
+            'expiryDate' => letter_escape($app['expiry_date'] ?? $app['expires_on'] ?? ''),
+            'plantType' => letter_escape($app['kind_of_wood_processing_plant'] ?? ''),
+            'dailyCapacity' => letter_escape($app['daily_rated_capacity_per8_hour_shift'] ?? ''),
+            'powerSource' => letter_escape($app['source_of_power_supply'] ?? $additionalInfo['power_source'] ?? ''),
+            'declarationName' => letter_escape($app['declaration_name_renewal'] ?? $additionalInfo['declaration_name'] ?? $app['declaration_name'] ?? trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''))),
+        ];
+    } else {
+        // New permit
+        $F = [
+            'applicantName' => letter_escape(trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''))),
+            'businessAddress' => letter_escape($app['present_address'] ?? $app['legitimate_business_address'] ?? ''),
+            'plantLocation' => letter_escape($app['plant_location'] ?? ''),
+            'contactNumber' => letter_escape($app['contact_number'] ?? ''),
+            'emailAddress' => letter_escape($app['email_address'] ?? ''),
+            'ownershipType' => letter_escape($app['form_of_ownership'] ?? ''),
+            'plantType' => letter_escape($app['kind_of_wood_processing_plant'] ?? ''),
+            'dailyCapacity' => letter_escape($app['daily_rated_capacity_per8_hour_shift'] ?? ''),
+            'powerSource' => letter_escape($app['source_of_power_supply'] ?? $additionalInfo['power_source'] ?? ''),
+            'declarationName' => letter_escape($app['declaration_name_new'] ?? $additionalInfo['declaration_name'] ?? $app['declaration_name'] ?? trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''))),
+            'declarationAddress' => letter_escape($app['declaration_address'] ?? $additionalInfo['declaration_address'] ?? ''),
+        ];
+    }
+
+    // Signature handling
     $sigValue = trim((string)($app['signature_of_applicant'] ?? $client['signature'] ?? ''));
     $sigBase64 = signature_base64_from_value($sigValue);
 
-    // Build HTML document (simple template capturing required fields)
-    $docTitle = ($permitType === 'renewal') ? 'Renewal of Wood Processing Plant Permit Application' : 'Wood Processing Plant Permit Application';
-    $headerHtml = "<div class=\"header-container\"><h1 style=\"text-align:center\">" . letter_escape($docTitle) . "</h1></div>";
-
-    $machRowsHtml = '';
-    if ($machinery) {
-        $machRowsHtml .= '<table style="width:100%;border-collapse:collapse">';
-        $machRowsHtml .= '<thead><tr><th style="text-align:left">Type</th><th style="text-align:left">Brand/Model</th><th style="text-align:left">HP/Capacity</th><th style="text-align:left">Qty</th></tr></thead><tbody>';
-        foreach ($machinery as $m) {
-            $machRowsHtml .= '<tr>' .
-                '<td>' . letter_escape((string)($m['type'] ?? '')) . '</td>' .
-                '<td>' . letter_escape((string)($m['brand'] ?? '')) . '</td>' .
-                '<td>' . letter_escape((string)($m['power'] ?? '')) . '</td>' .
-                '<td>' . letter_escape((string)($m['qty'] ?? '')) . '</td>' .
-                '</tr>';
-        }
-        $machRowsHtml .= '</tbody></table>';
+    $sigBlock = '';
+    if ($sigBase64) {
+        $sigBlock = "<img src=\"data:image/png;base64,{$sigBase64}\" width=\"150\" height=\"60\" style=\"display:block;margin:8px 0 6px 0;border:1px solid #000;\" alt=\"Signature\">";
     }
 
-    $supRowsHtml = '';
-    if ($suppliers) {
-        $supRowsHtml .= '<table style="width:100%;border-collapse:collapse">';
-        $supRowsHtml .= '<thead><tr><th style="text-align:left">Supplier</th><th style="text-align:left">Species</th><th style="text-align:left">Contracted Vol</th></tr></thead><tbody>';
-        foreach ($suppliers as $s) {
-            $supRowsHtml .= '<tr>' .
-                '<td>' . letter_escape((string)($s['supplier'] ?? '')) . '</td>' .
-                '<td>' . letter_escape((string)($s['species'] ?? '')) . '</td>' .
-                '<td>' . letter_escape((string)($s['volume'] ?? '')) . '</td>' .
-                '</tr>';
-        }
-        $supRowsHtml .= '</tbody></table>';
+    // Build HTML document
+    if ($permitType === 'renewal') {
+        $docHTML = buildRenewalDocHTMLWood($F, $machineryRowsHTML, $supplyRowsHTML, $sigBlock);
+    } else {
+        $docHTML = buildNewDocHTMLWood($F, $machineryRowsHTML, $supplyRowsHTML, $sigBlock);
     }
 
-    $docHTML = "<html xmlns=\"urn:schemas-microsoft-com:office:office\" xmlns=\"urn:schemas-microsoft-com:office:word\" xmlns=\"http://www.w3.org/TR/REC-html40\">\n<head><meta charset=\"UTF-8\"><title>" . htmlspecialchars($docTitle, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</title></head>\n<body>\n" . $headerHtml . "\n<p><strong>Applicant:</strong> " . letter_escape($fullName) . "</p>\n<p><strong>Business Address:</strong> " . letter_escape($F['businessAddress']) . "</p>\n<p><strong>Plant Location:</strong> " . letter_escape($F['plantLocation']) . "</p>\n<p><strong>Contact Number:</strong> " . letter_escape($F['contactNumber']) . "</p>\n<p><strong>Email Address:</strong> " . letter_escape($F['emailAddress']) . "</p>\n<p><strong>Ownership Type:</strong> " . letter_escape($F['ownershipType']) . "</p>\n<p><strong>Daily Rated Capacity:</strong> " . letter_escape($F['dailyCapacity']) . "</p>\n<hr/>\n<h3>Machineries and Equipment</h3>\n" . $machRowsHtml . "\n<hr/>\n<h3>Supply Contracts / Raw Material Requirements</h3>\n" . $supRowsHtml . "\n</body>\n</html>";
-
-    // Create MHTML container similar to other generators
+    // Create MHTML container
     $boundary = '----=_NextPart_' . bin2hex(random_bytes(8));
     $mhtml = "MIME-Version: 1.0\r\n";
     $mhtml .= "Content-Type: multipart/related; boundary=\"$boundary\"; type=\"text/html\"\r\n\r\n";
@@ -1172,17 +1542,21 @@ function regenerate_wood_application_form(PDO $pdo, string $clientId, string $ap
     }
     $mhtml .= "\r\n--$boundary--";
 
-    // Upload to storage
+    // Upload to storage using the requested prefix structure: wood/{permitFolder}/{client_id}/{run}/
+    $bucket = bucket_name();
+    $run = date('Ymd_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
+    $permitFolder = ($permitType === 'renewal') ? 'renewal permit' : 'new permit';
+    $prefix = "wood/{$permitFolder}/{$clientId}/{$run}/";
+
     $sanLast = preg_replace('/[^A-Za-z0-9]+/', '_', ($client['last_name'] ?? '') ?: 'Form');
     $shortId = substr($clientId, 0, 8);
     $ymd = date('Ymd');
     $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
-    $bucket = bucket_name();
     $newUrl = '';
     $attempt = 0;
     while (true) {
         $fname = ($permitType === 'renewal' ? 'Wood_Renewal' : 'Wood_New') . "_{$sanLast}_{$ymd}_{$shortId}_{$uniq}.doc";
-        $objectPath = "wpp/{$clientId}/{$fname}";
+        $objectPath = $prefix . $fname;
         try {
             $newUrl = supa_upload_binary($bucket, $objectPath, 'application/msword', $mhtml);
             break;
@@ -1195,7 +1569,7 @@ function regenerate_wood_application_form(PDO $pdo, string $clientId, string $ap
         }
     }
 
-    // Update requirements.application_form
+    // Update requirements.application_form with the new URL
     $updateReq = $pdo->prepare('UPDATE public.requirements SET application_form = :file WHERE requirement_id = :id');
     $updateReq->execute([':file' => $newUrl, ':id' => $requirementId]);
 
@@ -1211,6 +1585,9 @@ function regenerate_wood_application_form(PDO $pdo, string $clientId, string $ap
             }
         }
     }
+
+    // Return the new file url so callers (UI) can consume it if needed
+    return $newUrl;
 }
 
 function regenerate_wildlife_application_form(PDO $pdo, string $clientId, string $applicationId, string $requirementId, string $permitType, string $oldUrl): void
@@ -1387,8 +1764,9 @@ function regenerate_wildlife_application_form(PDO $pdo, string $clientId, string
     $botanical   = $boolFromScalar($botanicalVal);
     $privateColl = $boolFromScalar($privateVal);
 
+    // Use Unicode checkbox characters so generated .doc displays marks reliably
     $check = static function (bool $b): string {
-        return $b ? '☒' : '☐';
+        return $b ? '☑' : '☐';
     };
 
     // ---------- Animals ----------
@@ -1523,7 +1901,7 @@ HTML;
 <style>
   body, div, p { line-height:1.6; font-family:Arial; font-size:11pt; margin:0; padding:0; }
   .bold{ font-weight:bold; }
-  .checkbox{ font-family:"Wingdings 2"; font-size:14pt; vertical-align:middle; }
+    .checkbox{ font-family: 'Segoe UI Symbol', 'Arial Unicode MS', 'DejaVu Sans', Arial, sans-serif; font-size:14pt; vertical-align:middle; }
   .underline{ display:inline-block; border-bottom:1px solid #000; min-width:260px; padding:0 5px; margin:0 5px; }
   .underline-small{ display:inline-block; border-bottom:1px solid #000; min-width:150px; padding:0 5px; margin:0 5px; }
   .indent{ margin-left:40px; }
@@ -1906,6 +2284,64 @@ try {
         $appUpdates[$fieldName] = trim((string)$value);
     }
 
+    // Accept alias keys produced by the client-side WOOD editors and map them
+    // to the real application_form columns used by the wood (WPP) flow.
+    // The edit UI posts `fields[machinery_rows_json]` and `fields[supply_rows_json]`.
+    // Map those into the legacy DB columns so the updates are persisted.
+    $woodAliasMap = [
+        'machinery_rows_json' => 'machineries_and_equipment_to_be_used_with_specifications',
+        'supply_rows_json'    => 'suppliers_json',
+        'supply_rows'         => 'suppliers_json',
+    ];
+    foreach ($woodAliasMap as $alias => $targetCol) {
+        if (array_key_exists($alias, $fields) && (!array_key_exists($targetCol, $appRow) || true)) {
+            $val = $fields[$alias];
+            if (is_array($val) || is_object($val)) {
+                $val = json_encode($val, JSON_UNESCAPED_SLASHES);
+            } else {
+                $val = (string)$val;
+            }
+            // Only set when non-empty to avoid overwriting with blank strings
+            if (trim($val) !== '') {
+                $appUpdates[$targetCol] = $val;
+            }
+        }
+    }
+
+    // Handle wood/wpp fields that are stored in additional_information JSON
+    // Map form field names to JSON keys (save_wood.php stores as 'power_source', not 'source_of_power_supply')
+    // NOTE: declaration_name is a direct column, not JSON; only power_source and declaration_address are JSON
+    $woodJsonFieldMap = [
+        'source_of_power_supply' => 'power_source',    // form field -> JSON key
+        'declaration_address'    => 'declaration_address',
+    ];
+    $additionalInfoUpdate = false;
+    $additionalInfoData = [];
+
+    // Load existing additional_information if present
+    if (!empty($appRow['additional_information'])) {
+        $decoded = json_decode($appRow['additional_information'], true);
+        if (is_array($decoded)) {
+            $additionalInfoData = $decoded;
+        }
+    }
+
+    // Merge submitted wood fields into additional_information
+    foreach ($woodJsonFieldMap as $formField => $jsonKey) {
+        if (array_key_exists($formField, $fields)) {
+            $val = trim((string)$fields[$formField]);
+            if ($val !== '') {
+                $additionalInfoData[$jsonKey] = $val;
+                $additionalInfoUpdate = true;
+            }
+        }
+    }
+
+    // Update additional_information if any wood fields were modified
+    if ($additionalInfoUpdate) {
+        $appUpdates['additional_information'] = json_encode($additionalInfoData, JSON_UNESCAPED_SLASHES);
+    }
+
 
 
     $fileOrigins = $_POST['file_origins'] ?? [];
@@ -2116,6 +2552,7 @@ try {
         }
     }
 
+    $returned_new_application_form_url = null;
     if ($clientId && $dbRequestType === 'seedling' && $applicationId && $requirementId && $approvalSeedlReqId) {
         regenerate_seedling_application_form(
             $pdo,
@@ -2138,6 +2575,17 @@ try {
         );
     }
 
+    if ($clientId && $dbRequestType === 'chainsaw' && $applicationId && $requirementId) {
+        $returned_new_application_form_url = regenerate_chainsaw_application_form(
+            $pdo,
+            (string)$clientId,
+            (string)$applicationId,
+            (string)$requirementId,
+            $dbPermitType,
+            $previousApplicationFormUrl
+        );
+    }
+
     if ($clientId && $dbRequestType === 'treecut' && $applicationId && $requirementId) {
         regenerate_treecut_application_form(
             $pdo,
@@ -2149,7 +2597,7 @@ try {
     }
 
     if ($clientId && $dbRequestType === 'wood' && $applicationId && $requirementId) {
-        regenerate_wood_application_form(
+        $returned_new_application_form_url = regenerate_wood_application_form(
             $pdo,
             (string)$clientId,
             (string)$applicationId,
@@ -2173,7 +2621,11 @@ try {
 
     $pdo->commit();
 
-    echo json_encode(['ok' => true]);
+    $resp = ['ok' => true];
+    if (!empty($returned_new_application_form_url)) {
+        $resp['application_form_url'] = $returned_new_application_form_url;
+    }
+    echo json_encode($resp);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
