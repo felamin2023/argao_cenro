@@ -15,15 +15,23 @@ $action = $_POST['action'] ?? '';
 $email = trim($_POST['email'] ?? '');
 
 if ($action === 'request_otp') {
-    // 1. Check if email exists
-    $stmt = $conn->prepare('SELECT id FROM users WHERE email = ?');
+    // 1. Check if email exists and has admin role
+    $stmt = $conn->prepare('SELECT id, role FROM users WHERE lower(email) = lower(?)');
     $stmt->bind_param('s', $email);
     $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows === 0) {
-        echo json_encode(['success' => false, 'message' => 'Email not found.']);
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 0) {
+        echo json_encode(['success' => false, 'message' => 'This account is not registered.']);
         exit;
     }
+
+    $user = $result->fetch_assoc();
+    if (strtolower($user['role']) !== 'admin') {
+        echo json_encode(['success' => false, 'message' => 'This account is not registered as an admin.']);
+        exit;
+    }
+
     // 2. Generate OTP
     $otp = rand(100000, 999999);
     $_SESSION['reset_otp'] = $otp;

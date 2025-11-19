@@ -94,6 +94,15 @@ body::before {
   background-clip: text;
 }
 
+.login-container > .error-text {
+  text-align: center;
+  color: #e53935 !important;
+  font-size: 13px;
+  margin-bottom: 15px;
+  font-weight: 500;
+  margin-top: -15px;
+}
+
 /* Input fields */
 .input-container {
   width: 100%;
@@ -174,6 +183,14 @@ input[type="password"]::-webkit-textfield-decoration-container {
 
 .forgot-password a:hover {
   text-decoration: underline;
+}
+
+.error-text {
+  color: #e53935 !important;
+  font-size: 12px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+  text-align: left;
 }
 
 /* Button */

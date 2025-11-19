@@ -28,9 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     $st->execute([':e' => $email]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
 
-    // Not found OR not an admin → generic message
-    if (!$row || strtolower((string)$row['role']) !== 'admin') {
-      $emailError = 'Email not found.';
+    // Email not found in database at all
+    if (!$row) {
+      $emailError = 'This account is not registered.';
+    }
+    // Email exists but role is not "Admin"
+    elseif (strtolower((string)$row['role']) !== 'admin') {
+      $emailError = 'This account is not registered as an admin.';
     } else {
       // Verify password hash
       if (!password_verify($password, (string)$row['password'])) {
@@ -133,14 +137,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
 
     <div class="login-container" id="loginContainer">
       <h2>LOGIN</h2>
-
+      <?php if (!empty($emailError)): ?>
+        <p style="color: red; font-size: 13px; margin: 0 0 15px 0;"><?php echo htmlspecialchars($emailError, ENT_QUOTES, 'UTF-8'); ?></p>
+      <?php endif; ?>
+      <?php if (!empty($passwordError)): ?>
+        <p style="color: red; font-size: 13px; margin: 0 0 15px 0;"><?php echo htmlspecialchars($passwordError, ENT_QUOTES, 'UTF-8'); ?></p>
+      <?php endif; ?>
 
       <form method="POST" action="">
         <div class="input-container">
           <input
             type="email"
             name="email"
-            placeholder="<?php echo $emailError ? $emailError : 'Email'; ?>"
+            placeholder="Email"
             value="<?php echo $emailValue; ?>"
             class="<?php echo $emailError ? 'error' : ''; ?>"
             required />
@@ -152,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
               type="password"
               name="password"
               id="password"
-              placeholder="<?php echo $passwordError ? $passwordError : 'Password'; ?>"
+              placeholder="Password"
               class="<?php echo $passwordError ? 'error' : ''; ?>"
               required />
             <button type="button" class="toggle-password" id="togglePassword">
@@ -176,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
       <form id="resetPasswordForm">
         <div class="input-container">
           <input type="email" id="resetEmail" placeholder="Enter your email" required />
+          <p id="resetEmailError" style="color: red; font-size: 12px; margin-top: 5px;"></p>
         </div>
         <button type="submit">Reset Password</button>
       </form>
@@ -281,6 +291,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
       resetPasswordForm.addEventListener('submit', function(e) {
         e.preventDefault();
         const email = document.getElementById('resetEmail').value;
+        const emailError = document.getElementById('resetEmailError');
+        emailError.textContent = '';
+
+        if (!email) {
+          emailError.textContent = 'Please enter your email.';
+          return;
+        }
+
         // Show loading screen
         document.getElementById('loadingScreen').style.display = 'block';
         fetch('reset_password_process.php', {
@@ -297,13 +315,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
               forgotPasswordForm.classList.remove('active');
               otpModalCustom.style.display = 'block';
               resetPasswordForm.reset();
+              emailError.textContent = '';
             } else {
-              alert(data.message || 'Failed to send OTP.');
+              emailError.textContent = data.message || 'Failed to send OTP.';
             }
           })
           .catch(() => {
             document.getElementById('loadingScreen').style.display = 'none';
-            alert('Network error.');
+            emailError.textContent = 'Network error.';
           });
       });
 

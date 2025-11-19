@@ -359,6 +359,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-right: 5px;
         }
 
+        .form-section {
+            display: none;
+        }
+
+        .form-section.active {
+            display: block;
+        }
+
+        .otp-input-group {
+            margin-bottom: 15px;
+        }
+
+        .reset-password-form input[type="password"] {
+            width: 100%;
+            padding: 14px 42px 14px 15px;
+            border: 1px solid var(--primary-hover);
+            border-radius: var(--border-radius);
+            font-size: 15px;
+            transition: var(--transition);
+            background-color: #f9f9f9;
+            color: #444;
+            position: relative;
+        }
+
+        .reset-password-form input[type="password"]:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+            background-color: white;
+        }
+
+        .password-toggle-reset {
+            position: absolute;
+            right: 10px;
+            top: 55%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #777;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 0;
+            width: fit-content;
+        }
+
+        .reset-password-field {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .success-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #4caf50;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .success-toast.show {
+            opacity: 1;
+        }
+
+        .error-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #e53935;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .error-toast.show {
+            opacity: 1;
+        }
+
+        /* Loading overlay styles */
+        #loadingScreen {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.1);
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-direction: row;
+            -webkit-backdrop-filter: blur(3px);
+            backdrop-filter: blur(3px);
+        }
+
+        #loadingScreen .loading-text {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
         .error-message {
             color: #e53935;
             margin-bottom: 15px;
@@ -432,67 +543,374 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button type="submit">Login</button>
 
                 <div class="form-footer">
-                    <p>Don't have an account? <a href="user_register.php">Create Account</a></p>
+                    <p>Don't have an account? <a href="../index.php">Create Account</a></p>
                 </div>
             </form>
         </div>
 
-        <!-- Forgot Password Form (unchanged) -->
+        <!-- Forgot Password Form with OTP -->
         <div class="forgot-password-form" id="forgotPasswordForm">
             <div class="logo">
                 <div class="logo-icon">🔑</div>
             </div>
             <h2>Reset Password</h2>
-            <p>Enter your email address and we'll send you a link to reset your password.</p>
-            <form id="resetPasswordForm">
+
+            <!-- Step 1: Enter Email -->
+            <div class="form-section active" id="emailSection">
+                <p>Enter your email address and we'll send you an OTP code.</p>
                 <div class="input-group">
                     <label for="resetEmail">Email Address</label>
                     <div class="input-field">
-                        <input type="email" id="resetEmail" required placeholder="Enter your email">
+                        <input type="email" id="resetEmail" placeholder="Enter your email" required>
                     </div>
                 </div>
-                <button type="submit">Send Reset Link</button>
-            </form>
+                <button type="button" id="sendOtpBtn">Send OTP</button>
+                <div id="emailError" style="color: #e53935; margin-top: 10px; font-size: 14px;"></div>
+            </div>
+
+            <!-- Step 2: Verify OTP -->
+            <div class="form-section" id="otpSection">
+                <p>Enter the 6-digit code sent to your email.</p>
+                <div class="otp-input-group">
+                    <label for="resetOtp">Verification Code</label>
+                    <input type="text" id="resetOtp" maxlength="6" placeholder="Enter OTP code" required>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button type="button" id="verifyOtpBtn" style="flex: 1;">Verify OTP</button>
+                    <button type="button" id="resendOtpBtn" style="flex: 1; background-color: #999;">Resend</button>
+                </div>
+                <div id="otpError" style="color: #e53935; margin-top: 10px; font-size: 14px;"></div>
+            </div>
+
+            <!-- Step 3: Reset Password -->
+            <div class="form-section reset-password-form" id="resetPasswordSection">
+                <p>Enter your new password.</p>
+                <div class="input-group">
+                    <label for="newPassword">New Password</label>
+                    <div class="reset-password-field">
+                        <input type="password" id="newPassword" placeholder="Enter new password" required>
+                        <button type="button" class="password-toggle-reset" id="toggleNewPassword">
+                            <i class="fas fa-eye-slash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label for="confirmNewPassword">Confirm Password</label>
+                    <div class="reset-password-field">
+                        <input type="password" id="confirmNewPassword" placeholder="Confirm password" required>
+                        <button type="button" class="password-toggle-reset" id="toggleConfirmNewPassword">
+                            <i class="fas fa-eye-slash"></i>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" id="resetPasswordBtn">Reset Password</button>
+                <div id="resetPasswordError" style="color: #e53935; margin-top: 10px; font-size: 14px;"></div>
+            </div>
+
             <div class="back-to-login">
                 <a href="#" id="backToLogin"><i class="fas fa-arrow-left"></i> Back to Login</a>
             </div>
         </div>
     </div>
 
+    <div id="loadingScreen">
+        <div class="loading-text">Loading...</div>
+    </div>
+
     <script>
+        // Helper function for AJAX calls
+        async function postForm(url, fd) {
+            const res = await fetch(url, {
+                method: 'POST',
+                body: fd
+            });
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error('Bad JSON from server:', text);
+                throw new Error('Bad JSON');
+            }
+            return data;
+        }
+
+        // Show/hide loading overlay
+        function showLoading() {
+            document.getElementById('loadingScreen').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingScreen').style.display = 'none';
+        }
+
+        // Show toast messages
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = type === 'success' ? 'success-toast show' : 'error-toast show';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            // Password toggle functionality
+            // Elements
             const togglePassword = document.getElementById('togglePassword');
             const passwordInput = document.getElementById('password');
-
-            togglePassword.addEventListener('click', function() {
-                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordInput.setAttribute('type', type);
-                this.querySelector('i').classList.toggle('fa-eye-slash');
-                this.querySelector('i').classList.toggle('fa-eye');
-            });
-
-            // Forgot password form toggle
             const forgotPasswordLink = document.getElementById('forgotPasswordLink');
             const backToLogin = document.getElementById('backToLogin');
             const loginForm = document.getElementById('loginForm');
             const forgotPasswordForm = document.getElementById('forgotPasswordForm');
 
+            // Reset form elements
+            const resetEmail = document.getElementById('resetEmail');
+            const sendOtpBtn = document.getElementById('sendOtpBtn');
+            const resetOtp = document.getElementById('resetOtp');
+            const verifyOtpBtn = document.getElementById('verifyOtpBtn');
+            const resendOtpBtn = document.getElementById('resendOtpBtn');
+            const newPassword = document.getElementById('newPassword');
+            const confirmNewPassword = document.getElementById('confirmNewPassword');
+            const resetPasswordBtn = document.getElementById('resetPasswordBtn');
+            const toggleNewPassword = document.getElementById('toggleNewPassword');
+            const toggleConfirmNewPassword = document.getElementById('toggleConfirmNewPassword');
+
+            const emailSection = document.getElementById('emailSection');
+            const otpSection = document.getElementById('otpSection');
+            const resetPasswordSection = document.getElementById('resetPasswordSection');
+
+            // Password toggle for login
+            if (togglePassword) {
+                togglePassword.addEventListener('click', function() {
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    this.querySelector('i').classList.toggle('fa-eye-slash');
+                    this.querySelector('i').classList.toggle('fa-eye');
+                });
+            }
+
+            // Password toggles for reset form
+            const setupPasswordToggle = (btn, input) => {
+                if (btn) {
+                    btn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                        input.setAttribute('type', type);
+                        this.querySelector('i').classList.toggle('fa-eye-slash');
+                        this.querySelector('i').classList.toggle('fa-eye');
+                    });
+                }
+            };
+            setupPasswordToggle(toggleNewPassword, newPassword);
+            setupPasswordToggle(toggleConfirmNewPassword, confirmNewPassword);
+
+            // Show forgot password form
             forgotPasswordLink.addEventListener('click', function(e) {
                 e.preventDefault();
                 loginForm.classList.add('blurred');
                 forgotPasswordForm.classList.add('active');
+                resetForm();
             });
 
+            // Back to login
             backToLogin.addEventListener('click', function(e) {
                 e.preventDefault();
                 loginForm.classList.remove('blurred');
                 forgotPasswordForm.classList.remove('active');
+                resetForm();
             });
 
-            // Form submission handling
-            document.querySelector('form').addEventListener('submit', function() {
-                // You can add client-side validation here if needed
+            // Reset form to email step
+            function resetForm() {
+                resetEmail.value = '';
+                resetOtp.value = '';
+                newPassword.value = '';
+                confirmNewPassword.value = '';
+                document.getElementById('emailError').textContent = '';
+                document.getElementById('otpError').textContent = '';
+                document.getElementById('resetPasswordError').textContent = '';
+
+                emailSection.classList.add('active');
+                otpSection.classList.remove('active');
+                resetPasswordSection.classList.remove('active');
+            }
+
+            // Step 1: Send OTP
+            sendOtpBtn.addEventListener('click', async () => {
+                const email = resetEmail.value.trim();
+                const errorDiv = document.getElementById('emailError');
+                errorDiv.textContent = '';
+
+                if (!email) {
+                    errorDiv.textContent = 'Please enter your email.';
+                    return;
+                }
+
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    errorDiv.textContent = 'Please enter a valid email address.';
+                    return;
+                }
+
+                sendOtpBtn.disabled = true;
+                showLoading();
+
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'send_otp');
+                    fd.append('email', email);
+
+                    const data = await postForm('../backend/users/reset_password.php', fd);
+                    hideLoading();
+                    sendOtpBtn.disabled = false;
+
+                    if (!data.success) {
+                        errorDiv.textContent = data.error || 'Failed to send OTP.';
+                        return;
+                    }
+
+                    // Dev only: log OTP for testing
+                    if (data.otp) console.log('OTP (testing):', data.otp);
+
+                    // Move to OTP step
+                    emailSection.classList.remove('active');
+                    otpSection.classList.add('active');
+                    resetOtp.focus();
+                } catch (err) {
+                    hideLoading();
+                    sendOtpBtn.disabled = false;
+                    errorDiv.textContent = 'Network error. Please try again.';
+                }
+            });
+
+            // Step 2: Verify OTP
+            verifyOtpBtn.addEventListener('click', async () => {
+                const otp = resetOtp.value.trim();
+                const errorDiv = document.getElementById('otpError');
+                errorDiv.textContent = '';
+
+                if (!/^\d{6}$/.test(otp)) {
+                    errorDiv.textContent = 'Please enter a valid 6-digit code.';
+                    return;
+                }
+
+                verifyOtpBtn.disabled = true;
+                showLoading();
+
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'verify_otp');
+                    fd.append('otp', otp);
+
+                    const data = await postForm('../backend/users/reset_password.php', fd);
+                    hideLoading();
+                    verifyOtpBtn.disabled = false;
+
+                    if (!data.success) {
+                        errorDiv.textContent = data.error || 'Incorrect OTP.';
+                        return;
+                    }
+
+                    // Move to password reset step
+                    otpSection.classList.remove('active');
+                    resetPasswordSection.classList.add('active');
+                    newPassword.focus();
+                } catch (err) {
+                    hideLoading();
+                    verifyOtpBtn.disabled = false;
+                    errorDiv.textContent = 'Network error. Please try again.';
+                }
+            });
+
+            // Resend OTP
+            resendOtpBtn.addEventListener('click', async () => {
+                const email = resetEmail.value.trim();
+                const errorDiv = document.getElementById('otpError');
+                errorDiv.textContent = '';
+
+                resendOtpBtn.disabled = true;
+                showLoading();
+
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'send_otp');
+                    fd.append('email', email);
+
+                    const data = await postForm('../backend/users/reset_password.php', fd);
+                    hideLoading();
+                    resendOtpBtn.disabled = false;
+
+                    if (data.success) {
+                        errorDiv.textContent = 'OTP resent! Check your email.';
+                        errorDiv.style.color = '#4caf50';
+                        if (data.otp) console.log('Resent OTP (testing):', data.otp);
+                        resetOtp.value = '';
+                        resetOtp.focus();
+                    } else {
+                        errorDiv.textContent = data.error || 'Failed to resend OTP.';
+                        errorDiv.style.color = '#e53935';
+                    }
+                } catch (err) {
+                    hideLoading();
+                    resendOtpBtn.disabled = false;
+                    errorDiv.textContent = 'Network error. Please try again.';
+                    errorDiv.style.color = '#e53935';
+                }
+            });
+
+            // Step 3: Reset Password
+            resetPasswordBtn.addEventListener('click', async () => {
+                const password = newPassword.value;
+                const confirmPassword = confirmNewPassword.value;
+                const errorDiv = document.getElementById('resetPasswordError');
+                errorDiv.textContent = '';
+
+                if (!password || !confirmPassword) {
+                    errorDiv.textContent = 'Please enter both passwords.';
+                    return;
+                }
+
+                if (password.length < 8) {
+                    errorDiv.textContent = 'Password must be at least 8 characters.';
+                    return;
+                }
+
+                if (password !== confirmPassword) {
+                    errorDiv.textContent = 'Passwords do not match.';
+                    return;
+                }
+
+                resetPasswordBtn.disabled = true;
+                showLoading();
+
+                try {
+                    const fd = new FormData();
+                    fd.append('action', 'reset_password');
+                    fd.append('password', password);
+                    fd.append('confirm_password', confirmPassword);
+
+                    const data = await postForm('../backend/users/reset_password.php', fd);
+                    hideLoading();
+                    resetPasswordBtn.disabled = false;
+
+                    if (!data.success) {
+                        errorDiv.textContent = data.error || 'Password reset failed.';
+                        return;
+                    }
+
+                    // Success - show toast and redirect
+                    showToast('Password reset successful! Redirecting to login...', 'success');
+                    setTimeout(() => {
+                        loginForm.classList.remove('blurred');
+                        forgotPasswordForm.classList.remove('active');
+                        resetForm();
+                    }, 2000);
+                } catch (err) {
+                    hideLoading();
+                    resetPasswordBtn.disabled = false;
+                    errorDiv.textContent = 'Network error. Please try again.';
+                }
             });
         });
     </script>
