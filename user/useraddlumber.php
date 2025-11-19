@@ -1941,39 +1941,16 @@ try {
                                         return '<option' . $attrs . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
                                     };
                                     $hasMine = false;
-                                    foreach ($clientRows as $row) {
-                                        if ((string)($row['user_id'] ?? '') === $myId) {
+                                    foreach ($clientRows as $c) {
+                                        $isMine = ((string)($c['user_id'] ?? '') === $myId);
+                                        if (!$isMine) continue;
+                                        if (!$hasMine) {
                                             $hasMine = true;
-                                            break;
                                         }
+                                        echo $renderOption($c);
                                     }
-                                    if ($hasMine) {
-                                        echo '<optgroup label="Your clients">';
-                                        foreach ($clientRows as $row) {
-                                            if ((string)($row['user_id'] ?? '') !== $myId) {
-                                                continue;
-                                            }
-                                            echo $renderOption($row);
-                                        }
-                                        echo '</optgroup>';
-                                    }
-                                    $hasOthers = false;
-                                    foreach ($clientRows as $row) {
-                                        if ((string)($row['user_id'] ?? '') === $myId) {
-                                            continue;
-                                        }
-                                        $hasOthers = true;
-                                        break;
-                                    }
-                                    if ($hasOthers) {
-                                        echo '<optgroup label="All clients (others)">';
-                                        foreach ($clientRows as $row) {
-                                            if ((string)($row['user_id'] ?? '') === $myId) {
-                                                continue;
-                                            }
-                                            echo $renderOption($row);
-                                        }
-                                        echo '</optgroup>';
+                                    if (!$hasMine) {
+                                        echo '<option disabled>No clients found</option>';
                                     }
                                     ?>
                                 </select>

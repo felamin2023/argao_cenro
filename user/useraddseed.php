@@ -1938,32 +1938,18 @@ try {
                             <option value="">— Select a client —</option>
                             <?php
                             $hasMine = false;
-                            $hasOthers = false;
                             foreach ($clientRows as $c) {
+                                $isMine = ((string)$c['user_id'] === (string)$_SESSION['user_id']);
+                                if (!$isMine) continue;
+
                                 $full = trim(($c['first_name'] ?? '') . ' ' . ($c['middle_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
                                 $addr = trim(($c['barangay'] ? ('Brgy. ' . $c['barangay']) : '') . (($c['municipality'] || $c['city']) ? (', ' . ($c['municipality'] ?: $c['city'])) : ''));
                                 $label = $full . ($addr ? " — $addr" : '');
-                                $isMine = ((string)$c['user_id'] === (string)$_SESSION['user_id']);
-                                if ($isMine && !$hasMine) {
-                                    echo '<optgroup label="Your clients">';
-                                    $hasMine = true;
-                                }
-                                if (!$isMine && !$hasOthers) { /* open later */
-                                }
                                 echo '<option value="' . htmlspecialchars((string)$c['client_id'], ENT_QUOTES) . '">' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
-                                if (!$isMine) $hasOthers = true;
+                                $hasMine = true;
                             }
-                            if ($hasMine) echo '</optgroup>';
-                            if ($hasOthers) {
-                                echo '<optgroup label="All clients (others)">';
-                                foreach ($clientRows as $c) {
-                                    if ((string)$c['user_id'] === (string)$_SESSION['user_id']) continue;
-                                    $full = trim(($c['first_name'] ?? '') . ' ' . ($c['middle_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
-                                    $addr = trim(($c['barangay'] ? ('Brgy. ' . $c['barangay']) : '') . (($c['municipality'] || $c['city']) ? (', ' . ($c['municipality'] ?: $c['city'])) : ''));
-                                    $label = $full . ($addr ? " — $addr" : '');
-                                    echo '<option value="' . htmlspecialchars((string)$c['client_id'], ENT_QUOTES) . '">' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
-                                }
-                                echo '</optgroup>';
+                            if (!$hasMine) {
+                                echo '<option disabled>No clients found</option>';
                             }
                             ?>
                         </select>

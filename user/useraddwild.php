@@ -2522,23 +2522,14 @@ if (!empty($_SESSION['user_id'])) {
                                 foreach ($clientRows as $c) {
                                     if ((string)($c['user_id'] ?? '') !== $myId) continue;
                                     if (!$hasMine) {
-                                        echo '<optgroup label="Your clients">';
                                         $hasMine = true;
                                     }
                                     echo $renderOption($c);
                                 }
-                                if ($hasMine) echo '</optgroup>';
 
-                                $hasOthers = false;
-                                foreach ($clientRows as $c) {
-                                    if ((string)($c['user_id'] ?? '') === $myId) continue;
-                                    if (!$hasOthers) {
-                                        echo '<optgroup label="All clients (others)">';
-                                        $hasOthers = true;
-                                    }
-                                    echo $renderOption($c);
+                                if (!$hasMine) {
+                                    echo '<option disabled>No clients found</option>';
                                 }
-                                if ($hasOthers) echo '</optgroup>';
                                 ?>
                             </select>
                             <div id="clientPickError" class="field-error" style="display:none;"></div>

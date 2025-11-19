@@ -4429,45 +4429,18 @@ function format_treecut_client_option(array $client): string
 
                             <?php
 
-                            $mineClients = [];
-
-                            $otherClients = [];
-
+                            $myId = (string)($_SESSION['user_id'] ?? '');
+                            $hasMine = false;
                             foreach ($clientRows as $c) {
-
-                                $userId = (string)($c['user_id'] ?? '');
-
-                                if ($userId === (string)$_SESSION['user_id']) {
-
-                                    $mineClients[] = $c;
-                                } else {
-
-                                    $otherClients[] = $c;
+                                $isMine = ((string)($c['user_id'] ?? '') === $myId);
+                                if (!$isMine) continue;
+                                if (!$hasMine) {
+                                    $hasMine = true;
                                 }
+                                echo format_treecut_client_option($c);
                             }
-
-                            if ($mineClients) {
-
-                                echo '<optgroup label="Your clients">';
-
-                                foreach ($mineClients as $client) {
-
-                                    echo format_treecut_client_option($client);
-                                }
-
-                                echo '</optgroup>';
-                            }
-
-                            if ($otherClients) {
-
-                                echo '<optgroup label="All clients (others)">';
-
-                                foreach ($otherClients as $client) {
-
-                                    echo format_treecut_client_option($client);
-                                }
-
-                                echo '</optgroup>';
+                            if (!$hasMine) {
+                                echo '<option disabled>No clients found</option>';
                             }
 
                             ?>
