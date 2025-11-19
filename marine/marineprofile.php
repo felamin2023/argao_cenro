@@ -349,22 +349,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             <div class="nav-item dropdown" data-dropdown>
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="mpa-management.php" class="dropdown-item">
-                        <i class="fas fa-water"></i>
-                        <span>MPA Management</span>
-                    </a>
-                    <a href="habitat.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Habitat Assessment</span>
-                    </a>
-                    <a href="species.php" class="dropdown-item">
-                        <i class="fas fa-fish"></i>
-                        <span>Species Monitoring</span>
-                    </a>
-                    <a href="reports.php" class="dropdown-item">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Reports & Analytics</span>
-                    </a>
+                  
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
                         <span>Incident Reports</span>

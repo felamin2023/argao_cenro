@@ -1746,7 +1746,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
                     <a href="breedingreport.php" class="dropdown-item">
-                        <i class="fas fa-plus-circle"></i><span>Add Record</span>
+                        <i class="fas fa-plus-circle"></i><span>Wildlife Management</span>
                     </a>
 
                     <!-- Make this ACTIVE on this page -->

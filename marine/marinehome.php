@@ -221,22 +221,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     <i class="fas fa-bars"></i>
                 </div>
                 <div class="dropdown-menu center">
-                    <a href="mpa-management.php" class="dropdown-item">
-                        <i class="fas fa-water"></i>
-                        <span>MPA Management</span>
-                    </a>
-                    <a href="habitat.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Habitat Assessment</span>
-                    </a>
-                    <a href="species.php" class="dropdown-item">
-                        <i class="fas fa-fish"></i>
-                        <span>Species Monitoring</span>
-                    </a>
-                    <a href="reports.php" class="dropdown-item">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Reports & Analytics</span>
-                    </a>
+
 
                     <a href="reportaccident.php" class="dropdown-item">
                         <i class="fas fa-file-invoice"></i>
@@ -326,17 +311,32 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
         </div>
     </header>
 
-    <div class="main-content">
+     <div class="main-content">
+        <!-- Filter dropdown container above the title -->
+        <div class="filter-container">
+            <div class="filter-group">
+                <div class="filter-dropdown">
+                    <button class="filter-btn">
+                        <i class="fas fa-chart-pie"></i> Filter by Category
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="filter-content">
+                        <a href="marinehome.php" class="filter-item active">All Categories</a>
+                        <a href="mpa-management.php" class="filter-item">MPA Management</a>
+                        <a href="habitat.php" class="filter-item">Habitat Assessment</a>
+                        <a href="species.php" class="filter-item">Species Monitoring</a>
+                        <a href="reports.php" class="filter-item">Reports & Analytics</a>
+
+                    </div>
+                </div>
+
+                
+            </div>
+        </div>
+
         <!-- Modified content header section with Edit and Save buttons -->
         <div class="content-header">
-            <div class="edit-actions">
-                <button class="btn btn-edit">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="btn">
-                    <i class="fas fa-save"></i> Save
-                </button>
-            </div>
+           
             <h1>Coastal and Marine Ecosystems Management Program</h1>
         </div>
 
@@ -364,9 +364,9 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 </div>
             </div>
             <div style="margin-top: 20px;">
-                <a href="#" class="btn">
-                    <i class="fas fa-download"></i> Download Full Report
-                </a>
+                <a href="../user/scaling.pdf" download="CMEMP_Full_Report.pdf" class="btn">
+                 <i class="fas fa-download"></i> Download Full Report
+                 </a>
             </div>
         </div>
 

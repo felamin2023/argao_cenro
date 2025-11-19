@@ -4276,7 +4276,23 @@ function format_treecut_client_option(array $client): string
 
                                 $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
 
-                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $tmp = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
+                                        $tmp->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $tmp->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
+                                            $title = 'Permit Update';
+                                        }
+                                    } catch (Throwable $e) {
+                                        $title = 'Permit Update';
+                                    }
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
 
                                 $cleanMsg = (function ($m) {
 
@@ -4310,6 +4326,42 @@ function format_treecut_client_option(array $client): string
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
 
                                             <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                    <script>
+                    // Manila time + relative label for notifications
+                    (function() {
+                        function timeAgo(seconds) {
+                            if (seconds < 60) return 'just now';
+                            const m = Math.floor(seconds / 60);
+                            if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                            const h = Math.floor(m / 60);
+                            if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                            const d = Math.floor(h / 24);
+                            if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                            const w = Math.floor(d / 7);
+                            if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                            const mo = Math.floor(d / 30);
+                            if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                            const y = Math.floor(d / 365);
+                            return `${y} year${y > 1 ? 's' : ''} ago`;
+                        }
+                        document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                            const tsMs = Number(el.dataset.ts || 0) * 1000;
+                            if (!tsMs) return;
+                            const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                            el.textContent = timeAgo(diffSec);
+                            try {
+                                const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                                    timeZone: 'Asia/Manila',
+                                    year: 'numeric', month: 'short', day: 'numeric',
+                                    hour: 'numeric', minute: '2-digit', second: '2-digit'
+                                });
+                                el.title = manilaFmt.format(new Date(tsMs));
+                            } catch (err) {
+                                el.title = new Date(tsMs).toLocaleString();
+                            }
+                        });
+                    })();
+                    </script>
 
                                         </div>
 

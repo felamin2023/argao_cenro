@@ -90,6 +90,8 @@ try {
     foreach ($notifs as $n) {
         if (empty($n['is_read'])) $unreadCount++;
     }
+    // prepare statement to detect seedling approvals when rendering notification titles
+    $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
 } catch (Throwable $e) {
     error_log('[NOTIFS LOAD] ' . $e->getMessage());
     $notifs = [];
@@ -1606,8 +1608,9 @@ try {
         }
 
         .seedling-qty[type="number"] {
-            -moz-appearance: textfield;
-            /* Firefox */
+            appearance: textfield;
+            -webkit-appearance: textfield;
+            -moz-appearance: textfield; /* Firefox */
         }
 
         /* Row layout stays tidy on small screens */
@@ -1867,8 +1870,25 @@ try {
                             </div>
                             <?php else: foreach ($notifs as $n):
                                 $unread = empty($n['is_read']);
-                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                // Determine title: if approval -> check if it's a seedlings approval
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
+                                            $title = 'Permit Update';
+                                        }
+                                    } catch (Throwable $e) {
+                                        // fallback
+                                        $title = 'Permit Update';
+                                    }
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
                                 $cleanMsg = (function ($m) {
                                     $t = trim((string)$m);
                                     $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
@@ -1886,6 +1906,42 @@ try {
                                             <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
                                             <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                            <script>
+                                            // Manila time + relative label for notifications
+                                            (function() {
+                                                function timeAgo(seconds) {
+                                                    if (seconds < 60) return 'just now';
+                                                    const m = Math.floor(seconds / 60);
+                                                    if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                                                    const h = Math.floor(m / 60);
+                                                    if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                                                    const d = Math.floor(h / 24);
+                                                    if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                                                    const w = Math.floor(d / 7);
+                                                    if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                                                    const mo = Math.floor(d / 30);
+                                                    if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                                                    const y = Math.floor(d / 365);
+                                                    return `${y} year${y > 1 ? 's' : ''} ago`;
+                                                }
+                                                document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                                                    const tsMs = Number(el.dataset.ts || 0) * 1000;
+                                                    if (!tsMs) return;
+                                                    const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                                                    el.textContent = timeAgo(diffSec);
+                                                    try {
+                                                        const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                                                            timeZone: 'Asia/Manila',
+                                                            year: 'numeric', month: 'short', day: 'numeric',
+                                                            hour: 'numeric', minute: '2-digit', second: '2-digit'
+                                                        });
+                                                        el.title = manilaFmt.format(new Date(tsMs));
+                                                    } catch (err) {
+                                                        el.title = new Date(tsMs).toLocaleString();
+                                                    }
+                                                });
+                                            })();
+                                            </script>
                                         </div>
                                     </a>
                                 </div>

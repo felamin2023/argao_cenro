@@ -81,6 +81,9 @@ try {
     $unreadCount = 0;
 }
 
+// prepared statement used to check whether an approval is for seedlings
+$stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
+
 /* Prefetch linked client IDs for current user */
 if (!empty($_SESSION['user_id'])) {
     try {
@@ -1843,7 +1846,23 @@ try {
                             <?php else: foreach ($notifs as $n):
                                 $unread = empty($n['is_read']);
                                 $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $title  = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                // Determine title: if approval -> check if it's a seedlings approval
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
+                                            $title = 'Permit Update';
+                                        }
+                                    } catch (Throwable $e) {
+                                        $title = 'Permit Update';
+                                    }
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
                                 $cleanMsg = (function ($m) {
                                     $t = trim((string)$m);
                                     $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
@@ -5402,6 +5421,78 @@ try {
 
 
 </body>
+
+    <script>
+        (function() {
+            function timeAgo(seconds) {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            }
+
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const tsMs = Number(el.dataset.ts || 0) * 1000;
+                if (!tsMs) return;
+                const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                el.textContent = timeAgo(diffSec);
+                try {
+                    const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', second: '2-digit'
+                    });
+                    el.title = manilaFmt.format(new Date(tsMs));
+                } catch (err) {
+                    el.title = new Date(tsMs).toLocaleString();
+                }
+            });
+
+            const badge = document.getElementById('asNotifBadge');
+            const markAllBtn = document.getElementById('asMarkAllRead');
+
+            markAllBtn?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
+                if (badge) badge.style.display = 'none';
+            });
+
+            const list = document.querySelector('.as-notifications');
+            list?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.as-notif-link');
+                if (!link) return;
+                e.preventDefault();
+                const nid = link.dataset.notifId;
+                try {
+                    await fetch(location.pathname + '?ajax=mark_read&notif_id=' + encodeURIComponent(nid), {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                link.closest('.as-notif-item')?.classList.remove('unread');
+                if (badge) {
+                    const v = Number(badge.textContent || 0);
+                    if (v > 1) badge.textContent = String(v - 1);
+                    else badge.style.display = 'none';
+                }
+            });
+        })();
+    </script>
 
 
 

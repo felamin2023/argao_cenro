@@ -68,6 +68,8 @@ try {
     ');
     $ns->execute([':uid' => $_SESSION['user_id']]);
     $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+    // prepare statement to detect seedling approvals
+    $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
     foreach ($notifs as $n) {
         if (empty($n['is_read'])) $unreadCount++;
     }
@@ -1382,7 +1384,24 @@ try {
                                 <?php
                                 $unread = empty($n['is_read']);
                                 $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                                // Determine title: if approval -> check if it's a seedlings approval
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
+                                            $title = 'Permit Update';
+                                        }
+                                    } catch (Throwable $e) {
+                                        // fallback
+                                        $title = 'Permit Update';
+                                    }
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
                                 $cleanMsg = (function ($m) {
                                     $t = trim((string)$m);
                                     $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
@@ -1445,9 +1464,7 @@ try {
                     </div>
                 </div>
 
-                <button class="apply-filter-btn">
-                    <i class="fas fa-filter"></i> Apply
-                </button>
+               
             </div>
         </div>
 
@@ -1483,9 +1500,9 @@ try {
                 </div>
             </div>
             <div style="margin-top: 20px;">
-                <a href="#" class="btn">
-                    <i class="fas fa-download"></i> Download Full Report
-                </a>
+                <a href="../user/scaling.pdf" download="CMEMP_Full_Report.pdf" class="btn">
+                 <i class="fas fa-download"></i> Download Full Report
+                 </a>
             </div>
         </div>
 
@@ -1631,7 +1648,16 @@ try {
                 if (!tsMs) return;
                 const diffSec = Math.floor((Date.now() - tsMs) / 1000);
                 el.textContent = timeAgo(diffSec);
-                el.title = new Date(tsMs).toLocaleString();
+                try {
+                    const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', second: '2-digit'
+                    });
+                    el.title = manilaFmt.format(new Date(tsMs));
+                } catch (err) {
+                    el.title = new Date(tsMs).toLocaleString();
+                }
             });
 
             // ----- Mark all as read -----

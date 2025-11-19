@@ -320,8 +320,8 @@ header {
 /* Notification Badge */
 .badge {
   position: absolute;
-  top: 2px;
-  right: 8px;
+  top: 7px;
+  right: 70px;
   background: #ff4757;
   color: white;
   border-radius: 50%;

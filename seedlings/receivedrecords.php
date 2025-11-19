@@ -440,11 +440,23 @@ function fmt_dt($ts)
         .search {
             display: flex;
             align-items: center;
-            gap: 6px
+            position: relative;
         }
 
+        /* place the icon inside the input */
         .search-input {
-            width: 460px
+            width: 460px;
+            padding-left: 40px; /* room for the icon */
+        }
+
+        .search .fa-search {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #64748b;
+            pointer-events: none;
+            font-size: 18px;
         }
 
         .export {
@@ -730,6 +742,8 @@ function fmt_dt($ts)
             height: 45px
         }
 
+ 
+
         .mobile-toggle {
             display: none;
             background: transparent;
@@ -930,6 +944,35 @@ function fmt_dt($ts)
         .notification-content {
             flex: 1;
         }
+
+               
+/* Back Icon */
+.back-icon {
+  position: absolute;
+  top: 100px;
+  margin-top: -1.3%;
+  left: 53px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 45px;
+  height: 45px;
+  text-decoration: none;
+  color: #005117;
+  font-size: 20px;
+  transition: var(--transition);
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+}
+
+.back-icon:hover {
+  transform: scale(1.1);
+  background: #f0f8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
 
         .mark-all-read {
             color: #1b5e20;

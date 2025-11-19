@@ -25,6 +25,10 @@ if (isset($_GET['ajax'])) {
                 $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
                 $st->execute([':id' => $notifId]);
             }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
+                $st->execute([':id' => $incidentId]);
+            }
             echo json_encode(['ok' => true]);
             exit;
         }
@@ -36,7 +40,11 @@ if (isset($_GET['ajax'])) {
                    SET is_read = true
                  WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
             ");
-            // incident reports are no longer used here; only notifications are updated
+            $pdo->exec("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+            ");
             $pdo->commit();
             echo json_encode(['ok' => true]);
             exit;
@@ -63,9 +71,7 @@ if (!function_exists('time_elapsed_string')) {
     {
         if (!$datetime) return '';
         $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        // DB timestamps are stored as UTC without tz info. Parse as UTC then convert to Manila
-        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
-        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
         $diff = $now->diff($ago);
         $weeks = (int)floor($diff->d / 7);
         $days  = $diff->d % 7;
@@ -92,9 +98,7 @@ try {
                COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
                COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
                LOWER(COALESCE(a.request_type,'')) AS request_type,
-               c.first_name AS client_first, c.last_name AS client_last,
-               n.incident_id,
-               n.reqpro_id
+               c.first_name AS client_first, c.last_name AS client_last
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
         LEFT JOIN public.client   c ON c.client_id   = a.client_id
@@ -102,13 +106,28 @@ try {
         ORDER BY n.is_read ASC, n.created_at DESC
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
     $unreadPermits = (int)$pdo->query("
         SELECT COUNT(*) FROM public.notifications
         WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
     ")->fetchColumn();
 
-    // only notifications are considered for wildlife unread count
-    $unreadWildlife = $unreadPermits;
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadWildlife = $unreadPermits + $unreadIncidents;
 } catch (Throwable $e) {
     error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
     $wildNotifs = [];
@@ -133,9 +152,7 @@ function h(?string $s): string
 function time_elapsed_string($datetime, $full = false): string
 {
     $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    // DB timestamps are stored as UTC without tz info. Parse as UTC then convert to Manila
-    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
-    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
     $diff = $now->diff($ago);
     $weeks = (int)floor($diff->d / 7);
     $days  = $diff->d % 7;
@@ -330,11 +347,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['__action'] ?? '') === 'sav
                 $path  = 'species/' . $user_id . '/' . $this_report_id . '/' . ($i + 1) . '-' . slug($sp) . $ext;
                 $up = supa_upload_bytes('breeding_report', $path, $bytes, $mime);
                 if (!$up['ok']) {
-                    throw new RuntimeException('Upload failed for species image #' . ($i + 1) . ': ' . ($up['error'] ?? ''));
+                    throw new RuntimeException('Upload failed for species image #' . ($i + 1) . ': ' . $up['error']);
                 }
-                $img_public_url = (string)($up['public_url'] ?? '');
+                $img_public_url = (string)$up['public_url'];
             }
-            /* ======================= NOTIFICATIONS + INCIDENTS (unchanged UI) ======================= */
+
             $insR = $pdo->prepare("
                 INSERT INTO public.breeding_report
                     (breed_report_id,
@@ -371,7 +388,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['__action'] ?? '') === 'sav
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('[BREEDING SAVE] ' . $e->getMessage());
-        $errorMessage = 'Failed to save breeding report: ' . $e->getMessage();
+        $errorMessage = 'Sorry, something went wrong while saving the report.';
     }
 }
 
@@ -397,8 +414,7 @@ try {
             LOWER(COALESCE(a.request_type,''))                        AS request_type,
             c.first_name  AS client_first,
             c.last_name   AS client_last,
-            n.incident_id,
-            n.reqpro_id
+            NULL::text    AS incident_id
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
         LEFT JOIN public.client   c ON c.client_id = a.client_id
@@ -414,8 +430,45 @@ try {
           AND n.is_read = false
     ")->fetchColumn();
 
-    // Only use notifications (no incident rows)
-    $wildNotifs = $notifRows;
+    // B) incidents
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''),
+                        COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $incidentRows = array_map(function ($r) {
+        return [
+            'notif_id'        => null,
+            'message'         => 'WildLife Monitoring incident: ' . (string)$r['body_text'],
+            'is_read'         => $r['is_read'],
+            'created_at'      => $r['created_at'],
+            'notif_from'      => null,
+            'notif_to'        => 'wildlife',
+            'approval_id'     => null,
+            'permit_type'     => null,
+            'approval_status' => $r['status'],
+            'request_type'    => 'wildlife',
+            'client_first'    => null,
+            'client_last'     => null,
+            'incident_id'     => $r['incident_id'],
+        ];
+    }, $incRows);
+
+    $unreadInc = (int)$pdo->query("
+        SELECT COUNT(*)
+        FROM public.incident_report
+        WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
+          AND is_read = false
+    ")->fetchColumn();
+    $unreadWildlife += $unreadInc;
+
+    $wildNotifs = array_merge($notifRows, $incidentRows);
     usort($wildNotifs, function ($a, $b) {
         return strtotime((string)($b['created_at'] ?? 'now')) <=> strtotime((string)($a['created_at'] ?? 'now'));
     });
@@ -432,15 +485,24 @@ if (isset($_GET['ajax'])) {
 
     if ($ajaxAction === 'mark_read') {
         header('Content-Type: application/json');
-        $notifId = $_POST['notif_id'] ?? '';
-        if (!$notifId) {
-            echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+        $notifId    = $_POST['notif_id'] ?? '';
+        $incidentId = $_POST['incident_id'] ?? '';
+
+        if (!$notifId && !$incidentId) {
+            echo json_encode(['ok' => false, 'error' => 'missing notif_id or incident_id']);
             exit();
         }
 
         try {
-            $st = $pdo->prepare("UPDATE public.notifications SET is_read = true WHERE notif_id = :id");
-            $st->execute([':id' => $notifId]);
+            if ($notifId) {
+                $st = $pdo->prepare("UPDATE public.notifications SET is_read = true WHERE notif_id = :id");
+                $st->execute([':id' => $notifId]);
+            }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read = true WHERE incident_id = :id");
+                $st->execute([':id' => $incidentId]);
+            }
+
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
             error_log('[BREEDING MARK_READ] ' . $e->getMessage());
@@ -463,8 +525,17 @@ if (isset($_GET['ajax'])) {
             $updNotif->execute();
             $countNotifs = $updNotif->rowCount();
 
+            $updInc = $pdo->prepare("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE lower(COALESCE(category,'')) = 'wildlife monitoring'
+                   AND is_read = false
+            ");
+            $updInc->execute();
+            $countInc = $updInc->rowCount();
+
             $pdo->commit();
-            echo json_encode(['ok' => true, 'updated' => ['notifications' => $countNotifs]]);
+            echo json_encode(['ok' => true, 'updated' => ['notifications' => $countNotifs, 'incidents' => $countInc]]);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -1276,19 +1347,14 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             <a href="wildhome.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
 
-        <button class="mobile-toggle" aria-label="Toggle navigation">
-            <i class="fas fa-bars"></i>
-        </button>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><i class="fas fa-bars"></i></button>
 
         <div class="nav-container">
-            <!-- Main menu -->
             <div class="nav-item dropdown" data-dropdown>
-                <div class="nav-icon" aria-haspopup="true" aria-expanded="false">
-                    <i class="fas fa-bars"></i>
-                </div>
+                <div class="nav-icon" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="breedingreport.php" class="dropdown-item">
-                        <i class="fas fa-plus-circle"></i><span>Add Record</span>
+                    <a href="breedingreport.php" class="dropdown-item active-page" aria-current="page">
+                        <i class="fas fa-plus-circle"></i><span>Wildlife Management</span>
                     </a>
                     <a href="wildpermit.php" class="dropdown-item">
                         <i class="fas fa-paw"></i><span>Wildlife Permit</span>
@@ -1313,22 +1379,29 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         <?php
                         $combined = [];
 
-                        // Permits / notifications
+                        // Permits
                         foreach ($wildNotifs as $nf) {
                             $combined[] = [
-                                'id'          => $nf['notif_id'],
-                                'notif_id'    => $nf['notif_id'],
-                                'approval_id' => $nf['approval_id'] ?? null,
-                                'incident_id' => $nf['incident_id'] ?? null,
-                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
-                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
-                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
-                                'link'        => !empty($nf['reqpro_id']) ? 'wildprofile.php' : (!empty($nf['approval_id']) ? 'wildpermit.php' : (!empty($nf['incident_id']) ? 'reportaccident.php' : 'wildnotification.php'))
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => !empty($nf['approval_id']) ? 'wildpermit.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
                             ];
                         }
 
-                        // incident reports removed
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
+                            ];
+                        }
 
                         if (empty($combined)): ?>
                             <div class="notification-item">
@@ -1338,23 +1411,12 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             </div>
                             <?php else:
                             foreach ($combined as $item):
-                                $hasIncident = isset($item['incident_id']) && $item['incident_id'] !== null && trim((string)$item['incident_id']) !== '';
-                                $hasApproval = isset($item['approval_id']) && $item['approval_id'] !== null && trim((string)$item['approval_id']) !== '';
-                                $hasReqpro   = isset($item['reqpro_id'])   && $item['reqpro_id']   !== null && trim((string)$item['reqpro_id'])   !== '';
-
-                                if ($hasIncident) {
-                                    $title = 'Incident report';
-                                } elseif ($hasApproval) {
-                                    $title = 'Permit request';
-                                } elseif ($hasReqpro) {
-                                    $title = 'Profile request';
-                                } else {
-                                    $title = 'Permit request';
-                                }
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
                                 $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
                                 <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
-                                    data-notif-id="<?= h($item['id']) ?>" <?php if ($hasIncident): ?> data-incident-id="<?= h($item['incident_id']) ?>" <?php endif; ?>>
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
                                     <a href="<?= h($item['link']) ?>" class="notification-link">
                                         <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
@@ -1372,18 +1434,11 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 </div>
             </div>
 
-            <!-- Profile -->
             <div class="nav-item dropdown" data-dropdown>
-                <div class="nav-icon <?php echo $current_page === 'forestry-profile' ? 'active' : ''; ?>">
-                    <i class="fas fa-user-circle"></i>
-                </div>
+                <div class="nav-icon"><i class="fas fa-user-circle"></i></div>
                 <div class="dropdown-menu">
-                    <a href="wildprofile.php" class="dropdown-item">
-                        <i class="fas fa-user-edit"></i><span>Edit Profile</span>
-                    </a>
-                    <a href="../superlogin.php" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt"></i><span>Logout</span>
-                    </a>
+                    <a href="wildprofile.php" class="dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="../superlogin.php" class="dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
             </div>
         </div>
@@ -1414,7 +1469,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
             <input type="hidden" name="__action" value="save_report">
 
             <div class="form-header">
-                <h1>WILDLIFE MANAGEMENT</h1>
+                <h1>WILDLIFE BREEDING REPORT</h1>
             </div>
 
             <div class="form-body">
@@ -1495,7 +1550,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="stock_number">Breeding Stock Number</label>
+                            <label for="stock_number">Accredited Breeding Stock Number</label>
                             <input type="number" id="stock_number" name="stock_number[]" placeholder="Enter stock number" min="0" required>
                         </div>
                     </div>
@@ -1575,7 +1630,7 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="modal_stock_number">Breeding Stock Number</label>
+                            <label for="modal_stock_number">Accredited Breeding Stock Number</label>
                             <input type="number" id="modal_stock_number" placeholder="Enter stock number" min="0">
                         </div>
                         <div class="form-group">
@@ -1697,11 +1752,13 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
                 const item = link.closest('.notification-item');
                 const notifId = item?.getAttribute('data-notif-id') || '';
+                const incidentId = item?.getAttribute('data-incident-id') || '';
                 const href = link.getAttribute('href') || '#';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
                     await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
                         method: 'POST',
                         headers: {
@@ -1727,14 +1784,12 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Mobile hamburger
+            // mobile menu
             const mobileToggle = document.querySelector('.mobile-toggle');
             const navContainer = document.querySelector('.nav-container');
-            mobileToggle?.addEventListener('click', () => {
-                navContainer.classList.toggle('active');
-            });
+            mobileToggle?.addEventListener('click', () => navContainer.classList.toggle('active'));
 
-            // Dropdown behavior (hover desktop / click mobile)
+            // dropdowns
             const dropdowns = document.querySelectorAll('[data-dropdown]');
             const isTouch = matchMedia('(pointer: coarse)').matches;
 
@@ -1748,18 +1803,14 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     trigger.setAttribute('aria-expanded', 'true');
                     menu.style.opacity = '1';
                     menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') ?
-                        'translateX(-50%) translateY(0)' :
-                        'translateY(0)';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(0)' : 'translateY(0)';
                 };
                 const close = () => {
                     dd.classList.remove('open');
                     trigger.setAttribute('aria-expanded', 'false');
                     menu.style.opacity = '0';
                     menu.style.visibility = 'hidden';
-                    menu.style.transform = menu.classList.contains('center') ?
-                        'translateX(-50%) translateY(10px)' :
-                        'translateY(10px)';
+                    menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
                     if (isTouch) menu.style.display = 'none';
                 };
 
@@ -1773,13 +1824,11 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         e.preventDefault();
                         e.stopPropagation();
                         const openNow = dd.classList.contains('open');
-                        document.querySelectorAll('[data-dropdown].open')
-                            .forEach(o => {
-                                if (o !== dd) o.classList.remove('open');
-                            });
-                        if (openNow) {
-                            close();
-                        } else {
+                        document.querySelectorAll('[data-dropdown].open').forEach(o => {
+                            if (o !== dd) o.classList.remove('open');
+                        });
+                        if (openNow) close();
+                        else {
                             menu.style.display = 'block';
                             open();
                         }
@@ -1787,7 +1836,6 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }
             });
 
-            // Close menus when clicking outside (mobile)
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('[data-dropdown]')) {
                     document.querySelectorAll('[data-dropdown].open').forEach(dd => {
@@ -1796,23 +1844,20 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         if (menu) {
                             menu.style.opacity = '0';
                             menu.style.visibility = 'hidden';
-                            menu.style.transform = menu.classList.contains('center') ?
-                                'translateX(-50%) translateY(10px)' :
-                                'translateY(10px)';
-                            if (matchMedia('(pointer: coarse)').matches) {
-                                menu.style.display = 'none';
-                            }
+                            menu.style.transform = menu.classList.contains('center') ? 'translateX(-50%) translateY(10px)' : 'translateY(10px)';
+                            if (matchMedia('(pointer: coarse)').matches) menu.style.display = 'none';
                         }
+                        dd.querySelector('.nav-icon')?.setAttribute('aria-expanded', 'false');
                     });
                 }
             });
 
-            // Mark all as read (optimistic; optional server call already exists)
-            const markAll = document.getElementById('markAllRead');
-            markAll?.addEventListener('click', async (e) => {
+            // mark all read
+            document.getElementById('markAllRead')?.addEventListener('click', async (e) => {
                 e.preventDefault();
-                document.querySelectorAll('#wildNotifList .notification-item.unread')
-                    .forEach(el => el.classList.remove('unread'));
+
+                // optimistic UI
+                document.querySelectorAll('#wildNotifList .notification-item.unread').forEach(el => el.classList.remove('unread'));
                 const badge = document.querySelector('#notifDropdown .badge');
                 if (badge) {
                     badge.textContent = '0';
@@ -1820,32 +1865,34 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                 }
 
                 try {
-                    await fetch('../backend/notifications/mark_all_read.php?type=wildlife', {
+                    const res = await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_all_read', {
                         method: 'POST',
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest'
                         }
-                    });
-                } catch (_) {
-                    /* ignore */
+                    }).then(r => r.json());
+                    if (!res || res.ok !== true) location.reload();
+                } catch {
+                    location.reload();
                 }
             });
 
-            // CLICK: mark a single notification/incident as read, then navigate
+            // single item read + follow
             document.getElementById('wildNotifList')?.addEventListener('click', async (e) => {
                 const link = e.target.closest('.notification-link');
                 if (!link) return;
                 const item = link.closest('.notification-item');
                 if (!item) return;
-
                 e.preventDefault();
+
                 const href = link.getAttribute('href') || 'wildnotification.php';
                 const notifId = item.getAttribute('data-notif-id') || '';
+                const incidentId = item.getAttribute('data-incident-id') || '';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
-
+                    if (incidentId) form.set('incident_id', incidentId);
                     await fetch('<?php echo basename(__FILE__); ?>?ajax=mark_read', {
                         method: 'POST',
                         headers: {
@@ -1854,11 +1901,8 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                         },
                         body: form.toString()
                     });
-                } catch (_) {
-                    /* ignore */
-                }
+                } catch {}
 
-                // Optimistic UI (remove unread highlight, decrement badge)
                 item.classList.remove('unread');
                 const badge = document.querySelector('#notifDropdown .badge');
                 if (badge) {
@@ -1867,8 +1911,6 @@ $current_page = basename((string)($_SERVER['PHP_SELF'] ?? ''), '.php');
                     badge.textContent = String(next);
                     if (next <= 0) badge.style.display = 'none';
                 }
-
-                // Navigate afterward
                 window.location.href = href;
             });
         });

@@ -898,6 +898,9 @@ try {
 } catch (Throwable $e) {
     error_log('[APP-STATUS NOTIFS] ' . $e->getMessage());
 }
+
+// prepared statement used to check whether an approval is for seedlings
+$stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -2356,7 +2359,23 @@ try {
                             <?php
                             $unread = empty($n['is_read']);
                             $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                            $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
+                            // Determine title: if approval -> check if it's a seedlings approval
+                            $title = 'Notification';
+                            if (!empty($n['approval_id'])) {
+                                try {
+                                    $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                    $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                    if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                        $title = 'Seedlings Request Update';
+                                    } else {
+                                        $title = 'Permit Update';
+                                    }
+                                } catch (Throwable $e) {
+                                    $title = 'Permit Update';
+                                }
+                            } elseif (!empty($n['incident_id'])) {
+                                $title = 'Incident Update';
+                            }
 
                             // Strip any rejection reason from the message for notifications UI
                             $msg = strip_reason_from_message($n['message'] ?? '');

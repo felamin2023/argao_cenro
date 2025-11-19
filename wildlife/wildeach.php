@@ -174,7 +174,7 @@ try {
                 <div class="dropdown-menu center">
                     <a href="breedingreport.php" class="dropdown-item">
                         <i class="fas fa-plus-circle"></i>
-                        <span>Add Record</span>
+                        <span>Wildlife Management</span>
                     </a>
 
                     <a href="wildpermit.php" class="dropdown-item">

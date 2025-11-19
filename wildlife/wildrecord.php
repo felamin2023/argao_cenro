@@ -16,14 +16,21 @@ if (isset($_GET['ajax'])) {
     header('Content-Type: application/json; charset=utf-8');
     try {
         if ($_GET['ajax'] === 'mark_read') {
-            $notifId = $_POST['notif_id'] ?? '';
-            if (!$notifId) {
-                echo json_encode(['ok' => false, 'error' => 'missing notif_id']);
+            $notifId    = $_POST['notif_id']    ?? '';
+            $incidentId = $_POST['incident_id'] ?? '';
+            if (!$notifId && !$incidentId) {
+                echo json_encode(['ok' => false, 'error' => 'missing ids']);
                 exit;
             }
 
-            $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
-            $st->execute([':id' => $notifId]);
+            if ($notifId) {
+                $st = $pdo->prepare("UPDATE public.notifications SET is_read=true WHERE notif_id=:id");
+                $st->execute([':id' => $notifId]);
+            }
+            if ($incidentId) {
+                $st = $pdo->prepare("UPDATE public.incident_report SET is_read=true WHERE incident_id=:id");
+                $st->execute([':id' => $incidentId]);
+            }
             echo json_encode(['ok' => true]);
             exit;
         }
@@ -35,7 +42,11 @@ if (isset($_GET['ajax'])) {
                    SET is_read = true
                  WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
             ");
-            // do not update incident_report here; only notifications
+            $pdo->exec("
+                UPDATE public.incident_report
+                   SET is_read = true
+                 WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+            ");
             $pdo->commit();
             echo json_encode(['ok' => true]);
             exit;
@@ -62,9 +73,7 @@ if (!function_exists('time_elapsed_string')) {
     {
         if (!$datetime) return '';
         $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        // DB timestamps are stored as UTC (no tz info). Parse as UTC then convert to Asia/Manila
-        $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
-        $ago->setTimezone(new DateTimeZone('Asia/Manila'));
+        $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
         $diff = $now->diff($ago);
         $weeks = (int)floor($diff->d / 7);
         $days  = $diff->d % 7;
@@ -85,39 +94,42 @@ $incRows = [];
 $unreadWildlife = 0;
 
 try {
-    $notifRows = $pdo->query("
-        SELECT
-            n.notif_id,
-            n.message,
-            n.is_read,
-            n.created_at,
-            n.\"from\" AS notif_from,
-            n.\"to\"   AS notif_to,
-            a.approval_id,
-            COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
-            COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
-            LOWER(COALESCE(a.request_type,''))                        AS request_type,
-            c.first_name  AS client_first,
-            c.last_name   AS client_last,
-            n.incident_id,
-            n.reqpro_id
+    $wildNotifs = $pdo->query("
+        SELECT n.notif_id, n.message, n.is_read, n.created_at, n.\"from\" AS notif_from, n.\"to\" AS notif_to,
+               a.approval_id,
+               COALESCE(NULLIF(btrim(a.permit_type), ''), 'none')        AS permit_type,
+               COALESCE(NULLIF(btrim(a.approval_status), ''), 'pending') AS approval_status,
+               LOWER(COALESCE(a.request_type,'')) AS request_type,
+               c.first_name AS client_first, c.last_name AS client_last
         FROM public.notifications n
         LEFT JOIN public.approval a ON a.approval_id = n.approval_id
-        LEFT JOIN public.client   c ON c.client_id = a.client_id
-        WHERE LOWER(COALESCE(n.\"to\", '')) = 'wildlife'
+        LEFT JOIN public.client   c ON c.client_id   = a.client_id
+        WHERE LOWER(COALESCE(n.\"to\", ''))='wildlife'
         ORDER BY n.is_read ASC, n.created_at DESC
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $unreadWildlife = (int)$pdo->query("
-        SELECT COUNT(*)
-        FROM public.notifications n
-        WHERE LOWER(COALESCE(n.\"to\", '')) = 'wildlife'
-          AND n.is_read = false
+    $incRows = $pdo->query("
+        SELECT incident_id,
+               COALESCE(NULLIF(btrim(more_description), ''), COALESCE(NULLIF(btrim(what), ''), '(no description)')) AS body_text,
+               status, is_read, created_at
+        FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring'
+        ORDER BY created_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $unreadPermits = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.notifications
+        WHERE LOWER(COALESCE(\"to\", ''))='wildlife' AND is_read=false
     ")->fetchColumn();
 
-    // Only use notifications (do not fetch incident_report rows)
-    $wildNotifs = $notifRows;
+    $unreadIncidents = (int)$pdo->query("
+        SELECT COUNT(*) FROM public.incident_report
+        WHERE LOWER(COALESCE(category,''))='wildlife monitoring' AND is_read=false
+    ")->fetchColumn();
+
+    $unreadWildlife = $unreadPermits + $unreadIncidents;
 } catch (Throwable $e) {
     error_log('[NOTIF BOOTSTRAP] ' . $e->getMessage());
     $wildNotifs = [];
@@ -500,7 +512,7 @@ foreach ($rows as $r) {
             <div class="nav-item dropdown">
                 <div class="nav-icon active" aria-haspopup="true" aria-expanded="false"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="breedingreport.php" class="dropdown-item active-page"><i class="fas fa-plus-circle"></i><span>Add Record</span></a>
+                    <a href="breedingreport.php" class="dropdown-item active-page"><i class="fas fa-plus-circle"></i><span>Wildlife Management</span></a>
                     <a href="wildpermit.php" class="dropdown-item"><i class="fas fa-paw"></i><span>Wildlife Permit</span></a>
                     <a href="reportaccident.php" class="dropdown-item"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
                 </div>
@@ -522,17 +534,27 @@ foreach ($rows as $r) {
                         <?php
                         $combined = [];
 
+                        // Permits
                         foreach ($wildNotifs as $nf) {
                             $combined[] = [
-                                'id'          => $nf['notif_id'],
-                                'notif_id'    => $nf['notif_id'],
-                                'approval_id' => $nf['approval_id'] ?? null,
-                                'incident_id' => $nf['incident_id'] ?? null,
-                                'reqpro_id'   => $nf['reqpro_id'] ?? null,
-                                'is_read'     => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
-                                'message'     => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
-                                'ago'         => time_elapsed_string($nf['created_at'] ?? date('c')),
-                                'link'        => !empty($nf['reqpro_id']) ? 'wildprofile.php' : (!empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php')
+                                'id'      => $nf['notif_id'],
+                                'is_read' => ($nf['is_read'] === true || $nf['is_read'] === 't' || $nf['is_read'] === 1 || $nf['is_read'] === '1'),
+                                'type'    => 'permit',
+                                'message' => trim((string)$nf['message'] ?: (h(($nf['client_first'] ?? '') . ' ' . ($nf['client_last'] ?? '')) . ' requested a wildlife permit.')),
+                                'ago'     => time_elapsed_string($nf['created_at'] ?? date('c')),
+                                'link'    => !empty($nf['approval_id']) ? 'wildeach.php?id=' . urlencode((string)$nf['approval_id']) : 'wildnotification.php'
+                            ];
+                        }
+
+                        // Incidents
+                        foreach ($incRows as $ir) {
+                            $combined[] = [
+                                'id'      => $ir['incident_id'],
+                                'is_read' => ($ir['is_read'] === true || $ir['is_read'] === 't' || $ir['is_read'] === 1 || $ir['is_read'] === '1'),
+                                'type'    => 'incident',
+                                'message' => trim((string)$ir['body_text']),
+                                'ago'     => time_elapsed_string($ir['created_at'] ?? date('c')),
+                                'link'    => 'reportaccident.php?focus=' . urlencode((string)$ir['incident_id'])
                             ];
                         }
 
@@ -544,19 +566,12 @@ foreach ($rows as $r) {
                             </div>
                             <?php else:
                             foreach ($combined as $item):
-                                $hasApproval = isset($item['approval_id']) && $item['approval_id'] !== null && trim((string)$item['approval_id']) !== '';
-                                $hasReqpro  = isset($item['reqpro_id'])   && $item['reqpro_id']   !== null && trim((string)$item['reqpro_id']) !== '';
-                                if ($hasApproval) {
-                                    $title = 'Permit request';
-                                } elseif ($hasReqpro) {
-                                    $title = 'Profile request';
-                                } else {
-                                    $title = 'Permit request';
-                                }
+                                $title = $item['type'] === 'permit' ? 'Permit request' : 'Incident report';
                                 $iconClass = $item['is_read'] ? 'fa-regular fa-bell' : 'fa-solid fa-bell';
                             ?>
                                 <div class="notification-item <?= $item['is_read'] ? '' : 'unread' ?>"
-                                    data-notif-id="<?= h($item['id']) ?>">
+                                    data-notif-id="<?= $item['type'] === 'permit' ? h($item['id']) : '' ?>"
+                                    data-incident-id="<?= $item['type'] === 'incident' ? h($item['id']) : '' ?>">
                                     <a href="<?= h($item['link']) ?>" class="notification-link">
                                         <div class="notification-icon"><i class="<?= $iconClass ?>"></i></div>
                                         <div class="notification-content">
@@ -587,67 +602,34 @@ foreach ($rows as $r) {
 
     <div class="wildlife-container">
         <div class="container">
-            <div class="header">
-                <h1 class="title">WILDLIFE MONITORING RECORDS</h1>
+            <div class="header" style="background:#ffffff;border-radius:12px;padding:18px 20px;box-shadow:0 6px 15px rgba(0,0,0,0.2);margin-bottom:30px;color:black;">
+              
+                <h1 class="title" style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;font-size:42px;font-weight:900;color:#000;text-align:center;margin:0;">WILDLIFE MONITORING RECORDS</h1>
+
+
+                 <div class="controls">
+                      
+               <div class="search">
+    <i class="fas fa-search search-icon"></i>
+    <input type="text" placeholder="SEARCH HERE" class="search-input" id="search-input">
+</div>
+               
+
             </div>
 
-            <div class="controls">
-                <div class="filter" style="display:flex; align-items:center; gap:10px; width:40%;">
-                    <select class="filter-month" id="filterStartMonth">
-                        <option value="">Start Month</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
-                    </select>
-                    <select class="filter-month" id="filterEndMonth">
-                        <option value="">End Month</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
-                    </select>
-                    <input type="number" class="filter-year" id="filterYear" placeholder="Enter Year" min="1900" max="3000">
-                    <!-- <button class="filter-button" id="applyFilter" style="background-color:var(--primary-dark); color:var(--white); display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; border:none; cursor:pointer;">
-                        <i class="fas fa-filter" style="font-size:18px; color:var(--white);"></i><span style="font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size:16px; font-weight:600;">Filter</span>
-                    </button> -->
-                </div>
-
-                <div class="search">
-                    <input type="text" placeholder="SEARCH HERE" class="search-input" id="searchInput">
-                    <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon">
-                </div>
-                <!-- <div class="export">
-                    <button class="export-button" id="exportCsv"><img src="https://c.animaapp.com/uJwjYGDm/img/vector-1.svg" alt="Export" class="export-icon"></button>
-                    <span class="export-label">Export as CSV</span>
-                </div> -->
+           
+               
             </div>
 
             <div class="table-container">
                 <table class="wildlife-table" id="recordsTable">
                     <thead>
                         <tr>
-                            <th>WILDLIFE ID</th>
+                            <th>WFP NO</th>
                             <th>OWNER NAME</th>
                             <th>SPECIES NAME</th>
-                            <th>STOCK NO</th>
-                            <th>PREV BALANCE</th>
+                            <th>PREVIOUS BALANCE</th>
+                             <th>TOTAL STOCKS</th>
                             <th>ACTIONS</th>
                         </tr>
                     </thead>
@@ -788,11 +770,13 @@ foreach ($rows as $r) {
 
                 const item = link.closest('.notification-item');
                 const notifId = item?.getAttribute('data-notif-id') || '';
+                const incidentId = item?.getAttribute('data-incident-id') || '';
                 const href = link.getAttribute('href') || '#';
 
                 try {
                     const form = new URLSearchParams();
                     if (notifId) form.set('notif_id', notifId);
+                    if (incidentId) form.set('incident_id', incidentId);
                     await fetch(`${NOTIF_ENDPOINT}?ajax=mark_read`, {
                         method: 'POST',
                         headers: {
@@ -894,7 +878,8 @@ foreach ($rows as $r) {
             });
 
             /* ===== Filters: live on type/click/change ===== */
-            const searchInput = document.getElementById('searchInput');
+            // The markup uses id="search-input" (dash), ensure JS queries the correct id.
+            const searchInput = document.getElementById('search-input');
             const startSel = document.getElementById('filterStartMonth');
             const endSel = document.getElementById('filterEndMonth');
             const yearInput = document.getElementById('filterYear');
@@ -914,10 +899,10 @@ foreach ($rows as $r) {
             };
 
             const filterRecords = () => {
-                const q = (searchInput.value || '').trim().toLowerCase();
-                const sm = startSel.value ? parseInt(startSel.value, 10) : null;
-                const em = endSel.value ? parseInt(endSel.value, 10) : null;
-                const yr = yearInput.value ? parseInt(yearInput.value, 10) : null;
+                const q = ((searchInput && searchInput.value) ? searchInput.value : '').trim().toLowerCase();
+                const sm = (startSel && startSel.value) ? parseInt(startSel.value, 10) : null;
+                const em = (endSel && endSel.value) ? parseInt(endSel.value, 10) : null;
+                const yr = (yearInput && yearInput.value) ? parseInt(yearInput.value, 10) : null;
 
                 const haveYear = !!yr;
                 const haveStartM = !!sm;
@@ -996,13 +981,15 @@ foreach ($rows as $r) {
                 }
             };
 
-            // live on every type/click/change
-            searchInput.addEventListener('input', filterRecords);
-            startSel.addEventListener('change', filterRecords);
-            endSel.addEventListener('change', filterRecords);
-            yearInput.addEventListener('input', filterRecords);
-            yearInput.addEventListener('change', filterRecords);
-            filterBtn.addEventListener('click', (e) => {
+            // live on every type/click/change (guard elements which may not exist on this page)
+            if (searchInput) searchInput.addEventListener('input', filterRecords);
+            if (startSel) startSel.addEventListener('change', filterRecords);
+            if (endSel) endSel.addEventListener('change', filterRecords);
+            if (yearInput) {
+                yearInput.addEventListener('input', filterRecords);
+                yearInput.addEventListener('change', filterRecords);
+            }
+            if (filterBtn) filterBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 filterRecords();
             });
