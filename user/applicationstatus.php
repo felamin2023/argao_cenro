@@ -2358,7 +2358,13 @@ $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE 
                         <?php foreach ($notifs as $n): ?>
                             <?php
                             $unread = empty($n['is_read']);
-                            $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                            if ($n['created_at']) {
+                                $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                $ts = $dt->getTimestamp();
+                            } else {
+                                $ts = time();
+                            }
                             // Determine title: if approval -> check if it's a seedlings approval
                             $title = 'Notification';
                             if (!empty($n['approval_id'])) {

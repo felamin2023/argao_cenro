@@ -1610,7 +1610,8 @@ try {
         .seedling-qty[type="number"] {
             appearance: textfield;
             -webkit-appearance: textfield;
-            -moz-appearance: textfield; /* Firefox */
+            -moz-appearance: textfield;
+            /* Firefox */
         }
 
         /* Row layout stays tidy on small screens */
@@ -1870,7 +1871,13 @@ try {
                             </div>
                             <?php else: foreach ($notifs as $n):
                                 $unread = empty($n['is_read']);
-                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
                                 // Determine title: if approval -> check if it's a seedlings approval
                                 $title = 'Notification';
                                 if (!empty($n['approval_id'])) {
@@ -1907,40 +1914,44 @@ try {
                                             <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
                                             <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
                                             <script>
-                                            // Manila time + relative label for notifications
-                                            (function() {
-                                                function timeAgo(seconds) {
-                                                    if (seconds < 60) return 'just now';
-                                                    const m = Math.floor(seconds / 60);
-                                                    if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
-                                                    const h = Math.floor(m / 60);
-                                                    if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
-                                                    const d = Math.floor(h / 24);
-                                                    if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
-                                                    const w = Math.floor(d / 7);
-                                                    if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
-                                                    const mo = Math.floor(d / 30);
-                                                    if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
-                                                    const y = Math.floor(d / 365);
-                                                    return `${y} year${y > 1 ? 's' : ''} ago`;
-                                                }
-                                                document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
-                                                    const tsMs = Number(el.dataset.ts || 0) * 1000;
-                                                    if (!tsMs) return;
-                                                    const diffSec = Math.floor((Date.now() - tsMs) / 1000);
-                                                    el.textContent = timeAgo(diffSec);
-                                                    try {
-                                                        const manilaFmt = new Intl.DateTimeFormat('en-PH', {
-                                                            timeZone: 'Asia/Manila',
-                                                            year: 'numeric', month: 'short', day: 'numeric',
-                                                            hour: 'numeric', minute: '2-digit', second: '2-digit'
-                                                        });
-                                                        el.title = manilaFmt.format(new Date(tsMs));
-                                                    } catch (err) {
-                                                        el.title = new Date(tsMs).toLocaleString();
+                                                // Manila time + relative label for notifications
+                                                (function() {
+                                                    function timeAgo(seconds) {
+                                                        if (seconds < 60) return 'just now';
+                                                        const m = Math.floor(seconds / 60);
+                                                        if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                                                        const h = Math.floor(m / 60);
+                                                        if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                                                        const d = Math.floor(h / 24);
+                                                        if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                                                        const w = Math.floor(d / 7);
+                                                        if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                                                        const mo = Math.floor(d / 30);
+                                                        if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                                                        const y = Math.floor(d / 365);
+                                                        return `${y} year${y > 1 ? 's' : ''} ago`;
                                                     }
-                                                });
-                                            })();
+                                                    document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                                                        const tsMs = Number(el.dataset.ts || 0) * 1000;
+                                                        if (!tsMs) return;
+                                                        const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                                                        el.textContent = timeAgo(diffSec);
+                                                        try {
+                                                            const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                                                                timeZone: 'Asia/Manila',
+                                                                year: 'numeric',
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: 'numeric',
+                                                                minute: '2-digit',
+                                                                second: '2-digit'
+                                                            });
+                                                            el.title = manilaFmt.format(new Date(tsMs));
+                                                        } catch (err) {
+                                                            el.title = new Date(tsMs).toLocaleString();
+                                                        }
+                                                    });
+                                                })();
                                             </script>
                                         </div>
                                     </a>
@@ -2109,9 +2120,9 @@ try {
                 <small style="color:#666;display:block;margin-top:6px;">Tip: choose either a City <em>or</em> a Municipality. Province is assumed as Cebu.</small>
 
                 <!-- Seedlings list -->
-                <div style="margin-top:18px">
+                <div style="margin-top:18px; width: 100%;">
                     <label style="font-weight:600;display:block;margin-bottom:8px">Seedlings Requested (add more rows as needed)</label>
-                    <div id="seedlingList" style="display:flex;flex-direction:column;gap:10px"></div>
+                    <div id="seedlingList" style="display:flex;flex-direction:column;gap:10px; "></div>
                     <button type="button" id="addSeedlingBtn" class="btn btn-outline" style="margin-top:6px"><i class="fas fa-plus-circle"></i> Add another seedling</button>
                 </div>
 
@@ -2335,9 +2346,9 @@ try {
                 const row = document.createElement('div');
                 row.className = 'seedling-row';
                 row.style.display = 'grid';
-                row.style.gridTemplateColumns = '2fr 1fr auto';
+                row.style.gridTemplateColumns = '2fr 1fr auto auto';
                 row.style.gap = '8px';
-                row.style.width = '700px';
+                row.style.width = '850px';
 
                 const sel = buildSeedlingSelect();
                 const qty = document.createElement('input');

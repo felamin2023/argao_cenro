@@ -103,8 +103,13 @@ $renderNotificationItem = static function (array $n) use ($cleanNotificationMess
     $fullMessage = trim($rawMessage) !== '' ? trim($rawMessage) : $summary;
 
     $createdAtRaw = (string)($n['created_at'] ?? '');
-    $ts = $createdAtRaw !== '' ? strtotime($createdAtRaw) : false;
-    if ($ts === false) $ts = time();
+    if ($createdAtRaw !== '') {
+        $dt = new DateTime($createdAtRaw, new DateTimeZone('UTC'));
+        $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+        $ts = $dt->getTimestamp();
+    } else {
+        $ts = time();
+    }
 
     $iconClass = !empty($n['incident_id']) ? 'alert' : 'approve';
 
@@ -1236,7 +1241,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <?php foreach ($notifs as $n): ?>
                                 <?php
                                 $unread = empty($n['is_read']);
-                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
                                 $title = $n['approval_id'] ? 'Permit Update' : ($n['incident_id'] ? 'Incident Update' : 'Notification');
                                 $cleanMsg = (function ($m) {
                                     $t = trim((string)$m);

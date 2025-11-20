@@ -1383,7 +1383,14 @@ try {
                             <?php foreach ($notifs as $n): ?>
                                 <?php
                                 $unread = empty($n['is_read']);
-                                $ts = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                // Convert UTC timestamp to Manila timezone before calculating elapsed time
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
                                 // Determine title: if approval -> check if it's a seedlings approval
                                 $title = 'Notification';
                                 if (!empty($n['approval_id'])) {
@@ -1464,7 +1471,7 @@ try {
                     </div>
                 </div>
 
-               
+
             </div>
         </div>
 
@@ -1501,8 +1508,8 @@ try {
             </div>
             <div style="margin-top: 20px;">
                 <a href="../user/scaling.pdf" download="CMEMP_Full_Report.pdf" class="btn">
-                 <i class="fas fa-download"></i> Download Full Report
-                 </a>
+                    <i class="fas fa-download"></i> Download Full Report
+                </a>
             </div>
         </div>
 
@@ -1651,8 +1658,12 @@ try {
                 try {
                     const manilaFmt = new Intl.DateTimeFormat('en-PH', {
                         timeZone: 'Asia/Manila',
-                        year: 'numeric', month: 'short', day: 'numeric',
-                        hour: 'numeric', minute: '2-digit', second: '2-digit'
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        second: '2-digit'
                     });
                     el.title = manilaFmt.format(new Date(tsMs));
                 } catch (err) {

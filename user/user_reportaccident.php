@@ -473,34 +473,41 @@ try {
                                 </div>
                             </div>
                             <?php else:
-                                $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
-                                foreach ($notifs as $n):
-                                    $unread = empty($n['is_read']);
-                                    $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
-                                    // Determine title: if approval -> check if it's a seedlings approval
-                                    $title = 'Notification';
-                                    if (!empty($n['approval_id'])) {
-                                        try {
-                                            $stApprovalType->execute([':aid' => $n['approval_id']]);
-                                            $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
-                                            if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
-                                                $title = 'Seedlings Request Update';
-                                            } else {
-                                                $title = 'Permit Update';
-                                            }
-                                        } catch (Throwable $e) {
-                                            // fallback
+                            $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
+                            foreach ($notifs as $n):
+                                $unread = empty($n['is_read']);
+                                // Convert UTC timestamp to Manila timezone before calculating elapsed time
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
+                                // Determine title: if approval -> check if it's a seedlings approval
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
                                             $title = 'Permit Update';
                                         }
-                                    } elseif (!empty($n['incident_id'])) {
-                                        $title = 'Incident Update';
+                                    } catch (Throwable $e) {
+                                        // fallback
+                                        $title = 'Permit Update';
                                     }
-                                    $cleanMsg = (function ($m) {
-                                        $t = trim((string)$m);
-                                        $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
-                                        $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
-                                        return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
-                                    })($n['message'] ?? '');
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
+                                    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
+                                    return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
+                                })($n['message'] ?? '');
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"

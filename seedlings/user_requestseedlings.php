@@ -63,7 +63,9 @@ function time_elapsed_string($datetime, $full = false): string
 {
     if (!$datetime) return '';
     $now  = new DateTime('now', new DateTimeZone('Asia/Manila'));
-    $ago  = new DateTime($datetime, new DateTimeZone('Asia/Manila'));
+    // Create DateTime from UTC timestamp and convert to Manila timezone
+    $ago  = new DateTime($datetime, new DateTimeZone('UTC'));
+    $ago->setTimezone(new DateTimeZone('Asia/Manila'));
     $diff = $now->diff($ago);
     $weeks = (int)floor($diff->d / 7);
     $days  = $diff->d % 7;
@@ -265,7 +267,7 @@ function parse_bucket_and_path_from_appform(string $urlOrPath): array
 }
 
 /* Build MHTML (.doc) with a circular APPROVED badge (upper-right) */
-function build_seedling_letter_mhtml_approved(array $client, string $sig_b64, string $purpose, array $items, string $request_date): array
+function build_seedling_letter_mhtml_approved(array $client, ?string $sig_b64 = null, string $purpose = '', array $items = [], string $request_date = ''): array
 {
     $first = trim((string)($client['first_name'] ?? ''));
     $middle = trim((string)($client['middle_name'] ?? ''));
@@ -297,6 +299,15 @@ function build_seedling_letter_mhtml_approved(array $client, string $sig_b64, st
     }
     $seedTxt = $seedTxts ? implode(', ', $seedTxts) : 'seedlings';
 
+    // Build signature image HTML - either from provided b64 or placeholder
+    $sigImageHtml = '';
+    if ($sig_b64 !== null && $sig_b64 !== '') {
+        $sigImageHtml = '<img src="cid:sigimg" width="140" height="25" style="height:auto;border:1px solid #ccc;"><br>';
+    } else {
+        // Placeholder when signature is not available
+        $sigImageHtml = '<div style="width:140px;height:25px;border:1px dashed #999;display:inline-block;margin:6px 0;"></div><br>';
+    }
+
     $inner = '
         <div style="position:fixed;top:26px;right:26px;width:120px;height:120px;border-radius:50%;
                     background:#0F2A6B;color:#fff;display:flex;align-items:center;justify-content:center;
@@ -313,7 +324,7 @@ function build_seedling_letter_mhtml_approved(array $client, string $sig_b64, st
         <p style="text-align:justify;text-indent:50px;">I would be grateful if you could approve this request at your earliest convenience.</p>
         <p>Thank you for your time and consideration.</p>
         <p>Sincerely,<br><br>
-            <img src="cid:sigimg" width="140" height="25" style="height:auto;border:1px solid #ccc;"><br>
+            ' . $sigImageHtml . '
             ' . h($fullName) . '<br>' . h($addressLine ?: $cityProv) . '
         </p>
     ';
@@ -327,8 +338,14 @@ function build_seedling_letter_mhtml_approved(array $client, string $sig_b64, st
     $mhtml = "MIME-Version: 1.0\r\n";
     $mhtml .= "Content-Type: multipart/related; boundary=\"$boundary\"; type=\"text/html\"\r\n\r\n";
     $mhtml .= "--$boundary\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\nContent-Location: file:///index.html\r\n\r\n" . $htmlDoc . "\r\n\r\n";
-    $mhtml .= "--$boundary\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <sigimg>\r\nContent-Location: file:///sig.png\r\n\r\n";
-    $mhtml .= chunk_split($sig_b64, 76, "\r\n") . "\r\n--$boundary--";
+
+    // Only add signature part if we have valid base64 data
+    if ($sig_b64 !== null && $sig_b64 !== '') {
+        $mhtml .= "--$boundary\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <sigimg>\r\nContent-Location: file:///sig.png\r\n\r\n";
+        $mhtml .= chunk_split($sig_b64, 76, "\r\n") . "\r\n";
+    }
+
+    $mhtml .= "--$boundary--";
     return [$mhtml, $fullName];
 }
 
@@ -384,31 +401,40 @@ function regenerate_and_overwrite_requirement_doc(PDO $pdo, string $approvalId):
     if (!$client) throw new RuntimeException('Client not found.');
     error_log("DEBUG: Found client: " . ($client['first_name'] ?? 'Unknown'));
 
-    // 5) Get signature bytes → base64
+    // 5) Get signature bytes → base64 (or handle missing signature)
     $sig = trim((string)($client['signature'] ?? ''));
+    $sig_b64 = null;
+
     if ($sig === '') {
-        error_log("ERROR: Missing signature for client_id: $cid");
-        throw new RuntimeException('Client signature not found for this request.');
-    }
-
-    error_log("DEBUG: Signature path: $sig");
-
-    $pngBytes = '';
-    if (preg_match('~^https?://~i', $sig)) {
-        error_log("DEBUG: Downloading signature from URL");
-        $pngBytes = http_get_bytes($sig);
+        error_log("WARNING: Missing signature for client_id: $cid - document will be generated with placeholder signature");
     } else {
-        $seg = explode('/', $sig, 2);
-        if (count($seg) !== 2) {
-            error_log("ERROR: Invalid signature path format: $sig");
-            throw new RuntimeException('Invalid signature path format.');
-        }
-        error_log("DEBUG: Downloading signature from storage: {$seg[0]}/{$seg[1]}");
-        $pngBytes = storage_download_private($seg[0], $seg[1]);
-    }
+        error_log("DEBUG: Signature path: $sig");
 
-    $sig_b64 = base64_encode($pngBytes);
-    error_log("DEBUG: Signature downloaded successfully, size: " . strlen($pngBytes) . " bytes");
+        $pngBytes = '';
+        try {
+            if (preg_match('~^https?://~i', $sig)) {
+                error_log("DEBUG: Downloading signature from URL: $sig");
+                $pngBytes = http_get_bytes($sig);
+            } else {
+                $seg = explode('/', $sig, 2);
+                if (count($seg) !== 2) {
+                    error_log("ERROR: Invalid signature path format: $sig (expected bucket/path)");
+                    throw new RuntimeException('Invalid signature path format: ' . $sig);
+                }
+                error_log("DEBUG: Downloading signature from storage: {$seg[0]}/{$seg[1]}");
+                $pngBytes = storage_download_private($seg[0], $seg[1]);
+            }
+
+            if (empty($pngBytes)) {
+                error_log("WARNING: Signature bytes are empty for client_id: $cid - using placeholder");
+            } else {
+                $sig_b64 = base64_encode($pngBytes);
+                error_log("DEBUG: Signature downloaded successfully, size: " . strlen($pngBytes) . " bytes");
+            }
+        } catch (Exception $e) {
+            error_log("WARNING: Failed to download signature: " . $e->getMessage() . " - will use placeholder");
+        }
+    }
 
     // 6) Purpose fallback
     $purpose = 'approved seedling request';
@@ -687,8 +713,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'decide') {
                     regenerate_and_overwrite_requirement_doc($pdo, (string)$approvalId);
                     error_log("DEBUG: Document regeneration completed for: $approvalId");
                 } catch (Exception $e) {
-                    error_log("ERROR: Document regeneration failed: " . $e->getMessage());
-                    throw new RuntimeException("Failed to regenerate document: " . $e->getMessage());
+                    $errMsg = $e->getMessage();
+                    error_log("ERROR: Document regeneration failed: " . $errMsg);
+                    // Check if it's a signature-related error
+                    if (stripos($errMsg, 'signature') !== false) {
+                        throw new RuntimeException("Approval process failed: Failed to regenerate document: " . $errMsg);
+                    }
+                    throw new RuntimeException("Failed to regenerate document: " . $errMsg);
                 }
 
                 // 2.a) Deduct seedlings stock for this approval (if linked to a seedl_req_id)

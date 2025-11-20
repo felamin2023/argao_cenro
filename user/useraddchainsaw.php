@@ -1769,7 +1769,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <?php else: foreach ($notifs as $n):
                                 $unread = empty($n['is_read']);
-                                $ts     = $n['created_at'] ? (new DateTime((string)$n['created_at']))->getTimestamp() : time();
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
                                 // Determine title: if approval -> check if it's a seedlings approval
                                 $title = 'Notification';
                                 if (!empty($n['approval_id'])) {
@@ -4567,80 +4573,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         })();
     </script>
 
-        <script>
-            (function() {
-                // ----- Relative time labels (namespaced copy for this page) -----
-                function timeAgo(seconds) {
-                    if (seconds < 60) return 'just now';
-                    const m = Math.floor(seconds / 60);
-                    if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
-                    const h = Math.floor(m / 60);
-                    if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
-                    const d = Math.floor(h / 24);
-                    if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
-                    const w = Math.floor(d / 7);
-                    if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
-                    const mo = Math.floor(d / 30);
-                    if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
-                    const y = Math.floor(d / 365);
-                    return `${y} year${y > 1 ? 's' : ''} ago`;
+    <script>
+        (function() {
+            // ----- Relative time labels (namespaced copy for this page) -----
+            function timeAgo(seconds) {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            }
+
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const tsMs = Number(el.dataset.ts || 0) * 1000;
+                if (!tsMs) return;
+                const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                el.textContent = timeAgo(diffSec);
+                try {
+                    const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    el.title = manilaFmt.format(new Date(tsMs));
+                } catch (err) {
+                    el.title = new Date(tsMs).toLocaleString();
                 }
+            });
 
-                document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
-                    const tsMs = Number(el.dataset.ts || 0) * 1000;
-                    if (!tsMs) return;
-                    const diffSec = Math.floor((Date.now() - tsMs) / 1000);
-                    el.textContent = timeAgo(diffSec);
-                    try {
-                        const manilaFmt = new Intl.DateTimeFormat('en-PH', {
-                            timeZone: 'Asia/Manila',
-                            year: 'numeric', month: 'short', day: 'numeric',
-                            hour: 'numeric', minute: '2-digit', second: '2-digit'
-                        });
-                        el.title = manilaFmt.format(new Date(tsMs));
-                    } catch (err) {
-                        el.title = new Date(tsMs).toLocaleString();
-                    }
-                });
+            const badge = document.getElementById('asNotifBadge');
+            const markAllBtn = document.getElementById('asMarkAllRead');
 
-                const badge = document.getElementById('asNotifBadge');
-                const markAllBtn = document.getElementById('asMarkAllRead');
+            markAllBtn?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
+                if (badge) badge.style.display = 'none';
+            });
 
-                markAllBtn?.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    try {
-                        await fetch(location.pathname + '?ajax=mark_all_read', {
-                            method: 'POST',
-                            credentials: 'same-origin'
-                        });
-                    } catch {}
-                    document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
-                    if (badge) badge.style.display = 'none';
-                });
+            const list = document.querySelector('.as-notifications');
+            list?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.as-notif-link');
+                if (!link) return;
+                e.preventDefault();
+                const nid = link.dataset.notifId;
+                try {
+                    await fetch(location.pathname + '?ajax=mark_read&notif_id=' + encodeURIComponent(nid), {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                link.closest('.as-notif-item')?.classList.remove('unread');
+                if (badge) {
+                    const v = Number(badge.textContent || 0);
+                    if (v > 1) badge.textContent = String(v - 1);
+                    else badge.style.display = 'none';
+                }
+            });
+        })();
+    </script>
 
-                const list = document.querySelector('.as-notifications');
-                list?.addEventListener('click', async (e) => {
-                    const link = e.target.closest('.as-notif-link');
-                    if (!link) return;
-                    e.preventDefault();
-                    const nid = link.dataset.notifId;
-                    try {
-                        await fetch(location.pathname + '?ajax=mark_read&notif_id=' + encodeURIComponent(nid), {
-                            method: 'POST',
-                            credentials: 'same-origin'
-                        });
-                    } catch {}
-                    link.closest('.as-notif-item')?.classList.remove('unread');
-                    if (badge) {
-                        const v = Number(badge.textContent || 0);
-                        if (v > 1) badge.textContent = String(v - 1);
-                        else badge.style.display = 'none';
-                    }
-                });
-            })();
-        </script>
-
-    </body>
+</body>
 
 
 
