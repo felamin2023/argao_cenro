@@ -31,7 +31,6 @@ use Twilio\Rest\Verify\V2\Service\AccessTokenList;
 use Twilio\Rest\Verify\V2\Service\RateLimitList;
 use Twilio\Rest\Verify\V2\Service\NewFactorList;
 use Twilio\Rest\Verify\V2\Service\WebhookList;
-use Twilio\Rest\Verify\V2\Service\NewFactorList;
 use Twilio\Rest\Verify\V2\Service\MessagingConfigurationList;
 use Twilio\Rest\Verify\V2\Service\ApproveChallengeList;
 use Twilio\Rest\Verify\V2\Service\NewChallengeList;
@@ -45,7 +44,6 @@ use Twilio\Rest\Verify\V2\Service\NewChallengeList;
  * @property RateLimitList $rateLimits
  * @property NewFactorList $newFactors
  * @property WebhookList $webhooks
- * @property NewFactorList $newFactors
  * @property MessagingConfigurationList $messagingConfigurations
  * @property ApproveChallengeList $approveChallenge
  * @property NewChallengeList $newChallenge
@@ -66,7 +64,6 @@ class ServiceContext extends InstanceContext
     protected $_rateLimits;
     protected $_newFactors;
     protected $_webhooks;
-    protected $_newFactors;
     protected $_messagingConfigurations;
     protected $_approveChallenge;
     protected $_newChallenge;
@@ -253,17 +250,7 @@ class ServiceContext extends InstanceContext
     /**
      * Access the accessTokens
      */
-    protected function getAccessTokens(): AccessTokenList
-    {
-        if (!$this->_accessTokens) {
-            $this->_accessTokens = new AccessTokenList(
-                $this->version,
-                $this->solution['sid']
-            );
-        }
 
-        return $this->_accessTokens;
-    }
 
     /**
      * Access the rateLimits
@@ -279,22 +266,6 @@ class ServiceContext extends InstanceContext
 
         return $this->_rateLimits;
     }
-
-    /**
-     * Access the newFactors
-     */
-    protected function getNewFactors(): NewFactorList
-    {
-        if (!$this->_newFactors) {
-            $this->_newFactors = new NewFactorList(
-                $this->version,
-                $this->solution['sid']
-            );
-        }
-
-        return $this->_newFactors;
-    }
-
     /**
      * Access the webhooks
      */
@@ -353,21 +324,6 @@ class ServiceContext extends InstanceContext
         }
 
         return $this->_approveChallenge;
-    }
-
-    /**
-     * Access the newChallenge
-     */
-    protected function getNewChallenge(): NewChallengeList
-    {
-        if (!$this->_newChallenge) {
-            $this->_newChallenge = new NewChallengeList(
-                $this->version,
-                $this->solution['sid']
-            );
-        }
-
-        return $this->_newChallenge;
     }
 
     /**

@@ -30,7 +30,6 @@ use Twilio\Rest\Verify\V2\Service\AccessTokenList;
 use Twilio\Rest\Verify\V2\Service\RateLimitList;
 use Twilio\Rest\Verify\V2\Service\NewFactorList;
 use Twilio\Rest\Verify\V2\Service\WebhookList;
-use Twilio\Rest\Verify\V2\Service\NewFactorList;
 use Twilio\Rest\Verify\V2\Service\MessagingConfigurationList;
 use Twilio\Rest\Verify\V2\Service\ApproveChallengeList;
 use Twilio\Rest\Verify\V2\Service\NewChallengeList;
@@ -68,7 +67,6 @@ class ServiceInstance extends InstanceResource
     protected $_rateLimits;
     protected $_newFactors;
     protected $_webhooks;
-    protected $_newFactors;
     protected $_messagingConfigurations;
     protected $_approveChallenge;
     protected $_newChallenge;
@@ -128,14 +126,9 @@ class ServiceInstance extends InstanceResource
         }
 
         return $this->context;
+
     }
 
-    /**
-     * Delete the ServiceInstance
-     *
-     * @return bool True if delete succeeds, false otherwise
-     * @throws TwilioException When an HTTP error occurs.
-     */
     public function delete(): bool
     {
 
@@ -222,15 +215,6 @@ class ServiceInstance extends InstanceResource
     {
         return $this->proxy()->webhooks;
     }
-
-    /**
-     * Access the newFactors
-     */
-    protected function getNewFactors(): NewFactorList
-    {
-        return $this->proxy()->newFactors;
-    }
-
     /**
      * Access the messagingConfigurations
      */

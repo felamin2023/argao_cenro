@@ -228,10 +228,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
       <h3>Reset Your Password</h3>
       <form id="setNewPasswordFormCustom">
         <div class="input-container">
-          <input type="password" id="newPasswordCustom" placeholder="New Password" required />
+          <div class="password-wrapper">
+            <input type="password" id="newPasswordCustom" placeholder="New Password" required />
+            <button type="button" class="toggle-password" id="toggleNewPassword" style="background:transparent;border:none;padding:0 6px;color:gray;cursor:pointer; right:-30%;">
+              <i class="fas fa-eye-slash"></i>
+            </button>
+          </div>
         </div>
         <div class="input-container">
-          <input type="password" id="confirmPasswordCustom" placeholder="Confirm Password" required />
+          <div class="password-wrapper">
+            <input type="password" id="confirmPasswordCustom" placeholder="Confirm Password" required />
+            <button type="button" class="toggle-password" id="toggleConfirmPassword" style="background:transparent;border:none;padding:0 6px;color:gray;cursor:pointer; right:-30%;">
+              <i class="fas fa-eye-slash"></i>
+            </button>
+          </div>
         </div>
         <button type="submit">Reset password</button>
       </form>
@@ -240,7 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
   </div>
   <div id="loadingScreen">
     <div class="loading-text">Loading...</div>
-    <img id="loadingLogo" src="denr.png" alt="Loading Logo">
+  
   </div>
 
   <script>
@@ -261,6 +271,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
       const loginContainer = document.getElementById('loginContainer');
       const forgotPasswordForm = document.getElementById('forgotPasswordForm');
       const resetPasswordForm = document.getElementById('resetPasswordForm');
+      const toggleNewPassword = document.getElementById('toggleNewPassword');
+      const newPasswordInput = document.getElementById('newPasswordCustom');
+      const toggleConfirmPassword = document.getElementById('toggleConfirmPassword');
+      const confirmPasswordInput = document.getElementById('confirmPasswordCustom');
       const sidebar = document.querySelector('.sidebar');
 
       forgotPasswordLink.addEventListener('click', function(e) {
@@ -332,6 +346,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
         loginContainer.classList.remove('blurred');
         sidebar.classList.remove('blurred');
       });
+
+      // Toggle for new password
+      if (toggleNewPassword && newPasswordInput) {
+        const eyeNew = toggleNewPassword.querySelector('i');
+        toggleNewPassword.addEventListener('click', function() {
+          const type = newPasswordInput.type === 'password' ? 'text' : 'password';
+          newPasswordInput.type = type;
+          eyeNew.classList.toggle('fa-eye');
+          eyeNew.classList.toggle('fa-eye-slash');
+        });
+      }
+
+      // Toggle for confirm password
+      if (toggleConfirmPassword && confirmPasswordInput) {
+        const eyeConfirm = toggleConfirmPassword.querySelector('i');
+        toggleConfirmPassword.addEventListener('click', function() {
+          const type = confirmPasswordInput.type === 'password' ? 'text' : 'password';
+          confirmPasswordInput.type = type;
+          eyeConfirm.classList.toggle('fa-eye');
+          eyeConfirm.classList.toggle('fa-eye-slash');
+        });
+      }
 
       // OTP validation and open reset password modal
       sendOtpBtnCustom.addEventListener('click', function() {

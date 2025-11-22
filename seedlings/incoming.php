@@ -531,7 +531,9 @@ function e($s)
             padding: 12px 25px;
             min-width: 190px;
             font-weight: 700;
-            cursor: pointer
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
         }
 
         .view-records-button {
@@ -543,6 +545,7 @@ function e($s)
             background: #165033;
             outline: none;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            text-decoration: none;
         }
 
         .species-list {

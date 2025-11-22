@@ -113,7 +113,7 @@ body::before {
 
 input {
   width: 100%;
-  padding: 12px 40px 12px 15px;
+  padding: 12px 52px 12px 15px;
   border: 1px solid #28a745;
   border-radius: 10px;
   outline: none;
@@ -135,15 +135,16 @@ input:focus {
 
 .toggle-password {
   position: absolute;
-  right: 15px;
+  right: 8px !important;
   top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
   color: #777;
-  z-index: 10;
-  background: none;
+  z-index: 20;
+  background: transparent;
   border: none;
-  font-size: 16px;
+  font-size: 18px;
+  padding: 0 8px;
 }
 
 /* Hide ALL browser password toggle icons */

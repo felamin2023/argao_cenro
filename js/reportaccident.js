@@ -3,121 +3,123 @@
             const filterButton = document.querySelector(".filter-button");
             const filterMonth = document.querySelector(".filter-month");
             const filterYear = document.querySelector(".filter-year");
-            const tableRows = document.querySelectorAll(".accident-table tbody tr");
-            const searchIcon = document.getElementById("search-icon");
-            const searchInput = document.getElementById("search-input");
             const exportButton = document.getElementById("export-button");
-            const statusButtons = document.querySelectorAll(".status-btn");
 
-            // Enhanced Search Functionality
-            const performSearch = () => {
-                const searchTerm = searchInput.value.toLowerCase();
-                tableRows.forEach(row => {
-                    let rowContainsText = false;
-                    const cells = row.querySelectorAll("td");
-                    
-                    cells.forEach(cell => {
-                        if (cell.textContent.toLowerCase().includes(searchTerm)) {
-                            rowContainsText = true;
-                        }
-                    });
-                    
-                    row.style.display = rowContainsText ? "" : "none";
-                });
+            // resilient selectors (page may use id or class)
+            const statusSelect = document.getElementById('status-filter-select') || document.querySelector('.status-filter-select');
+            const searchInput = document.getElementById('search-input') || document.querySelector('.search-input');
+            const searchIcon = document.getElementById('search-icon') || document.querySelector('.search-icon');
+            const noResultsDiv = document.getElementById('no-results-full');
+
+            // helper: get current data rows (ignore helper rows)
+            const getDataRows = () => Array.from(document.querySelectorAll('.accident-table tbody tr')).filter(r => !r.classList.contains('no-results-row'));
+
+            // debounce helper
+            const debounce = (fn, wait = 200) => {
+                let t = null;
+                return (...args) => {
+                    clearTimeout(t);
+                    t = setTimeout(() => fn(...args), wait);
+                };
             };
 
-            // Click event for search icon
-            searchIcon.addEventListener("click", performSearch);
+            // detect status by scanning cells for known status words
+            const KNOWN_STATUSES = ['pending', 'approved', 'resolved', 'rejected'];
 
-            // Ensure the search icon triggers the search functionality
-            searchIcon.style.pointerEvents = "auto";
-
-            // Enter key event for search input
-            searchInput.addEventListener("keypress", (e) => {
-                if (e.key === "Enter") {
-                    performSearch();
+            function detectRowStatus(row) {
+                const texts = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim().toLowerCase());
+                for (const t of texts) {
+                    if (KNOWN_STATUSES.includes(t)) return t;
                 }
-            });
+                // fallback: try nth-child common index used previously (11)
+                const maybe = row.querySelector('td:nth-child(11)');
+                if (maybe) return (maybe.textContent || '').trim().toLowerCase();
+                return '';
+            }
 
-            // Filter Functionality
-            filterButton.addEventListener("click", () => {
-                const selectedMonth = filterMonth.value;
-                const selectedYear = filterYear.value;
+            // core filter logic: term + status + optional date filter
+            function applyFilters() {
+                try {
+                    const term = (searchInput && searchInput.value || '').toLowerCase().trim();
+                    const status = (statusSelect && (statusSelect.value || '').toLowerCase().trim()) || 'all';
+                    const rows = getDataRows();
+                    let visibleCount = 0;
 
-                tableRows.forEach(row => {
-                    const dateCell = row.querySelector("td:nth-child(10)");
-                    if (dateCell) {
-                        const dateText = dateCell.textContent.trim();
-                        const [datePart] = dateText.split(" ");
-                        const [year, month] = datePart.split("-");
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        const matchesTerm = term === '' || text.includes(term);
 
-                        const matchesMonth = selectedMonth ? month === selectedMonth : true;
-                        const matchesYear = selectedYear ? year === selectedYear : true;
+                        const rowStatus = detectRowStatus(row);
+                        const matchesStatus = status === 'all' || (rowStatus && rowStatus === status);
 
-                        if (matchesMonth && matchesYear) {
-                            row.style.display = "";
-                        } else {
-                            row.style.display = "none";
-                        }
-                    }
-                });
-            });
-
-            // Export Functionality - CSV Download
-            exportButton.addEventListener("click", () => {
-                // Create CSV content
-                let csvContent = "data:text/csv;charset=utf-8,";
-                
-                // Add headers
-                const headers = [];
-                document.querySelectorAll(".accident-table th").forEach(header => {
-                    headers.push(`"${header.textContent}"`);
-                });
-                csvContent += headers.join(",") + "\r\n";
-                
-                // Add rows
-                document.querySelectorAll(".accident-table tbody tr").forEach(row => {
-                    if (row.style.display !== "none") {
-                        const rowData = [];
-                        row.querySelectorAll("td").forEach((cell, index) => {
-                            // Skip the photo column (index 7) and action buttons (index 11)
-                            if (index !== 7 && index !== 11) {
-                                rowData.push(`"${cell.textContent.replace(/"/g, '""')}"`);
-                            }
-                        });
-                        csvContent += rowData.join(",") + "\r\n";
-                    }
-                });
-                
-                // Create download link
-                const encodedUri = encodeURI(csvContent);
-                const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", "incident_report_" + new Date().toISOString().slice(0,10) + ".csv");
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            });
-
-            // Status Filter Functionality
-            statusButtons.forEach(button => {
-                button.addEventListener("click", () => {
-                    const status = button.textContent.trim().toLowerCase();
-                    
-                    tableRows.forEach(row => {
-                        const statusCell = row.querySelector("td:nth-child(11)");
-                        if (statusCell) {
-                            const rowStatus = statusCell.textContent.trim().toLowerCase();
-                            
-                            if (status === "all" || rowStatus === status) {
-                                row.style.display = "";
-                            } else {
-                                row.style.display = "none";
+                        // apply month/year date filter if present
+                        let matchesDate = true;
+                        if (filterMonth || filterYear) {
+                            const dateCell = row.querySelector('td:nth-child(10)');
+                            if (dateCell) {
+                                const dateText = dateCell.textContent.trim();
+                                const [datePart] = dateText.split(' ');
+                                const parts = datePart.split('-');
+                                if (parts.length >= 2) {
+                                    const [y, m] = parts;
+                                    if (filterMonth && filterMonth.value) matchesDate = (m === filterMonth.value);
+                                    if (matchesDate && filterYear && filterYear.value) matchesDate = (y === filterYear.value);
+                                }
                             }
                         }
+
+                        const shouldShow = matchesTerm && matchesStatus && matchesDate;
+                        row.style.display = shouldShow ? '' : 'none';
+                        if (shouldShow) visibleCount++;
                     });
+
+                    if (noResultsDiv) noResultsDiv.style.display = visibleCount > 0 ? 'none' : 'block';
+                    console.debug('[reportaccident] applyFilters:', {term: term, status: status, visible: visibleCount});
+                } catch (err) {
+                    console.error('[reportaccident] filter error', err);
+                }
+            }
+
+            const debouncedApply = debounce(applyFilters, 180);
+
+            // wire events
+            if (searchInput) {
+                searchInput.addEventListener('input', debouncedApply);
+                searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyFilters(); });
+            }
+            if (searchIcon) {
+                searchIcon.style.pointerEvents = 'auto';
+                searchIcon.addEventListener('click', applyFilters);
+            }
+            if (statusSelect) statusSelect.addEventListener('change', applyFilters);
+            if (filterButton) {
+                filterButton.addEventListener('click', () => { applyFilters(); });
+            }
+
+            // Export CSV - keep behavior but use current visible rows
+            if (exportButton) {
+                exportButton.addEventListener('click', () => {
+                    let csvContent = "data:text/csv;charset=utf-8,";
+                    const headers = Array.from(document.querySelectorAll('.accident-table th')).map(h => `"${h.textContent.replace(/"/g, '""')}"`);
+                    csvContent += headers.join(',') + '\r\n';
+                    getDataRows().forEach(row => {
+                        if (row.style.display === 'none') return;
+                        const rowData = Array.from(row.querySelectorAll('td')).map((cell, index) => {
+                            if (index === 7 || index === 11) return null; // skip photo/action columns if present
+                            return `"${(cell.textContent || '').replace(/"/g, '""')}"`;
+                        }).filter(Boolean);
+                        csvContent += rowData.join(',') + '\r\n';
+                    });
+
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', encodedUri);
+                    link.setAttribute('download', 'incident_report_' + new Date().toISOString().slice(0,10) + '.csv');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
                 });
-            });
+            }
 
             // Enhanced Edit and Delete Functionality with Hover Effects
             const editButtons = document.querySelectorAll(".edit-btn");

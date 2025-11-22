@@ -4,7 +4,6 @@
   --white: #ffffff;
   --light-gray: #f5f5f5;
   --border-radius: 8px;
-  --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   --transition: all 0.2s ease;
 }
 
@@ -34,7 +33,6 @@ header {
   left: 0;
   right: 0;
   z-index: 1000;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 /* Logo */
@@ -78,24 +76,22 @@ header {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px; /* smaller width */
-  height: 40px; /* smaller height */
-  background: rgb(233, 255, 242); /* slightly brighter background */
-  border-radius: 12px; /* softer corners */
+  width: 40px;
+  height: 40px;
+  background: rgb(233, 255, 242);
+  border-radius: 12px;
   cursor: pointer;
   transition: var(--transition);
-  color: black; /* changed icon color to black */
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* subtle shadow for depth */
+  color: black;
 }
 
 .nav-icon:hover {
   background: rgba(255, 255, 255, 0.3);
   transform: scale(1.15);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .nav-icon i {
-  font-size: 1.3rem; /* smaller icon size */
+  font-size: 1.3rem;
   color: inherit;
   transition: color 0.3s ease;
 }
@@ -109,8 +105,8 @@ header {
   content: "";
   position: absolute;
   bottom: -6px;
-  left: 0; /* Changed from 50% to 0 */
-  transform: none; /* Removed translateX(-50%) */
+  left: 0;
+  transform: none;
   width: 40px;
   height: 2px;
   background-color: var(--white);
@@ -125,18 +121,17 @@ header {
   background: var(--white);
   min-width: 300px;
   border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
   z-index: 1000;
   opacity: 0;
   visibility: hidden;
   transform: translateY(10px);
   transition: var(--transition);
   padding: 0;
+  border: 1px solid #e0e0e0;
 }
 
 .dropdown-item.active-page {
   background-color: rgb(225, 255, 220);
-
   color: var(--primary-dark);
   font-weight: bold;
   border-left: 4px solid var(--primary-color);
@@ -177,8 +172,8 @@ header {
 }
 
 .mark-all-read:hover {
-  color: var(--primary-dark); /* Slightly darker color on hover */
-  transform: scale(1.1); /* Slightly bigger on hover */
+  color: var(--primary-dark);
+  transform: scale(1.1);
 }
 
 .notification-item {
@@ -187,7 +182,6 @@ header {
   transition: var(--transition);
   display: flex;
   align-items: flex-start;
-  border: 10px solid black;
 }
 
 .notification-item.unread {
@@ -278,7 +272,7 @@ header {
   padding-left: 30px;
 }
 
-/* Notification Badge - Larger */
+/* Notification Badge */
 .badge {
   position: absolute;
   top: 2px;
@@ -293,7 +287,6 @@ header {
   justify-content: center;
   font-size: 13px;
   font-weight: bold;
-  animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
@@ -308,7 +301,7 @@ header {
   }
 }
 
-/* Mobile Menu Toggle - Larger */
+/* Mobile Menu Toggle */
 .mobile-toggle {
   display: none;
   background: none;
@@ -344,10 +337,9 @@ header {
   font-size: 1rem;
   gap: 10px;
   position: relative;
-  line-height: 1.3; /* Tighter line height */
+  line-height: 1.3;
 }
 
-/* Hover effect matching nav icons */
 .dropdown-item:hover {
   background: rgba(43, 102, 37, 0.1);
   transform: scale(1.02);
@@ -357,7 +349,6 @@ header {
   color: var(--primary-dark);
 }
 
-/* Align icon and text to left */
 .dropdown-item i {
   width: 20px;
   text-align: left;
@@ -374,7 +365,6 @@ header {
   text-overflow: ellipsis;
 }
 
-/* Quantity Badge - aligned to the right */
 .quantity-badge {
   color: var(--primary-color);
   font-size: 1rem;
@@ -395,11 +385,6 @@ a {
 
 button:focus-visible {
   outline: 2px solid #4a90e2 !important;
-  outline: -webkit-focus-ring-color auto 5px !important;
-}
-
-a {
-  text-decoration: none;
 }
 
 @font-face {
@@ -425,14 +410,13 @@ a {
   border: 2px solid #005117;
   cursor: pointer;
   transition: transform 0.2s ease;
-
   padding: 3px 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 17px;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #005117;
+  color: white !important;
   border-radius: 8px;
   margin-left: 0;
   white-space: nowrap;
@@ -452,9 +436,9 @@ a {
   background-color: #f9f9f9;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
-  min-height: 100vh;
+  min-height: calc(100vh - 100px);
   padding: 20px;
 }
 
@@ -462,115 +446,141 @@ a {
   width: 100%;
   max-width: 98%;
   background-color: #ffffff;
-  border: 2px solid #005117;
   border-radius: 12px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  margin-top: -3px;
+  margin-top: -5px;
+  position: relative;
 }
 
+/* HEADER SECTION - CENTERED SEARCH AND STATUS */
 .header-section {
   background-color: #ffffff;
   padding: 20px 10px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   color: #005117;
   border-radius: 12px;
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
   margin-bottom: 30px;
+  gap: 24px;
+  border-bottom: none; /* Remove line below incident reports */
 }
 
 .title {
   font-family: "calibri" !important;
-  font-size: 45px !important;
+  font-size: 32px !important;
   font-weight: bold;
   color: #005117;
-  text-align: center;
+  text-align: left;
   margin: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding: 20px;
-  background-color: #ffffff !important;
-  border-radius: 8px;
-  margin-top: -1%;
-
-  border: none;
-}
-
-.filter {
+/* CENTERED SEARCH AND STATUS CONTAINER */
+.centered-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 32%;
+  gap: 30px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-.filter-button i {
-  color: white !important;
-}
-.filter-button {
-  color: white !important;
-}
+/* SEARCH FIELD */
 .search {
   position: relative;
-  width: 30%;
+  width: 250px;
 }
 
 .search-input {
-  width: 68.8%;
-  padding: 8px;
-  padding-right: 35px;
+  width: 100%;
+  padding: 12px 45px 12px 15px;
   border: 2px solid #005117;
-  border-radius: 5px;
+  border-radius: 25px;
   transition: border-color 0.3s ease;
+  font-size: 14px;
+  background-color: #f8f9fa;
+  height: 45px;
 }
 
 .search-input:focus {
   border-color: rgb(9, 95, 6);
   outline: none;
+  background-color: white;
 }
 
 .search-icon {
-  width: 65px;
-  height: 44px;
   position: absolute;
-  right: 27%;
+  right: 15px;
   top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
-  color: #1e4a1a;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  color: #005117;
+  font-size: 16px;
+  transition: all 0.3s ease;
   z-index: 2;
+  background: none;
+  border: none;
+  width: auto;
+  height: auto;
 }
 
 .search-icon:hover {
-  opacity: 1;
+  color: #1e4a1a;
   transform: translateY(-50%) scale(1.1);
 }
 
-.export {
+/* STATUS FILTER WITH LABEL */
+.status-filter-container {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.export-label {
-  font-family: tahoma;
+.status-filter-label {
+  margin-right: 6px;
+  font-weight: 600;
+  color: #005117;
+  white-space: nowrap;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 16px;
-  color: #04460f;
-  vertical-align: middle;
 }
 
-.export-icon {
-  width: 36px !important;
-  height: 30px !important;
+.status-filter-select {
+  padding: 6px 12px;
+  border-radius: 30px;
+  border: 2px solid #005117;
+  width: 130px;
+  height: 43px;
+  background-color: #f8f9fa;
+  font-size: 14px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 5'><path fill='%23005117' d='M2 0L0 2h4zm0 5L0 3h4z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px;
+  transition: all 0.3s ease;
+}
+
+.status-filter-select:focus {
+  border-color: rgb(9, 95, 6);
+  outline: none;
+  background-color: white;
+}
+
+/* FILTER AND EXPORT BUTTONS - RIGHT SIDE */
+.filter-export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .export-button {
@@ -578,9 +588,14 @@ a {
   color: #04460f;
   border: none;
   border-radius: 5px;
-  padding: 8px 2px;
+  padding: 8px 12px;
   cursor: pointer;
   transition: transform 0.2s ease;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #005117;
 }
 
 .export-button:hover {
@@ -588,135 +603,148 @@ a {
   background-color: rgb(255, 255, 255) !important;
 }
 
-.status-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 15px;
-  margin-top: 3px;
-  background-color: transparent;
-}
-
-.status-buttons button.status-btn {
-  padding: 10px 20px;
-  font-size: 12px;
-  font-family: tahoma;
-  font-weight: bold;
-  color: black !important;
-  background-color: rgb(255, 255, 255) !important;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  min-width: 100px;
-  margin-top: -1%;
-}
-
-.status-buttons button.status-btn:hover {
-  background-color: #1e4a1a !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  transform: scale(1.05);
-}
-
 .accident-table th:nth-child(13),
 .accident-table td:nth-child(13) {
   width: 10%;
 }
 
-/* Specific button types */
-.status-buttons button.all-btn,
-.status-buttons button.pending-btn,
-.status-buttons button.resolved-btn,
-.status-buttons button.rejected-btn,
-.status-buttons button.approved-btn {
-  background-color: rgb(255, 255, 255) !important;
-  color: black;
-  border: 2px darkgreen solid;
-}
-
-.status-buttons button.all-btn:hover,
-.status-buttons button.pending-btn:hover,
-.status-buttons button.resolved-btn:hover,
-.status-buttons button.rejected-btn:hover,
-.status-buttons button.approved-btn:hover {
-  background-color: var(--primary-dark) !important;
-  color: white !important;
-}
-
+/* TABLE CONTAINER - PLAIN WHITE */
 .table-container {
   margin: 20px;
   overflow-x: auto;
-  margin-top: 1%;
+  margin-top: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  position: relative;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
 }
 
+/* STABLE TABLE STRUCTURE */
 .accident-table {
   table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
   font-family: tahoma;
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
+  position: relative;
+  background: white;
+  margin: 0;
 }
 
 .accident-table th,
 .accident-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
+  border: 1px solid #e0e0e0;
+  padding: 12px 8px;
   text-align: center;
   word-wrap: break-word;
-  font-size: 12px;
+  font-size: 13px;
   font-family: "calibri";
+  vertical-align: middle;
+  line-height: 1.4;
 }
 
 .accident-table th {
-  background-color: #005117;
+  background: linear-gradient(135deg, #005117, #003d0f);
   color: #ffffff;
   font-weight: 600;
   text-align: center;
-  vertical-align: middle;
-  padding: 12px 8px;
+  padding: 14px 8px;
   white-space: normal;
   font-family: "calibri";
-  height: 80px;
-  line-height: 1.3;
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 2px solid #003d0f;
 }
 
 .accident-table td {
   min-height: 50px;
-  vertical-align: middle;
+  background: white;
+  transition: background-color 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .accident-table tbody tr:nth-child(even) {
-  background-color: #f2f2f2;
+  background-color: #f8f9fa;
+}
+
+.accident-table tbody tr:nth-child(odd) {
+  background-color: #ffffff;
 }
 
 .accident-table tbody tr:hover {
-  background-color: #e0f2e9;
+  background-color: #e8f5e8;
   transition: all 0.2s ease;
 }
 
-/* Make buttons smaller */
-.edit-btn,
-.delete-btn {
-  background-color: #2b6625;
-  color: #ffffff;
-  border: none;
-  border-radius: 4px;
-  padding: 4px 6px;
-  cursor: pointer;
+.accident-table th:hover {
+  background: linear-gradient(135deg, #003d0f, #002909);
+}
+
+.accident-table th:last-child {
+  width: 140px;
+  min-width: 140px;
+}
+
+.accident-table td:last-child {
+  display: table-cell; /* Ensure it's a table cell */
+  padding: 12px 8px;
+  border: 1px solid #e0e0e0;
+  font-size: 13px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+/* If you have multiple buttons in one cell and want them centered together */
+.accident-table td:last-child .view-btn,
+.accident-table td:last-child .delete-btn {
+  display: inline-block;
   margin: 0 2px;
-  font-size: 12px;
+}
+
+
+/* Action buttons */
+.view-btn,
+.delete-btn,
+.edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 4px;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-btn {
+  background-color: #005117;
+  color: white;
+  justify-content: center;
 }
 
 .delete-btn {
   background-color: #d9534f;
+  color: white;
 }
 
-.edit-btn:hover {
-  background-color: #24581e;
+.view-btn:hover {
+  background-color: #003d0f;
+  transform: scale(1.05);
 }
 
 .delete-btn:hover {
   background-color: #c9302c;
+  transform: scale(1.05);
 }
 
 /* Save Button */
@@ -772,6 +800,7 @@ a {
   display: block;
   margin: 0 auto;
   border-radius: 4px;
+  object-fit: cover;
 }
 
 .modal {
@@ -783,7 +812,6 @@ a {
   width: 100%;
   height: 100%;
   background-color: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(5px);
   overflow: auto;
 }
 
@@ -793,6 +821,7 @@ a {
   padding: 20px;
   border-radius: 8px;
   position: relative;
+  border: 1px solid #e0e0e0;
 }
 
 .close-modal {
@@ -809,65 +838,6 @@ a {
   text-decoration: none;
 }
 
-/* Button styles */
-.view-btn,
-.delete-btn {
-  padding: 5px 10px;
-  margin: 0 5px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.view-btn {
-  background-color: #005117;
-  color: white;
-}
-
-.delete-btn {
-  background-color: #d9534f;
-  color: white;
-}
-
-.view-btn:hover {
-  background-color: #003d0f;
-  transform: scale(1.05);
-}
-
-.delete-btn:hover {
-  background-color: #c9302c;
-  transform: scale(1.05);
-}
-
-/* Table styles */
-.accident-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.accident-table th,
-.accident-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
-}
-tr td:last-child {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.accident-table th {
-  background-color: #005117;
-  font-weight: bold;
-}
-
-.accident-table tr:hover {
-  background-color: #f5f5f5;
-}
-.accident-table th:hover {
-  background-color: #003d0f; /* Slightly darker on hover */
-}
 /* Photo thumbnail styles */
 .photo-thumbnail {
   width: 100%;
@@ -881,6 +851,7 @@ tr td:last-child {
 .photo-thumbnail:hover {
   transform: scale(1.05);
 }
+
 #modal-photos img.photo-thumbnail {
   width: 100%;
   height: 180px;
@@ -891,19 +862,20 @@ tr td:last-child {
   cursor: pointer;
 }
 
-/* Status pill styles (match wildlife reportaccident.css) */
+/* Status pill styles */
 .status-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 12px;
-  min-width: 72px;
+  padding: 6px 14px;
+  min-width: 80px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   border: 1px solid transparent;
+  transition: all 0.2s ease;
 }
 
 .status-pill--pending {
@@ -934,4 +906,72 @@ tr td:last-child {
   background-color: #e5e7eb;
   color: #374151;
   border-color: #d1d5db;
+}
+
+/* No results message */
+#no-results-full {
+  display: none;
+  padding: 40px 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 20px;
+  color: #6c757d;
+  text-align: center;
+  font-weight: 500;
+  font-size: 16px;
+  border: 2px dashed #dee2e6;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .header-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+  
+  .centered-controls {
+    position: static;
+    transform: none;
+    justify-content: center;
+    width: 100%;
+  }
+  
+  .search,
+  .status-filter {
+    max-width: 100%;
+  }
+  
+  .filter-export-buttons {
+    justify-content: center;
+    width: 100%;
+    margin-left: 0;
+  }
+  
+  .table-container {
+    margin: 10px;
+    overflow-x: auto;
+  }
+  
+  .accident-table {
+    min-width: 800px;
+  }
+  
+  .title {
+    text-align: center;
+  }
+}
+
+/* Ensure table stays in place during filtering */
+.accident-table tbody tr[style*="display: none"] {
+  display: none !important;
+}
+
+.accident-table tbody tr[style*="display: table-row"] {
+  display: table-row !important;
+}
+
+/* Smooth transitions for table rows */
+.accident-table tbody tr {
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }

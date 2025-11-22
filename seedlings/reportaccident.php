@@ -179,7 +179,7 @@ $quantities = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Seedlings Monitoring</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/denr/superadmin/css/reportaccident.css">
+    <link rel="stylesheet" href="/denr/superadmin/css/treereportincident.css">
     <!-- Fix: this is JS, not CSS -->
     <script defer src="/denr/superadmin/js/reportaccident.js"></script>
 
@@ -394,31 +394,31 @@ $quantities = [
         </div>
     </header>
 
-    <div class="CHAINSAW-RECORDS">
+  
+        <div class="CHAINSAW-RECORDS">
         <div class="container">
-            <div class="header-section" style="background:#ffffff;border-radius:12px;padding:18px 20px;box-shadow:0 6px 15px rgba(0,0,0,0.2);margin-bottom:30px;color:black;">
-                <h1 class="title" style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;font-size:42px;font-weight:900;color:#000;text-align:center;margin:0;">
-                    Incident Reports
-                </h1>
+           <div class="header-section">
+    <h1 class="title">Incident Reports</h1>
+    
+    <div class="centered-controls">
+        <div class="status-filter-container">
+            <label for="status-filter-select" class="status-filter-label">Status</label>
+            <select id="status-filter-select" class="status-filter-select">
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="resolved">Resolved</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </div>
+        
+        <div class="search">
+            <input type="text" id="search-input" class="search-input" placeholder="Search...">
+            <div class="search-icon" id="search-icon">
+                <i class="fas fa-search"></i>
             </div>
-
-            <!-- Controls -->
-            <div class="controls" style="background-color:#ffffff !important;display:flex;align-items:center;gap:12px; justify-content: flex-start;">
-                <div class="status-filter">
-                    <label for="status-filter-select" style="margin-right:6px;font-weight:600;color:#005117;">Status</label>
-                    <select id="status-filter-select" style="padding:6px;border-radius:4px;border:1px solid #ccc;">
-                        <option value="all">All</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                </div>
-                <div class="search">
-                    <input type="text" placeholder="SEARCH HERE" class="search-input" id="search-input">
-                    <img src="https://c.animaapp.com/uJwjYGDm/img/google-web-search@2x.png" alt="Search" class="search-icon" id="search-icon">
-                </div>
-
+        </div>
+    </div>
 
 
                 <!-- <div class="export">
