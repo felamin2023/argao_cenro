@@ -149,6 +149,45 @@ try {
     <script defer src="/denr/superadmin/js/reportaccident.js"></script>
 </head>
 
+<style>
+          .nav-item .badge {
+    position: absolute;
+    top: -2px; /* Adjusted for larger size */
+    right: 4px; /* Adjusted for larger size */
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    min-width: 19px; /* Increased from 20px to 24px */
+    height: 16px; /* Increased from 20px to 24px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px; /* Increased from 11px to 13px */
+    font-weight: 700;
+    z-index: 100;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.nav-item.dropdown.open .badge {
+    display: none !important;
+}
+
+.accident-table th,
+.accident-table td {
+  border: 1px solid #e0e0e0;
+  padding: 12px 8px;
+  text-align: center;
+  word-wrap: break-word;
+  font-size: 14px;
+  font-family: "calibri";
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+
+</style>
+
 <body>
 
     <header>

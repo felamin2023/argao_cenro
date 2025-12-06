@@ -1,9 +1,87 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * User-only gate for reports.php
+ * - Requires a logged-in session
+ * - Role must be 'User'
+ * - Status must be 'Verified'
+ * - Verifies against DB on each hit (defense-in-depth)
+ */
+
+session_start();
+
+// Optional: extra safety headers (helps on back/forward caching)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Quick session check first
+if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || strtolower((string)$_SESSION['role']) !== 'user') {
+    header('Location: user_login.php');
+    exit();
+}
+
+// DB check to ensure the session still matches a User, Verified account
+require_once __DIR__ . '/../backend/connection.php'; // must expose $pdo (PDO -> Supabase PG)
+
+try {
+    $st = $pdo->prepare("
+        select role, status
+        from public.users
+        where user_id = :id
+        limit 1
+    ");
+    $st->execute([':id' => $_SESSION['user_id']]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+
+    $roleOk   = $row && strtolower((string)$row['role']) === 'user';
+    $statusOk = $row && strtolower((string)$row['status']) === 'verified';
+
+    if (!$roleOk || !$statusOk) {
+        // Invalidate session if it no longer matches a real verified User
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
+        session_destroy();
+        header('Location: user_login.php');
+        exit();
+    }
+} catch (Throwable $e) {
+    error_log('[REPORTS GUARD] ' . $e->getMessage());
+    header('Location: user_login.php');
+    exit();
+}
+
+/* ---------- Notifications (to = current user_id) for header ---------- */
+$notifs = [];
+$unreadCount = 0;
+try {
+    $ns = $pdo->prepare('
+        select notif_id, approval_id, incident_id, message, is_read, created_at
+        from public.notifications
+        where "to" = :uid
+        order by created_at desc
+        limit 30
+    ');
+    $ns->execute([':uid' => $_SESSION['user_id']]);
+    $notifs = $ns->fetchAll(PDO::FETCH_ASSOC);
+    // prepare statement to detect seedling approvals
+    $stApprovalType = $pdo->prepare("SELECT seedl_req_id FROM public.approval WHERE approval_id = :aid LIMIT 1");
+    foreach ($notifs as $n) {
+        if (empty($n['is_read'])) $unreadCount++;
+    }
+} catch (Throwable $e) {
+    error_log('[REPORTS NOTIFS] ' . $e->getMessage());
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User</title>
+    <title>CMEMP Reports & Analytics</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -32,314 +110,262 @@
             line-height: 1.6;
         }
 
-        /* Header Styles */
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: var(--primary-color);
-            color: var(--white);
-            padding: 0 30px;
-            height: 58px;
+        /* Header Styles (Application Status navbar) */
+        .as-header {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            inset: 0 0 auto 0;
+            height: 58px;
+            background: var(--primary-color);
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
             z-index: 1000;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
-        /* Logo */
-        .logo {
+        .as-logo {
             height: 45px;
             display: flex;
-            margin-top: -1px;
             align-items: center;
-            position: relative;
+            position: relative
         }
 
-        .logo a {
+        .as-logo a {
             display: flex;
             align-items: center;
-            height: 90%;
+            height: 90%
         }
 
-        .logo img {
+        .as-logo img {
             height: 98%;
             width: auto;
-            transition: var(--transition);
+            transition: var(--transition)
         }
 
-        .logo:hover img {
-            transform: scale(1.05);
+        .as-logo:hover img {
+            transform: scale(1.05)
         }
 
-        .logo::after {
+        .as-logo::after {
             content: '';
             position: absolute;
-            bottom: -2px;
             left: 0;
+            bottom: -2px;
             width: 100%;
             height: 2px;
-            background-color: var(--white);
-            border-radius: 1px;
+            background: var(--white);
+            border-radius: 1px
         }
 
-        /* Navigation Container */
-        .nav-container {
+        .as-nav {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 20px
         }
 
-        /* Navigation Items */
-        .nav-item {
-            position: relative;
+        .as-item {
+            position: relative
         }
 
-        .nav-icon {
+        .as-icon {
             display: flex;
             align-items: center;
             justify-content: center;
             width: 40px;
             height: 40px;
-            background: rgb(233, 255, 242);
             border-radius: 12px;
             cursor: pointer;
-            transition: var(--transition);
-            color: black;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            background: rgb(233, 255, 242);
+            color: #000;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+            transition: var(--transition)
         }
 
-        .nav-icon:hover {
-            background: rgba(255, 255, 255, 0.3);
+        .as-icon:hover {
+            background: rgba(255, 255, 255, .3);
             transform: scale(1.15);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .25)
         }
 
-        .nav-icon i {
-            font-size: 1.3rem;
-            color: inherit;
-            transition: color 0.3s ease;
+        .as-icon i {
+            font-size: 1.3rem
         }
 
-        /* Dropdown Menu */
-        .dropdown-menu {
+        .as-dropdown-menu {
             position: absolute;
             top: calc(100% + 10px);
             right: 0;
-            background: var(--white);
             min-width: 300px;
+            background: #fff;
             border-radius: var(--border-radius);
             box-shadow: var(--box-shadow);
-            z-index: 1000;
             opacity: 0;
             visibility: hidden;
             transform: translateY(10px);
             transition: var(--transition);
             padding: 0;
+            z-index: 1000
         }
 
-        .notifications-dropdown {
-            min-width: 350px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        .notification-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .notification-header h3 {
-            margin: 0;
-            color: var(--primary-color);
-            font-size: 1.2rem;
-        }
-
-        .mark-all-read {
-            color: var(--primary-color);
-            cursor: pointer;
-            font-size: 0.9rem;
-            text-decoration: none;
-            transition: var(--transition), transform 0.2s ease;
-        }
-
-        .mark-all-read:hover {
-            color: var(--primary-dark);
-            transform: scale(1.1);
-        }
-
-        .notification-item {
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            transition: var(--transition);
-            display: flex;
-            align-items: flex-start;
-        }
-
-        .notification-item.unread {
-            background-color: rgba(43, 102, 37, 0.05);
-        }
-
-        .notification-item:hover {
-            background-color: #f9f9f9;
-        }
-
-        .notification-icon {
-            margin-right: 15px;
-            color: var(--primary-color);
-            font-size: 1.2rem;
-        }
-
-        .notification-content {
-            flex: 1;
-        }
-
-        .notification-title {
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: var(--primary-color);
-        }
-
-        .notification-message {
-            color: var(--primary-color);
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-
-        .notification-time {
-            color: #999;
-            font-size: 0.8rem;
-            margin-top: 5px;
-        }
-
-        .notification-footer {
-            padding: 10px 20px;
-            text-align: center;
-            border-top: 1px solid #eee;
-        }
-
-        .view-all {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.9rem;
-            transition: var(--transition);
-            display: inline-block;
-            padding: 5px 0;
-        }
-
-        .view-all:hover {
-            text-decoration: underline;
-        }
-
-        .dropdown-menu.center {
-            left: 50%;
-            transform: translateX(-50%) translateY(10px);
-        }
-
-        .dropdown:hover .dropdown-menu,
-        .dropdown-menu:hover {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
-        }
-
-        .dropdown-menu.center:hover,
-        .dropdown:hover .dropdown-menu.center {
-            transform: translateX(-50%) translateY(0);
-        }
-
-        .dropdown-menu:before {
-            content: '';
-            position: absolute;
-            bottom: 100%;
-            right: 20px;
-            border-width: 10px;
-            border-style: solid;
-            border-color: transparent transparent var(--white) transparent;
-        }
-
-        .dropdown-menu.center:before {
+        .as-center {
             left: 50%;
             right: auto;
-            transform: translateX(-50%);
+            transform: translateX(-50%) translateY(10px)
         }
 
-        /* Dropdown Items */
-        .dropdown-item {
-            padding: 15px 25px;
+        .as-item:hover>.as-dropdown-menu,
+        .as-dropdown-menu:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0)
+        }
+
+        .as-center.as-dropdown-menu:hover,
+        .as-item:hover>.as-center {
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .as-dropdown-item {
             display: flex;
             align-items: center;
-            color: black;
+            gap: 15px;
+            padding: 15px 25px;
             text-decoration: none;
+            color: #111;
             transition: var(--transition);
-            font-size: 1.1rem;
+            font-size: 1.05rem
         }
 
-        .dropdown-item i {
+        .as-dropdown-item i {
             width: 30px;
             font-size: 1.5rem;
-            color: var(--primary-color) !important;
-            margin-right: 15px;
+            color: var(--primary-color) !important
         }
 
-        .dropdown-item:hover {
+        .as-dropdown-item:hover {
             background: var(--light-gray);
-            padding-left: 30px;
+            padding-left: 30px
         }
 
-        /* Notification Badge */
-        .badge {
+        .as-notifications {
+            min-width: 350px;
+            max-height: 500px;
+        }
+
+        .as-notif-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .as-notif-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 1.1rem
+        }
+
+        .as-mark-all {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: .9rem;
+            transition: var(--transition)
+        }
+
+        .as-mark-all:hover {
+            color: var(--primary-dark);
+            transform: scale(1.05)
+        }
+
+        .as-notif-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: var(--transition);
+        }
+
+        .as-notif-item.unread {
+            background: rgba(43, 102, 37, .05)
+        }
+
+        .as-notif-item:hover {
+            background: #f9f9f9
+        }
+
+        .notifcontainer {
+            height: 380px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+
+        .as-notif-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            width: 100%
+        }
+
+        .as-notif-icon {
+            color: var(--primary-color);
+            font-size: 1.2rem
+        }
+
+        .as-notif-title {
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 4px
+        }
+
+        .as-notif-message {
+            color: #2b6625;
+            font-size: .92rem;
+            line-height: 1.35
+        }
+
+        .as-notif-time {
+            color: #999;
+            font-size: .8rem;
+            margin-top: 4px
+        }
+
+        .as-notif-footer {
+            padding: 10px 20px;
+            text-align: center;
+            border-top: 1px solid #eee
+        }
+
+        .as-view-all {
+            color: var(--primary-color);
+            font-weight: 600;
+            text-decoration: none
+        }
+
+        .as-view-all:hover {
+            text-decoration: underline
+        }
+
+        .as-badge {
             position: absolute;
             top: 2px;
             right: 8px;
-            background: #ff4757;
-            color: white;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
-            width: 14px;
-            height: 12px;
+            background: #ff4757;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: bold;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-
-        /* Mobile Menu Toggle */
-        .mobile-toggle {
-            display: none;
-            background: none;
-            border: none;
-            color: white;
-            font-size: 2rem;
-            cursor: pointer;
-            padding: 15px;
-        }
-
-        .notification-link {
-            display: flex;
-            align-items: flex-start;
-            text-decoration: none;
-            color: inherit;
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            transition: var(--transition);
-        }
-
-        .notification-link:hover {
-            background-color: #f9f9f9;
+            justify-content: center
         }
 
         /* Main Content Styles */
@@ -734,10 +760,6 @@
             .main-nav {
                 display: none;
             }
-            
-            .mobile-menu-toggle {
-                display: block;
-            }
         }
 
         @media (max-width: 768px) {
@@ -753,7 +775,7 @@
                 grid-template-columns: 1fr;
             }
             
-            .header-left .logo img {
+            .as-logo img {
                 height: 32px;
             }
             
@@ -791,114 +813,151 @@
                 width: auto;
                 justify-content: center;
             }
+
+            .as-header {
+                padding: 0 15px;
+            }
+
+            .as-dropdown-menu {
+                min-width: 280px;
+            }
+
+            .as-notifications {
+                min-width: 320px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .as-dropdown-menu {
+                min-width: 250px;
+                right: -50px;
+            }
+
+            .as-notifications {
+                min-width: 280px;
+                right: -80px;
+            }
+
+            .as-dropdown-item {
+                padding: 12px 20px;
+                font-size: 1rem;
+            }
         }
     </style>
 </head>
 <body>
-<header>
-        <div class="logo">
-            <a href="user_home.php">
-                <img src="seal.png" alt="Site Logo">
-            </a>
+    <!-- Application Status navbar -->
+    <header class="as-header">
+        <div class="as-logo">
+            <a href="user_home.php"><img src="seal.png" alt="Site Logo"></a>
         </div>
-        
-        <!-- Mobile menu toggle -->
-        <button class="mobile-toggle">
-            <i class="fas fa-bars"></i>
-        </button>
-        
-        <!-- Navigation on the right -->
-        <div class="nav-container">
-            <!-- Dashboard Dropdown -->
-                <div class="nav-item dropdown">
-                <div class="nav-icon">
-                    <i class="fas fa-bars"></i>
-                </div>
-                <div class="dropdown-menu center">
-                    <a href="user_reportaccident.php" class="dropdown-item">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Report Incident</span>
-                    </a>
-                   
 
-                      <a href="useraddseed.php" class="dropdown-item">
-                        <i class="fas fa-seedling"></i>
-                        <span>Request Seedlings</span>
-                    </a>
-                    <a href="useraddwild.php" class="dropdown-item">
-                        <i class="fas fa-paw"></i>
-                        <span>Wildlife Permit</span>
-                    </a>
-                    <a href="useraddtreecut.php" class="dropdown-item">
-                        <i class="fas fa-tree"></i>
-                        <span>Tree Cutting Permit</span>
-                    </a>
-                    <a href="useraddlumber.php" class="dropdown-item">
-                        <i class="fas fa-boxes"></i>
-                        <span>Lumber Dealers Permit</span>
-                    </a>
-                    <a href="useraddwood.php" class="dropdown-item">
-                        <i class="fas fa-industry"></i>
-                        <span>Wood Processing Permit</span>
-                    </a>
-                    <a href="useraddchainsaw.php" class="dropdown-item">
-                        <i class="fas fa-tools"></i>
-                        <span>Chainsaw Permit</span>
-                    </a>
-
-                    
+        <div class="as-nav">
+            <!-- App menu -->
+            <div class="as-item">
+                <div class="as-icon"><i class="fas fa-bars"></i></div>
+                <div class="as-dropdown-menu as-center">
+                    <a href="user_reportaccident.php" class="as-dropdown-item"><i class="fas fa-file-invoice"></i><span>Report Incident</span></a>
+                    <a href="useraddseed.php" class="as-dropdown-item"><i class="fas fa-seedling"></i><span>Request Seedlings</span></a>
+                    <a href="useraddwild.php" class="as-dropdown-item"><i class="fas fa-paw"></i><span>Wildlife Permit</span></a>
+                    <a href="useraddtreecut.php" class="as-dropdown-item"><i class="fas fa-tree"></i><span>Tree Cutting Permit</span></a>
+                    <a href="useraddlumber.php" class="as-dropdown-item"><i class="fas fa-boxes"></i><span>Lumber Dealers Permit</span></a>
+                    <a href="useraddwood.php" class="as-dropdown-item"><i class="fas fa-industry"></i><span>Wood Processing Permit</span></a>
+                    <a href="useraddchainsaw.php" class="as-dropdown-item"><i class="fas fa-tools"></i><span>Chainsaw Permit</span></a>
+                    <a href="applicationstatus.php" class="as-dropdown-item"><i class="fas fa-clipboard-check"></i><span>Application Status</span></a>
                 </div>
-                </div>
-                
+            </div>
 
             <!-- Notifications -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                        <i class="fas fa-bell"></i>
-                    <span class="badge">1</span>
+            <div class="as-item">
+                <div class="as-icon">
+                    <i class="fas fa-bell"></i>
+                    <?php if (!empty($unreadCount)) : ?>
+                        <span class="as-badge" id="asNotifBadge"><?= htmlspecialchars((string)$unreadCount, ENT_QUOTES) ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="dropdown-menu notifications-dropdown">
-                    <div class="notification-header">
+                <div class="as-dropdown-menu as-notifications">
+                    <div class="as-notif-header">
                         <h3>Notifications</h3>
-                        <a href="#" class="mark-all-read">Mark all as read</a>
+                        <a href="#" class="as-mark-all" id="asMarkAllRead">Mark all as read</a>
                     </div>
-                    
-                    <div class="notification-item unread">
-                        <a href="user_each.php?id=1" class="notification-link">
-                            <div class="notification-icon">
-                                <i class="fas fa-exclamation-circle"></i>
+                    <div class="notifcontainer">
+                        <?php if (!$notifs): ?>
+                            <div class="as-notif-item">
+                                <div class="as-notif-content">
+                                    <div class="as-notif-title">No notifications</div>
+                                    <div class="as-notif-message">You don't have any notifications at the moment.</div>
+                                </div>
                             </div>
-                            
-                            <div class="notification-content">
-                            <div class="notification-title">Chainsaw Renewal Status</div>
-                                <div class="notification-message">Chainsaw Renewal has been approved.</div>
-                                <div class="notification-time">10 minutes ago</div>
-                            </div>
-                    </a>
-                </div>
-                
-                    <div class="notification-footer">
-                        <a href="user_notification.php" class="view-all">View All Notifications</a>
+                        <?php else: ?>
+                            <?php foreach ($notifs as $n): ?>
+                                <?php
+                                $unread = empty($n['is_read']);
+                                // Convert UTC timestamp to Manila timezone before calculating elapsed time
+                                if ($n['created_at']) {
+                                    $dt = new DateTime((string)$n['created_at'], new DateTimeZone('UTC'));
+                                    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    $ts = $dt->getTimestamp();
+                                } else {
+                                    $ts = time();
+                                }
+                                // Determine title: if approval -> check if it's a seedlings approval
+                                $title = 'Notification';
+                                if (!empty($n['approval_id'])) {
+                                    try {
+                                        $stApprovalType->execute([':aid' => $n['approval_id']]);
+                                        $aprRow = $stApprovalType->fetch(PDO::FETCH_ASSOC);
+                                        if (!empty($aprRow) && !empty($aprRow['seedl_req_id'])) {
+                                            $title = 'Seedlings Request Update';
+                                        } else {
+                                            $title = 'Permit Update';
+                                        }
+                                    } catch (Throwable $e) {
+                                        // fallback
+                                        $title = 'Permit Update';
+                                    }
+                                } elseif (!empty($n['incident_id'])) {
+                                    $title = 'Incident Update';
+                                }
+                        
+                                $cleanMsg = (function ($m) {
+                                    $t = trim((string)$m);
+                                    $t = preg_replace('/\s*[,\s]*You\s+can\s+download.*?(?:now|below|here)[,\s\.]*/i', '', $t);
+                                    $t = preg_replace('/\s*\(?\breason\b.*$/i', '', $t);
+                                    return trim(preg_replace('/\s+/', ' ', $t)) ?: "Update available.";
+                                })($n['message'] ?? '');
+                                ?>
+                                <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
+                                    <a href="#" class="as-notif-link"
+                                        data-notif-id="<?= htmlspecialchars((string)$n['notif_id'], ENT_QUOTES) ?>"
+                                        <?= !empty($n['approval_id']) ? 'data-approval-id="' . htmlspecialchars((string)$n['approval_id'], ENT_QUOTES) . '"' : '' ?>
+                                        <?= !empty($n['incident_id']) ? 'data-incident-id="' . htmlspecialchars((string)$n['incident_id'], ENT_QUOTES) . '"' : '' ?>>
+                                        <div class="as-notif-icon"><i class="fas fa-exclamation-circle"></i></div>
+                                        <div class="as-notif-content">
+                                            <div class="as-notif-title"><?= htmlspecialchars($title, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-message"><?= htmlspecialchars($cleanMsg, ENT_QUOTES) ?></div>
+                                            <div class="as-notif-time" data-ts="<?= htmlspecialchars((string)$ts, ENT_QUOTES) ?>">just now</div>
+                                        </div>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="as-notif-footer">
+                        <a href="user_notification.php" class="as-view-all">View All Notifications</a>
                     </div>
                 </div>
             </div>
-            
-            <!-- Profile Dropdown -->
-            <div class="nav-item dropdown">
-                <div class="nav-icon">
-                        <i class="fas fa-user-circle"></i>
+
+            <!-- Profile -->
+            <div class="as-item">
+                <div class="as-icon"><i class="fas fa-user-circle"></i></div>
+                <div class="as-dropdown-menu">
+                    <a href="user_profile.php" class="as-dropdown-item"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
+                    <a href="logout.php" class="as-dropdown-item"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
                 </div>
-                <div class="dropdown-menu">
-                    <a href="user_profile.php" class="dropdown-item">
-                            <i class="fas fa-user-edit"></i>
-                            <span>Edit Profile</span>
-                        </a>
-                    <a href="user_login.php" class="dropdown-item">
-                            <i class="fas fa-sign-out-alt"></i>
-                            <span>Logout</span>
-                        </a>
-                    </div>
-                </div>
+            </div>
         </div>
     </header>
     
@@ -917,16 +976,10 @@
                         <a href="habitat.php" class="filter-item">Habitat Assessment</a>
                         <a href="species.php" class="filter-item">Species Monitoring</a>
                         <a href="reports.php" class="filter-item active">Reports & Analytics</a>
-                        
                     </div>
                 </div>
-                
-                <button class="apply-filter-btn">
-                    <i class="fas fa-filter"></i> Apply
-                </button>
             </div>
         </div>
-
 
         <div class="page-header">
             <h1 class="page-title">
@@ -960,7 +1013,6 @@
                 <p class="stat-description">Identified</p>
             </div>
         </div>
-
 
         <!-- Habitat Assessment Section -->
         <div class="collapsible-section">
@@ -1158,185 +1210,319 @@
                     <div class="chart-container">
                         <canvas id="webinarChart"></canvas>
                     </div>
-                    
-                    
                 </div>
             </div>
         </div>
     </div>
     
     <script>
-        // Collapsible sections functionality
-        const sectionHeaders = document.querySelectorAll('.section-header');
-        sectionHeaders.forEach(header => {
-            header.addEventListener('click', () => {
-                const section = header.parentElement;
-                section.classList.toggle('active');
+        document.addEventListener('DOMContentLoaded', function() {
+            // Relative time labels for notifications
+            function timeAgo(seconds) {
+                if (seconds < 60) return 'just now';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+                const d = Math.floor(h / 24);
+                if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+                const w = Math.floor(d / 7);
+                if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+                const mo = Math.floor(d / 30);
+                if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+                const y = Math.floor(d / 365);
+                return `${y} year${y > 1 ? 's' : ''} ago`;
+            }
+
+            document.querySelectorAll('.as-notif-time[data-ts]').forEach(el => {
+                const tsMs = Number(el.dataset.ts || 0) * 1000;
+                if (!tsMs) return;
+                const diffSec = Math.floor((Date.now() - tsMs) / 1000);
+                el.textContent = timeAgo(diffSec);
+                try {
+                    const manilaFmt = new Intl.DateTimeFormat('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    el.title = manilaFmt.format(new Date(tsMs));
+                } catch (err) {
+                    el.title = new Date(tsMs).toLocaleString();
+                }
             });
-        });
-        
-        // Habitat Extent Chart
-        const habitatExtentCtx = document.getElementById('habitatExtentChart').getContext('2d');
-        const habitatExtentChart = new Chart(habitatExtentCtx, {
-            type: 'pie',
-            data: {
-                labels: ['Coral Reefs', 'Seagrass', 'Mangroves'],
-                datasets: [{
-                    data: [1346.68, 4821.92, 28],
-                    backgroundColor: [
-                        'rgba(54, 162, 235, 0.7)',
-                        'rgba(75, 192, 192, 0.7)',
-                        'rgba(153, 102, 255, 0.7)'
-                    ],
-                    borderColor: [
-                        'rgba(54, 162, 235, 1)',
-                        'rgba(75, 192, 192, 1)',
-                        'rgba(153, 102, 255, 1)'
-                    ],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.label || '';
-                                if (label) {
-                                    label += ': ';
+
+            // Mark all as read functionality
+            const badge = document.getElementById('asNotifBadge');
+            const markAllBtn = document.getElementById('asMarkAllRead');
+
+            markAllBtn?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch(location.pathname + '?ajax=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                } catch {}
+                document.querySelectorAll('.as-notif-item.unread').forEach(n => n.classList.remove('unread'));
+                if (badge) badge.style.display = 'none';
+            });
+
+            // Click a single notification
+            const list = document.querySelector('.as-notifications');
+            list?.addEventListener('click', async (e) => {
+                const link = e.target.closest('.as-notif-link');
+                if (!link) return;
+                e.preventDefault();
+
+                // Optimistic mark read in UI
+                const row = link.closest('.as-notif-item');
+                const wasUnread = row?.classList.contains('unread');
+                row?.classList.remove('unread');
+
+                // Update badge count if needed
+                if (badge && wasUnread) {
+                    const current = parseInt(badge.textContent || '0', 10) || 0;
+                    const next = Math.max(0, current - 1);
+                    if (next <= 0) {
+                        badge.style.display = 'none';
+                    } else {
+                        badge.textContent = String(next);
+                    }
+                }
+
+                // Best-effort server mark
+                const nid = link.dataset.notifId || '';
+                if (nid) {
+                    try {
+                        await fetch(location.pathname + `?ajax=mark_read&notif_id=${encodeURIComponent(nid)}`, {
+                            method: 'POST',
+                            credentials: 'same-origin'
+                        });
+                    } catch {}
+                }
+
+                // Routing
+                if (link.dataset.approvalId) {
+                    // Permit-related → Application Status page
+                    window.location.href = 'applicationstatus.php';
+                    return;
+                }
+                if (link.dataset.incidentId) {
+                    // Incident-related deep link
+                    window.location.href = `user_reportaccident.php?view=${encodeURIComponent(link.dataset.incidentId)}`;
+                    return;
+                }
+                // Fallback: Application Status
+                window.location.href = 'applicationstatus.php';
+            });
+
+            // Collapsible sections functionality
+            const sectionHeaders = document.querySelectorAll('.section-header');
+            sectionHeaders.forEach(header => {
+                header.addEventListener('click', () => {
+                    const section = header.parentElement;
+                    section.classList.toggle('active');
+                });
+            });
+
+            // Filter functionality
+            const filterItems = document.querySelectorAll('.filter-item');
+            filterItems.forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const filterMenu = this.parentElement;
+                    
+                    // Remove active class from all items in this menu
+                    filterMenu.querySelectorAll('.filter-item').forEach(i => i.classList.remove('active'));
+                    // Add active class to clicked item
+                    this.classList.add('active');
+                    
+                    // Update the filter button text
+                    const filterBtn = filterMenu.parentElement.querySelector('.filter-btn');
+                    if (filterBtn) {
+                        const icon = filterBtn.querySelector('i:first-child');
+                        filterBtn.innerHTML = '';
+                        filterBtn.appendChild(icon);
+                        filterBtn.appendChild(document.createTextNode(this.textContent));
+                        const chevron = document.createElement('i');
+                        chevron.className = 'fas fa-chevron-down';
+                        filterBtn.appendChild(chevron);
+                    }
+                    // Redirect to the href of the clicked filter item
+                    const href = this.getAttribute('href');
+                    if (href && href !== '#') {
+                        window.location.href = href;
+                    }
+                });
+            });
+
+            // Charts initialization
+            // Habitat Extent Chart
+            const habitatExtentCtx = document.getElementById('habitatExtentChart').getContext('2d');
+            const habitatExtentChart = new Chart(habitatExtentCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Coral Reefs', 'Seagrass', 'Mangroves'],
+                    datasets: [{
+                        data: [1346.68, 4821.92, 28],
+                        backgroundColor: [
+                            'rgba(54, 162, 235, 0.7)',
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(153, 102, 255, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(153, 102, 255, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    label += context.raw.toLocaleString() + ' ha';
+                                    return label;
                                 }
-                                label += context.raw.toLocaleString() + ' ha';
-                                return label;
                             }
                         }
                     }
                 }
-            }
-        });
-        
-        // MPA Network Chart
-        const mpaNetworkCtx = document.getElementById('mpaNetworkChart').getContext('2d');
-        const mpaNetworkChart = new Chart(mpaNetworkCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Establishment', 'Strengthening', 'Sustaining'],
-                datasets: [{
-                    data: [44, 2, 1],
-                    backgroundColor: [
-                        'rgba(43, 102, 37, 0.7)',
-                        'rgba(255, 206, 86, 0.7)',
-                        'rgba(54, 162, 235, 0.7)'
-                    ],
-                    borderColor: [
-                        'rgba(43, 102, 37, 1)',
-                        'rgba(255, 206, 86, 1)',
-                        'rgba(54, 162, 235, 1)'
-                    ],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                    }
-                }
-            }
-        });
-        
-        // BDFE Chart
-        const bdfeCtx = document.getElementById('bdfeChart').getContext('2d');
-        const bdfeChart = new Chart(bdfeCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Sea Cucumber Ranching', 'Ecotourism', 'Sustainable Fisheries', 'Mangrove Products'],
-                datasets: [{
-                    label: 'Number of Enterprises',
-                    data: [15, 8, 12, 5],
-                    backgroundColor: 'rgba(43, 102, 37, 0.7)',
-                    borderColor: 'rgba(43, 102, 37, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Number of Enterprises'
+            });
+            
+            // MPA Network Chart
+            const mpaNetworkCtx = document.getElementById('mpaNetworkChart').getContext('2d');
+            const mpaNetworkChart = new Chart(mpaNetworkCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Establishment', 'Strengthening', 'Sustaining'],
+                    datasets: [{
+                        data: [44, 2, 1],
+                        backgroundColor: [
+                            'rgba(43, 102, 37, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(54, 162, 235, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(43, 102, 37, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(54, 162, 235, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
                         }
                     }
                 }
-            }
-        });
-        
-        // Awareness Chart
-        const awarenessCtx = document.getElementById('awarenessChart').getContext('2d');
-        const awarenessChart = new Chart(awarenessCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Aware of PA Status', 'Feel Need to Protect'],
-                datasets: [{
-                    label: 'Percentage of Respondents',
-                    data: [96.7, 39.2],
-                    backgroundColor: [
-                        'rgba(43, 102, 37, 0.7)',
-                        'rgba(75, 192, 192, 0.7)'
-                    ],
-                    borderColor: [
-                        'rgba(43, 102, 37, 1)',
-                        'rgba(75, 192, 192, 1)'
-                    ],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        title: {
-                            display: true,
-                            text: 'Percentage (%)'
+            });
+            
+            // BDFE Chart
+            const bdfeCtx = document.getElementById('bdfeChart').getContext('2d');
+            const bdfeChart = new Chart(bdfeCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Sea Cucumber Ranching', 'Ecotourism', 'Sustainable Fisheries', 'Mangrove Products'],
+                    datasets: [{
+                        label: 'Number of Enterprises',
+                        data: [15, 8, 12, 5],
+                        backgroundColor: 'rgba(43, 102, 37, 0.7)',
+                        borderColor: 'rgba(43, 102, 37, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Enterprises'
+                            }
                         }
                     }
                 }
-            }
-        });
-        
-        // Communication Chart
-        const communicationCtx = document.getElementById('communicationChart').getContext('2d');
-        const communicationChart = new Chart(communicationCtx, {
-            type: 'polarArea',
-            data: {
-                labels: ['Television', 'Radio', 'Social Media', 'DENR/LGU Officials'],
-                datasets: [{
-                    data: [40, 30, 20, 10],
-                    backgroundColor: [
-                        'rgba(255, 99, 132, 0.7)',
-                        'rgba(54, 162, 235, 0.7)',
-                        'rgba(255, 206, 86, 0.7)',
-                        'rgba(75, 192, 192, 0.7)'
-                    ],
-                    borderColor: [
-                        'rgba(255, 99, 132, 1)',
-                        'rgba(54, 162, 235, 1)',
-                        'rgba(255, 206, 86, 1)',
-                        'rgba(75, 192, 192, 1)'
-                    ],
-                    borderWidth: 1
+            });
+            
+            // Awareness Chart
+            const awarenessCtx = document.getElementById('awarenessChart').getContext('2d');
+            const awarenessChart = new Chart(awarenessCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Aware of PA Status', 'Feel Need to Protect'],
+                    datasets: [{
+                        label: 'Percentage of Respondents',
+                        data: [96.7, 39.2],
+                        backgroundColor: [
+                            'rgba(43, 102, 37, 0.7)',
+                            'rgba(75, 192, 192, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(43, 102, 37, 1)',
+                            'rgba(75, 192, 192, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Percentage (%)'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Communication Chart
+            const communicationCtx = document.getElementById('communicationChart').getContext('2d');
+            const communicationChart = new Chart(communicationCtx, {
+                type: 'polarArea',
+                data: {
+                    labels: ['Television', 'Radio', 'Social Media', 'DENR/LGU Officials'],
+                    datasets: [{
+                        data: [40, 30, 20, 10],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',
+                            'rgba(54, 162, 235, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(75, 192, 192, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)'
+                        ],
+                        borderWidth: 1
                 }]
             },
             options: {
@@ -1393,149 +1579,7 @@
                 }
             }
         });
-
-        // Filter functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            // Mobile menu toggle
-            const mobileToggle = document.querySelector('.mobile-toggle');
-            const navContainer = document.querySelector('.nav-container');
-            
-            if (mobileToggle) {
-                mobileToggle.addEventListener('click', () => {
-                    navContainer.classList.toggle('active');
-                });
-            }
-            
-            // Improved dropdown functionality
-            const dropdowns = document.querySelectorAll('.dropdown');
-            
-            dropdowns.forEach(dropdown => {
-                const toggle = dropdown.querySelector('.nav-icon');
-                const menu = dropdown.querySelector('.dropdown-menu');
-                
-                // Show menu on hover
-                dropdown.addEventListener('mouseenter', () => {
-                    menu.style.opacity = '1';
-                    menu.style.visibility = 'visible';
-                    menu.style.transform = menu.classList.contains('center') 
-                        ? 'translateX(-50%) translateY(0)' 
-                        : 'translateY(0)';
-                });
-                
-                // Hide menu when leaving both button and menu
-                dropdown.addEventListener('mouseleave', (e) => {
-                    // Check if we're leaving the entire dropdown area
-                    if (!dropdown.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
-                    }
-                });
-                
-                // Additional check for menu mouseleave
-                menu.addEventListener('mouseleave', (e) => {
-                    if (!dropdown.contains(e.relatedTarget)) {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
-                    }
-                });
-            });
-
-            // Close dropdowns when clicking outside (for mobile)
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                        menu.style.opacity = '0';
-                        menu.style.visibility = 'hidden';
-                        menu.style.transform = menu.classList.contains('center') 
-                            ? 'translateX(-50%) translateY(10px)' 
-                            : 'translateY(10px)';
-                    });
-                }
-            });
-
-            // Mobile dropdown toggle
-            if (window.innerWidth <= 992) {
-                dropdowns.forEach(dropdown => {
-                    const toggle = dropdown.querySelector('.nav-icon');
-                    const menu = dropdown.querySelector('.dropdown-menu');
-                    
-                    toggle.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        // Close other dropdowns
-                        document.querySelectorAll('.dropdown-menu').forEach(otherMenu => {
-                            if (otherMenu !== menu) {
-                                otherMenu.style.display = 'none';
-                            }
-                        });
-                        
-                        // Toggle current dropdown
-                        if (menu.style.display === 'block') {
-                            menu.style.display = 'none';
-                        } else {
-                            menu.style.display = 'block';
-                        }
-                    });
-                });
-            }
-
-            // Mark all notifications as read
-            const markAllRead = document.querySelector('.mark-all-read');
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    document.querySelectorAll('.notification-item.unread').forEach(item => {
-                        item.classList.remove('unread');
-                    });
-                    document.querySelector('.badge').style.display = 'none';
-                });
-            }
-
-            // Filter functionality
-            const applyFilterBtn = document.querySelector('.apply-filter-btn');
-            if (applyFilterBtn) {
-                applyFilterBtn.addEventListener('click', function() {
-                    const activeCategory = document.querySelector('.filter-content .filter-item.active')?.textContent || 'All Categories';
-                    
-                    alert(`Applying filters:\nCategory: ${activeCategory}`);
-                    // Here you would implement your actual filter logic
-                    // For example: filterReports(activeCategory);
-                });
-            }
-
-            // Make filter items clickable
-            const filterItems = document.querySelectorAll('.filter-item');
-            filterItems.forEach(item => {
-                item.addEventListener('click', function(e) {
-                    // Removed e.preventDefault() to allow navigation
-                    const filterMenu = this.parentElement;
-                    
-                    // Remove active class from all items in this menu
-                    filterMenu.querySelectorAll('.filter-item').forEach(i => i.classList.remove('active'));
-                    // Add active class to clicked item
-                    this.classList.add('active');
-                    
-                    // Update the filter button text
-                    const filterBtn = filterMenu.parentElement.querySelector('.filter-btn');
-                    if (filterBtn) {
-                        const icon = filterBtn.querySelector('i:first-child');
-                        filterBtn.innerHTML = '';
-                        filterBtn.appendChild(icon);
-                        filterBtn.appendChild(document.createTextNode(this.textContent));
-                        const chevron = document.createElement('i');
-                        chevron.className = 'fas fa-chevron-down';
-                        filterBtn.appendChild(chevron);
-                    }
-                });
-            });
-        });
+    });
     </script>
 </body>
 </html>

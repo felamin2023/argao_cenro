@@ -274,20 +274,25 @@ header {
 
 /* Notification Badge */
 .badge {
-  position: absolute;
-  top: 2px;
-  right: 8px;
-  background: #ff4757;
-  color: white;
-  border-radius: 50%;
-  width: 14px;
-  height: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: bold;
+    position: absolute;
+    top: -6px; /* Adjusted for larger size */
+    right: -4px; /* Adjusted for larger size */
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    min-width: 20px; /* Increased from 20px to 24px */
+    height: 18px; /* Increased from 20px to 24px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px; /* Increased from 11px to 13px */
+    font-weight: 700;
+    z-index: 100;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
+
+
 
 @keyframes pulse {
   0% {
@@ -321,6 +326,7 @@ header {
   border-bottom: 1px solid #eee;
   transition: var(--transition);
 }
+
 
 .notification-link:hover {
   background-color: #f9f9f9;
@@ -372,6 +378,7 @@ header {
   margin-left: auto;
   padding-left: 10px;
 }
+
 
 .dropdown-menu.center:before {
   left: 50%;
@@ -633,6 +640,7 @@ button:focus-visible {
   position: relative;
   background: white;
   margin: 0;
+  
 }
 
 .accident-table th,
@@ -641,7 +649,7 @@ button:focus-visible {
   padding: 12px 8px;
   text-align: center;
   word-wrap: break-word;
-  font-size: 13px;
+  font-size: 20px;
   font-family: "calibri";
   vertical-align: middle;
   line-height: 1.4;
@@ -667,6 +675,7 @@ button:focus-visible {
   background: white;
   transition: background-color 0.2s ease;
   overflow: hidden;
+   font-size: 20px;
   text-overflow: ellipsis;
 }
 

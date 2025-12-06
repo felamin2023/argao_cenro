@@ -48,19 +48,21 @@ function normalize_url(string $v, string $base): string
     return $v; // allow site-relative paths like /storage/... to pass through
 }
 /** Strip any rejection reason text from a notification message */
+
 function strip_reason_from_message(?string $msg): string
 {
     $t = trim((string)$msg);
-
-    // Remove trailing "Reason: ..." or "Rejection Reason - ..." pieces
-    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
-    // Remove trailing explanatory clauses like "because ..." or "due to ..."
-    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*$/i', '', $t);
-    // Clean up extra spaces
-    $t = trim(preg_replace('/\s{2,}/', ' ', $t));
-
-    return $t;
+    
+    // Remove download instructions
+    $t = preg_replace('/\s*[,\s]*You\s+can\s+download.*?(?:now|below|here)[,\s\.]*/i', '', $t);
+    
+    // Remove rejection reasons
+    $t = preg_replace('/\s*\(?\breason\b.*$/i', '', $t);
+    
+    // Clean up
+    return trim(preg_replace('/\s+/', ' ', $t)) ?: "Update available.";
 }
+
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'details') {
     header('Content-Type: application/json');

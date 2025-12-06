@@ -1409,12 +1409,13 @@ try {
                                 } elseif (!empty($n['incident_id'])) {
                                     $title = 'Incident Update';
                                 }
+                        
                                 $cleanMsg = (function ($m) {
-                                    $t = trim((string)$m);
-                                    $t = preg_replace('/\s*\(?\b(rejection\s*reason|reason)\b\s*[:\-–]\s*.*$/i', '', $t);
-                                    $t = preg_replace('/\s*\b(because|due\s+to)\b\s*.*/i', '', $t);
-                                    return trim(preg_replace('/\s{2,}/', ' ', $t)) ?: 'There’s an update.';
-                                })($n['message'] ?? '');
+    $t = trim((string)$m);
+    $t = preg_replace('/\s*[,\s]*You\s+can\s+download.*?(?:now|below|here)[,\s\.]*/i', '', $t);
+    $t = preg_replace('/\s*\(?\breason\b.*$/i', '', $t);
+    return trim(preg_replace('/\s+/', ' ', $t)) ?: "Update available.";
+})($n['message'] ?? '');
                                 ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"

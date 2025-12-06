@@ -131,6 +131,58 @@ try {
     <script defer src="/denr/superadmin/js/reportaccident.js"></script>
 </head>
 
+<style>
+             .nav-item .badge {
+    position: absolute;
+    top: -2px;
+    right: 4px;
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    min-width: 19px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    z-index: 100;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    /* Prevent all animations/transforms on the badge */
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+    will-change: transform;
+}
+
+/* Ensure parent doesn't affect badge position */
+.nav-icon {
+    position: relative;
+    transform-style: flat; /* Prevent 3D transforms from affecting children */
+    backface-visibility: hidden; /* Improve rendering stability */
+}
+
+/* Specifically target the notification dropdown badge */
+#notifDropdown .badge {
+    top: -2px !important;
+    right: 4px !important;
+    position: absolute;
+}
+
+      .accident-table th,
+.accident-table td {
+  border: 1px solid #e0e0e0;
+  padding: 12px 8px;
+  text-align: center;
+  word-wrap: break-word;
+  font-size: 14px;
+  font-family: "calibri";
+  vertical-align: middle;
+  line-height: 1.4;
+}
+</style>
+
 <body>
     <header>
         <div class="logo">
@@ -143,10 +195,7 @@ try {
             <div class="nav-item dropdown">
                 <div class="nav-icon active"><i class="fas fa-bars"></i></div>
                 <div class="dropdown-menu center">
-                    <a href="mpa-management.php" class="dropdown-item"><i class="fas fa-water"></i><span>MPA Management</span></a>
-                    <a href="habitat.php" class="dropdown-item"><i class="fas fa-tree"></i><span>Habitat Assessment</span></a>
-                    <a href="species.php" class="dropdown-item"><i class="fas fa-fish"></i><span>Species Monitoring</span></a>
-                    <a href="reports.php" class="dropdown-item"><i class="fas fa-chart-bar"></i><span>Reports & Analytics</span></a>
+                    
                     <a href="reportaccident.php" class="dropdown-item active-page"><i class="fas fa-file-invoice"></i><span>Incident Reports</span></a>
                 </div>
             </div>

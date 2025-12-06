@@ -500,6 +500,103 @@ foreach ($rows as $r) {
         #confirmModal .modal-btn-cancel:hover {
             filter: brightness(.96);
         }
+
+        /* Replace your existing .action-buttons and button styles with these: */
+
+/* Container for action buttons */
+.action-buttons {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: nowrap;
+    width: 100%;
+    padding: 2px;
+}
+
+/* Base button style - COMPACT VERSION */
+.view-btn, .edit-btn {
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 22px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    font-family: 'calibri';
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+.view-btn {
+    background: linear-gradient(135deg, #4CAF50, #388E3C);
+    color: white;
+}
+
+.edit-btn {
+    background: linear-gradient(135deg, #2196F3, #1976D2);
+    color: white;
+}
+
+/* Icon-only version (even smaller) */
+.view-btn i, .edit-btn i {
+    font-size: 10px;
+    margin-right: 2px;
+}
+
+/* Button hover effects */
+.view-btn:hover, .edit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.view-btn:active, .edit-btn:active {
+    transform: translateY(0);
+}
+
+         .nav-item .badge {
+    position: absolute;
+    top: -2px;
+    right: 4px;
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    min-width: 19px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    z-index: 100;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    /* Prevent all animations/transforms on the badge */
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+    will-change: transform;
+}
+
+/* Ensure parent doesn't affect badge position */
+.nav-icon {
+    position: relative;
+    transform-style: flat; /* Prevent 3D transforms from affecting children */
+    backface-visibility: hidden; /* Improve rendering stability */
+}
+
+/* Specifically target the notification dropdown badge */
+#notifDropdown .badge {
+    top: -2px !important;
+    right: 4px !important;
+    position: absolute;
+}
     </style>
 </head>
 

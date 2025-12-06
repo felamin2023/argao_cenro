@@ -238,21 +238,44 @@ $phone      = htmlspecialchars((string)($user['phone'] ?? ''),      ENT_QUOTES, 
             color: var(--primary-color)
         }
 
-        .badge {
-            position: absolute;
-            top: 2px;
-            right: 8px;
-            background: #ff4757;
-            color: #fff;
-            border-radius: 50%;
-            width: 14px;
-            height: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: bold;
-        }
+       
+                 .nav-item .badge {
+    position: absolute;
+    top: -2px;
+    right: 4px;
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    min-width: 19px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    z-index: 100;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    /* Prevent all animations/transforms on the badge */
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+    will-change: transform;
+}
+
+/* Ensure parent doesn't affect badge position */
+.nav-icon {
+    position: relative;
+    transform-style: flat; /* Prevent 3D transforms from affecting children */
+    backface-visibility: hidden; /* Improve rendering stability */
+}
+
+/* Specifically target the notification dropdown badge */
+#notifDropdown .badge {
+    top: -2px !important;
+    right: 4px !important;
+    position: absolute;
+}
 
         /* Notifications dropdown */
         .notifications-dropdown {

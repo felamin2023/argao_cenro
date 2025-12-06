@@ -272,34 +272,7 @@ try {
     $wfpRecordsJson = '{}';
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $stmt->store_result();
-
-    if ($stmt->num_rows === 1) {
-        $stmt->bind_result($id, $hashed_password, $role);
-        $stmt->fetch();
-
-        if (password_verify($password, $hashed_password)) {
-            $_SESSION['user_id'] = $id;
-            $_SESSION['role'] = $role;
-
-            header("Location: user_home.php");
-            exit();
-        } else {
-            $error = "Incorrect password.";
-        }
-    } else {
-        $error = "User not found.";
-    }
-
-    $stmt->close();
-}
 
 $clientRows = [];
 try {
@@ -1869,12 +1842,13 @@ try {
                                 } elseif (!empty($n['incident_id'])) {
                                     $title = 'Incident Update';
                                 }
+                               
                                 $cleanMsg = (function ($m) {
-                                    $t = trim((string)$m);
-                                    $t = preg_replace('/\\s*\\(?\\b(rejection\\s*reason|reason)\\b\\s*[:\\-–]\\s*.*$/i', '', $t);
-                                    $t = preg_replace('/\\s*\\b(because|due\\s+to)\\b\\s*.*/i', '', $t);
-                                    return trim(preg_replace('/\\s{2,}/', ' ', $t)) ?: 'There’s an update.';
-                                })($n['message'] ?? '');
+    $t = trim((string)$m);
+    $t = preg_replace('/\s*[,\s]*You\s+can\s+download.*?(?:now|below|here)[,\s\.]*/i', '', $t);
+    $t = preg_replace('/\s*\(?\breason\b.*$/i', '', $t);
+    return trim(preg_replace('/\s+/', ' ', $t)) ?: "Update available.";
+})($n['message'] ?? '');
                             ?>
                                 <div class="as-notif-item <?= $unread ? 'unread' : '' ?>">
                                     <a href="#" class="as-notif-link"
